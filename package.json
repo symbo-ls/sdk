@@ -1,0 +1,66 @@
+{
+  "name": "@symbo.ls/sdk",
+  "version": "3.2.3",
+  "type": "module",
+  "main": "dist/esm/index.js",
+  "module": "dist/esm/index.js",
+  "files": [
+    "src/**/*.js",
+    "dist/**/*.js",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "node": "./dist/node/index.js",
+      "browser": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js",
+      "default": "./dist/esm/index.js"
+    },
+    "./environment": {
+      "import": "./dist/config/environment.js",
+      "require": "./dist/config/environment.cjs"
+    }
+  },
+  "scripts": {
+    "copy:package:cjs": "cp ./package-cjs.json dist/cjs/package.json",
+    "build:esm": "npx cross-env NODE_ENV=$NODE_ENV npx esbuild ./src/*.js ./src/**/*.js --target=es2019 --format=esm --bundle --external:@domql/utils --external:@symbo.ls/router --external:@symbo.ls/socket --outdir=dist/esm --define:process.env.NODE_ENV=process.env.NODE_ENV",
+    "build:cjs": "npx cross-env NODE_ENV=$NODE_ENV npx esbuild ./src/*.js ./src/**/*.js --target=node16 --format=cjs --outdir=dist/cjs --define:process.env.NODE_ENV=process.env.NODE_ENV",
+    "build:node": "npx cross-env NODE_ENV=$NODE_ENV npx esbuild ./src/*.js ./src/**/*.js --target=node16 --format=esm --platform=node --outdir=dist/node --define:process.env.NODE_ENV=process.env.NODE_ENV",
+    "build:iife": "npx cross-env NODE_ENV=$NODE_ENV npx esbuild ./src/index.js --target=es2017 --format=iife --outdir=dist/iife --bundle --minify --define:process.env.NODE_ENV=process.env.NODE_ENV",
+    "build": "rimraf dist; npm run build:esm; npm run build:node; npm run build:cjs",
+    "// prepublish": "rimraf -I dist; npm run build; npm run copy:package:cjs; npm run test",
+    "prepublish": "rimraf -I dist; npm run build; npm run copy:package:cjs;",
+    "test:all": "cross-env NODE_ENV=testing npx tape integration-tests/index.js integration-tests/*.test.js | tap-spec",
+    "test:specific": "cross-env NODE_ENV=testing npx tape integration-tests/index.js integration-tests/$npm_config_testname.test.js | tap-spec"
+  },
+  "dependencies": {
+    "@based/cli": "5.1.1",
+    "@based/client": "^6.11.1",
+    "@based/errors": "^1.4.0",
+    "@based/functions": "^3.0.2",
+    "@domql/element": "^3.2.3",
+    "@domql/utils": "^3.2.3",
+    "@symbo.ls/router": "^3.2.3",
+    "@symbo.ls/socket": "^3.2.3",
+    "acorn": "^8.14.0",
+    "acorn-walk": "^8.3.4",
+    "dexie": "^4.0.11",
+    "dotenv": "^16.4.7",
+    "nanoid": "^5.1.5",
+    "node-fetch": "^3.3.2",
+    "socket.io-client": "^4.8.1",
+    "y-indexeddb": "^9.0.12",
+    "yjs": "^13.6.27"
+  },
+  "devDependencies": {
+    "@faker-js/faker": "^9.5.1",
+    "cross-env": "^7.0.3",
+    "esbuild": "^0.25.1",
+    "esbuild-plugins-node-modules-polyfill": "^1.6.8",
+    "glob": "^11.0.0",
+    "jsdom": "^26.1.0",
+    "tap-spec": "^2.2.2",
+    "tape": "5.9.0"
+  },
+  "gitHead": "9fc1b79b41cdc725ca6b24aec64920a599634681"
+}
