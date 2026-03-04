@@ -6,7 +6,7 @@ export class TokenManager {
   constructor (options = {}) {
     this.config = {
       storagePrefix: 'symbols_',
-      storageType: 'localStorage', // 'localStorage' | 'sessionStorage' | 'memory'
+      storageType: (typeof window === 'undefined' || process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'testing') ? 'memory' : 'localStorage', // 'localStorage' | 'sessionStorage' | 'memory'
       refreshBuffer: 60 * 1000, // Refresh 1 minute before expiry
       maxRetries: 3,
       apiUrl: options.apiUrl || '/api',
@@ -52,13 +52,30 @@ export class TokenManager {
       return this._memoryStorage
     }
 
+    // Guard against environments where accessing storage throws (e.g., opaque origins)
+    const safeGetStorage = (provider) => {
+      try {
+        const storage = provider()
+        // Try a simple set/remove cycle to ensure it is usable
+        const testKey = `${this.config.storagePrefix}__tm_test__`
+        storage.setItem(testKey, '1')
+        storage.removeItem(testKey)
+        return storage
+      } catch {
+        return null
+      }
+    }
+
+    const localStorageInstance = safeGetStorage(() => window.localStorage)
+    const sessionStorageInstance = safeGetStorage(() => window.sessionStorage)
+
     switch (this.config.storageType) {
       case 'sessionStorage':
-        return window.sessionStorage
+        return sessionStorageInstance || this._memoryStorage
       case 'memory':
         return this._memoryStorage
       default:
-        return window.localStorage
+        return localStorageInstance || this._memoryStorage
     }
   }
 

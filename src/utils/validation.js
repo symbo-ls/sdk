@@ -185,9 +185,6 @@ export const validateParams = {
     if (!data.key) {
       throw new Error('Data must contain a key property')
     }
-    if (!data.value) {
-      throw new Error('Data must contain a value property')
-    }
 
     // Check key against reserved keywords for code-related types
     if (CODE_TYPES.includes(type)) {
