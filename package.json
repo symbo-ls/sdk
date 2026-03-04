@@ -47,12 +47,12 @@
     "test:unit-all": "cross-env NODE_ENV=$NODE_ENV npx tape src/services/tests/**/*.test.js | tap-spec"
   },
   "dependencies": {
-    "@domql/element": "3.2.3",
-    "@domql/utils": "3.2.3",
+    "@domql/element": "^3.2.3",
+    "@domql/utils": "^3.2.3",
     "@grafana/faro-web-sdk": "^1.19.0",
     "@grafana/faro-web-tracing": "^1.19.0",
-    "@symbo.ls/router": "3.2.3",
-    "@symbo.ls/sync": "3.2.3",
+    "@symbo.ls/router": "^3.2.3",
+    "@symbo.ls/sync": "^3.2.3",
     "acorn": "^8.14.0",
     "acorn-walk": "^8.3.4",
     "dexie": "^4.0.11",
