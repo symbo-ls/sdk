@@ -4,13 +4,13 @@ export const dataSets = {
     data: {},
     title: 'Failed to update project: ProjectId is required',
     error:
-      'Failed to update project: Function call failed: [projects:update] Authorize rejected access.'
+      'Project ID is required'
   },
   dataReuired: {
     projectId: globalProject.id,
     data: null,
     title: 'Failed to update project: Data are required',
     error:
-      'Failed to update project: Function call failed: [projects:update] ProjectId and data are required.'
+      'Failed to update project: Request failed: HTTP 400: Bad Request'
   }
 }

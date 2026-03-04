@@ -52,6 +52,32 @@ Contact the SDET team for creds.
 To run the all tests simply type `npm run test:all`.
 To run a single test use `npm run test:specific --testname=name-of-test`
 
+### Environments
+Multiple environments are present in which the tests may be run:
+- `development`
+- `testing`
+- `staging`
+- `production`
+
+Currently, smoke tests run after every deployment to one of these environments. When executed locally, the SDK automation is run by default in the `testing` environment.
+
+### Conditional Logic for Test Execution in the Environments
+base.js contains helper tools to interrogate the current environment:
+- `base.isDevelopment()`
+- `base.isTesting()`
+- `base.isStaging()`
+- `base.isProduction()`
+
+If a test should not run on a specific environment, (such as Production), simply wrap the test in a conditional clause:
+
+```
+if(base.isProduction()) {
+   test.skip()
+ } else(
+   test('some test does some thing')
+ )
+ ```
+
 #### Debug
 
 If having trouble with the SDK and need more info you can can `getSdkStatus()` from the `base.js` file.

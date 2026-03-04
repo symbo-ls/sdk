@@ -1,7 +1,7 @@
 export const dataSets = {
   projectIdRequired: {
     projectId: '',
-    tier: 'free',
+    tier: 'starter',
     title: 'Failed to update project tier: Project ID is required',
     error: 'Project ID is required'
   },

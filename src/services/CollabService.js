@@ -2,24 +2,72 @@ import { BaseService } from './BaseService.js'
 import { CollabClient } from '../utils/CollabClient.js'
 import { RootStateManager } from '../state/RootStateManager.js'
 import { rootBus } from '../state/rootEventBus.js'
+import { validateParams } from '../utils/validation.js'
+import { deepStringifyFunctions } from '@domql/utils'
+import { preprocessChanges } from '../utils/changePreprocessor.js'
 
-// (helper conversions reserved for future features)
+// Helper: clone a value while converting all functions to strings. This is
+// tailored for collab payloads (tuples / granularChanges) and is more robust
+// for nested array shapes than the generic DOMQL helper.
+const FUNCTION_META_KEYS = ['node', '__ref', '__element', 'parent', 'parse']
+
+function stringifyFunctionsForTransport(value, seen = new WeakMap()) {
+  if (value === null || typeof value !== 'object') {
+    return typeof value === 'function' ? value.toString() : value
+  }
+
+  if (seen.has(value)) {
+    return seen.get(value)
+  }
+
+  const clone = Array.isArray(value) ? [] : {}
+  seen.set(value, clone)
+
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) {
+      clone[i] = stringifyFunctionsForTransport(value[i], seen)
+    }
+    return clone
+  }
+
+  const keys = Object.keys(value)
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i]
+    if (!FUNCTION_META_KEYS.includes(key)) {
+      clone[key] = stringifyFunctionsForTransport(value[key], seen)
+    }
+  }
+
+  return clone
+}
 
 export class CollabService extends BaseService {
-  constructor (config) {
+  constructor(config) {
     super(config)
     this._client = null
     this._stateManager = null
     this._connected = false
+    this._connecting = false
+    this._connectPromise = null
+    this._connectionMeta = null
+    this._pendingConnectReject = null
     this._undoStack = []
     this._redoStack = []
     this._isUndoRedo = false
     // Store operations made while offline so they can be flushed once the
     // socket reconnects.
     this._pendingOps = []
+
+    this._onSocketConnect = this._onSocketConnect.bind(this)
+    this._onSocketDisconnect = this._onSocketDisconnect.bind(this)
+    this._onSocketError = this._onSocketError.bind(this)
   }
 
-  init ({ context }) {
+  init({ context }) {
+    super.init({ context })
+    // console.log('CollabService init')
+    // console.log(context)
+
     // Defer state manager creation until a valid root state is present.
     // The root state may not be set yet when the SDK is first initialised
     // (e.g. inside initializeSDK()). We therefore create the manager lazily
@@ -41,7 +89,7 @@ export class CollabService extends BaseService {
    * Overridden to re-initialise the state manager once the root state becomes
    * available via a subsequent SDK `updateContext()` call.
    */
-  updateContext (context = {}) {
+  updateContext(context = {}) {
     // Preserve base behaviour
     super.updateContext(context)
 
@@ -57,42 +105,113 @@ export class CollabService extends BaseService {
    * Throws an explicit error if the root state is still missing so that the
    * caller can react accordingly.
    */
-  _ensureStateManager () {
+  _ensureStateManager() {
     if (!this._stateManager) {
       if (!this._context?.state) {
         throw new Error('[CollabService] Cannot operate without root state')
       }
       this._stateManager = new RootStateManager(this._context.state)
     }
+
+    // 🌐 Ensure we always have a usable `__element` stub so that calls like
+    // `el.call('openNotification', …)` or `el.call('deepStringifyFunctions', …)` do not
+    // crash in headless / Node.js environments (e.g. integration tests).
+    const root = this._stateManager?.root
+
+    if (root && !root.__element) {
+      // Minimal no-op implementation of the DOMQL element API used here
+      root.__element = {
+        /**
+         * Very small subset of the DOMQL `call` API that we rely on inside the
+         * CollabService for browser notifications and data helpers.
+         * In a Node.js test context we simply log or return fallbacks.
+         */
+        call: (method, ...args) => {
+          switch (method) {
+            case 'openNotification': {
+              const [payload = {}] = args
+              const { type = 'info', title = '', message = '' } = payload
+              const logger = type === 'error' ? console.error : console.log
+              logger(`[Notification] ${title}${message ? ` – ${message}` : ''}`)
+              return
+            }
+            case 'deepStringifyFunctions': {
+              // Pass-through to the shared utility from `smbls`
+              return deepStringifyFunctions(...args)
+            }
+            default:
+              return {}
+          }
+        }
+      }
+    }
   }
 
   /* ---------- Connection Management ---------- */
-  async connect (options = {}) {
-    // Make sure we have the state manager ready now that the context should
-    // contain the root state (after updateSDKContext()).
-    this._ensureStateManager()
-
-    const {
-      authToken: jwt,
-      projectId,
-      branch = 'main',
-      pro
-    } = {
-      ...this._context,
-      ...options
-    }
-    console.log(jwt, projectId, branch, pro)
-
-    if (!projectId) {
-      throw new Error('projectId is required for CollabService connection')
+  async connect(options = {}) {
+    if (this._connectPromise) {
+      return this._connectPromise
     }
 
-    // Disconnect existing connection if any
-    if (this._client) {
-      await this.disconnect()
-    }
+    this._connectPromise = (async () => {
+      this._connecting = true
+      this._connected = false
 
-    try {
+      // Make sure we have the state manager ready now that the context should
+      // contain the root state (after updateSDKContext()).
+      this._ensureStateManager()
+
+      const mergedOptions = {
+        ...this._context,
+        ...options
+      }
+
+      let { authToken: jwt } = mergedOptions
+      const { projectId, branch = 'main', pro } = mergedOptions
+
+      if (!jwt && this._tokenManager) {
+        try {
+          jwt = await this._tokenManager.ensureValidToken()
+        } catch (error) {
+          console.warn(
+            '[CollabService] Failed to obtain auth token from token manager',
+            error
+          )
+        }
+
+        if (!jwt && typeof this._tokenManager.getAccessToken === 'function') {
+          jwt = this._tokenManager.getAccessToken()
+        }
+      }
+
+      if (!jwt) {
+        throw new Error('[CollabService] Cannot connect without auth token')
+      }
+
+      this._context = {
+        ...this._context,
+        authToken: jwt,
+        projectId,
+        branch,
+        pro
+      }
+
+      if (!projectId) {
+        const state = this._stateManager?.root
+        const el = state.__element
+        el.call('openNotification', {
+          type: 'error',
+          title: 'projectId is required',
+          message: 'projectId is required for CollabService connection'
+        })
+        throw new Error('projectId is required for CollabService connection')
+      }
+
+      // Disconnect existing connection if any
+      if (this._client) {
+        await this.disconnect()
+      }
+
       this._client = new CollabClient({
         jwt,
         projectId,
@@ -103,86 +222,202 @@ export class CollabService extends BaseService {
       // Mark as connected once the socket establishes a connection. This prevents
       // the SDK from being stuck waiting for an initial snapshot that may never
       // arrive (e.g. for new/empty documents).
-      await new Promise(resolve => {
-        if (this._client.socket?.connected) {
-          resolve()
-        } else {
-          this._client.socket?.once('connect', resolve)
-        }
-      })
+      const { socket } = this._client
 
-      console.log('[CollabService] socket connected')
+      try {
+        await new Promise((resolve, reject) => {
+          if (!socket) {
+            reject(new Error('[CollabService] Socket instance missing'))
+            return
+          }
+
+          if (socket.connected) {
+            resolve()
+            return
+          }
+
+          /* eslint-disable no-use-before-define */
+          const cleanup = () => {
+            socket.off('connect', handleConnect)
+            socket.off('connect_error', handleError)
+            socket.off('error', handleError)
+            socket.off('disconnect', handleDisconnect)
+            if (this._pendingConnectReject === handleError) {
+              this._pendingConnectReject = null
+            }
+          }
+
+          const handleConnect = () => {
+            cleanup()
+            resolve()
+          }
+
+          const handleError = (error) => {
+            cleanup()
+            reject(
+              error instanceof Error
+                ? error
+                : new Error(String(error || 'Unknown connection error'))
+            )
+          }
+
+          const handleDisconnect = (reason) => {
+            handleError(
+              reason instanceof Error
+                ? reason
+                : new Error(
+                    `[CollabService] Socket disconnected before connect: ${
+                      reason || 'unknown'
+                    }`
+                  )
+            )
+          }
+
+          this._pendingConnectReject = handleError
+
+          socket.once('connect', handleConnect)
+          socket.once('connect_error', handleError)
+          socket.once('error', handleError)
+          socket.once('disconnect', handleDisconnect)
+          /* eslint-enable no-use-before-define */
+        })
+      } catch (error) {
+        socket?.disconnect()
+        this._client = null
+        this._connectionMeta = null
+        throw error
+      }
+
+      this._attachSocketLifecycleListeners()
+      if (socket?.connected) {
+        this._onSocketConnect()
+      }
 
       // Set up event listeners
-      this._client.socket?.on('ops', ({ changes }) => {
+      socket?.on('ops', ({ changes }) => {
         console.log(`ops event`)
-        console.log(changes)
         this._stateManager.applyChanges(changes, { fromSocket: true })
       })
 
-      this._client.socket?.on('commit', ({ version }) => {
-        this._stateManager.setVersion(version)
+      socket?.on('commit', ({ version }) => {
+        if (version) {
+          this._stateManager.setVersion(version)
+        }
+
         // Inform UI about automatic commit
         rootBus.emit('checkpoint:done', { version, origin: 'auto' })
       })
 
       // 🔄  Presence / members / cursor updates
-      this._client.socket?.on('clients', this._handleClientsEvent.bind(this))
-      this._client.socket?.on('presence', this._handleClientsEvent.bind(this))
-      this._client.socket?.on('cursor', this._handleCursorEvent.bind(this))
+      socket?.on('clients', this._handleClientsEvent.bind(this))
+
+      // 🗜️  Bundle events – emitted by the dependency bundler service
+      socket?.on('bundle:done', this._handleBundleDoneEvent.bind(this))
+      socket?.on('bundle:error', this._handleBundleErrorEvent.bind(this))
 
       // Flush any operations that were queued while we were offline.
       if (this._pendingOps.length) {
         console.log(
           `[CollabService] Flushing ${this._pendingOps.length} offline operation batch(es)`
         )
-        this._pendingOps.forEach(({ tuples }) => {
-          this.socket.emit('ops', { changes: tuples, ts: Date.now() })
-        })
+        this._pendingOps.forEach(
+          ({ changes, granularChanges, orders, options: opOptions }) => {
+            const { message } = opOptions || {}
+            const ts = Date.now()
+            const payload = {
+              changes,
+              granularChanges,
+              orders,
+              ts
+            }
+            if (message) {
+              payload.message = message
+            }
+            this.socket.emit('ops', payload)
+          }
+        )
         this._pendingOps.length = 0
       }
 
-      this._connected = true
-      console.log('[CollabService] Connected to project:', projectId)
-    } catch (err) {
-      console.error('[CollabService] Connection failed:', err)
-      throw err
+      await this._client.ready
+
+      this._connectionMeta = {
+        projectId,
+        branch,
+        live: Boolean(pro)
+      }
+
+      return this.getConnectionInfo()
+    })()
+
+    try {
+      return await this._connectPromise
+    } finally {
+      this._connecting = false
+      this._connectPromise = null
     }
   }
 
-  disconnect () {
+  disconnect() {
     if (this._client?.socket) {
-      this._client.socket.disconnect()
+      if (this._pendingConnectReject) {
+        this._pendingConnectReject(
+          new Error('[CollabService] Connection attempt aborted')
+        )
+        this._pendingConnectReject = null
+      }
+      this._detachSocketLifecycleListeners()
+      if (typeof this._client.dispose === 'function') {
+        this._client.dispose()
+      } else {
+        this._client.socket.disconnect()
+      }
     }
     this._client = null
     this._connected = false
+    this._connecting = false
+    this._connectionMeta = null
+    this._pendingConnectReject = null
     console.log('[CollabService] Disconnected')
   }
 
-  isConnected () {
-    return this._connected && this._client?.socket?.connected
+  isConnected() {
+    return Boolean(this._connected && this._client?.socket?.connected)
+  }
+
+  getConnectionInfo() {
+    return {
+      connected: this.isConnected(),
+      connecting: this._connecting,
+      projectId: this._connectionMeta?.projectId ?? null,
+      branch: this._connectionMeta?.branch ?? null,
+      live: this._connectionMeta?.live ?? null,
+      pendingOps: this._pendingOps.length,
+      undoStackSize: this.getUndoStackSize(),
+      redoStackSize: this.getRedoStackSize()
+    }
   }
 
   /* convenient shortcuts */
-  get ydoc () {
+  get ydoc() {
     return this._client?.ydoc
   }
-  get socket () {
+  get socket() {
     return this._client?.socket
   }
 
-  toggleLive (f) {
+  toggleLive(f) {
     this._client?.toggleLive(f)
   }
-  sendCursor (d) {
+  sendCursor(d) {
     this._client?.sendCursor(d)
   }
-  sendPresence (d) {
+  sendPresence(d) {
     this._client?.sendPresence(d)
   }
 
   /* ---------- data helpers ---------- */
-  updateData (tuples, options = {}) {
+  updateData(tuples, options = {}) {
     // Always ensure we have a state manager so local changes are applied.
     this._ensureStateManager()
 
@@ -193,27 +428,73 @@ export class CollabService extends BaseService {
       this._trackForUndo(tuples, options)
     }
 
+    // Preprocess into granular changes and derive orders
+    const root = this._stateManager?.root
+    const { granularChanges: processedTuples, orders } = preprocessChanges(
+      root,
+      tuples,
+      options
+    )
+
+    // Include any additional changes passed via opts
+    if (options.append && options.append.length) {
+      processedTuples.push(...options.append)
+    }
+
     // Apply changes to local state tree immediately.
     this._stateManager.applyChanges(tuples, { ...options })
+
+    // Use a dedicated helper that correctly handles nested array structures
+    // such as granular tuples while also avoiding DOM / state metadata keys.
+    const stringifiedGranularTuples =
+      stringifyFunctionsForTransport(processedTuples)
+
+    const stringifiedTuples = stringifyFunctionsForTransport(tuples)
+
+    const { message } = options
 
     // If not connected yet, queue the operations for later synchronisation.
     if (!this.isConnected()) {
       console.warn('[CollabService] Not connected, queuing real-time update')
-      this._pendingOps.push({ tuples, options })
+      this._pendingOps.push({
+        changes: stringifiedTuples,
+        granularChanges: stringifiedGranularTuples,
+        orders,
+        options
+      })
       return
     }
 
     // When connected, send the operations to the backend.
     if (this.socket?.connected) {
-      this.socket.emit('ops', { changes: tuples, ts: Date.now() })
+      const ts = Date.now()
+      // console.log('[CollabService] Sending operations to the backend', {
+      //   changes: stringifiedTuples,
+      //   granularChanges: stringifiedGranularTuples,
+      //   orders,
+      //   ts,
+      //   message
+      // })
+      const payload = {
+        changes: stringifiedTuples,
+        granularChanges: stringifiedGranularTuples,
+        orders,
+        ts
+      }
+
+      if (message) {
+        payload.message = message
+      }
+
+      this.socket.emit('ops', payload)
     }
 
     return { success: true }
   }
 
-  _trackForUndo (tuples, options) {
+  _trackForUndo(tuples, options) {
     // Get current state before changes for undo
-    const undoOperations = tuples.map(tuple => {
+    const undoOperations = tuples.map((tuple) => {
       const [action, path] = tuple
       const currentValue = this._getValueAtPath(path)
 
@@ -244,7 +525,7 @@ export class CollabService extends BaseService {
     }
   }
 
-  _getValueAtPath (path) {
+  _getValueAtPath(path) {
     // Get value from root state at given path
     const state = this._stateManager?.root
     if (!state || !state.getByPath) {
@@ -259,8 +540,14 @@ export class CollabService extends BaseService {
     }
   }
 
-  undo () {
+  undo() {
     if (!this._undoStack.length) {
+      const state = this._stateManager?.root
+      const el = state.__element
+      el.call('openNotification', {
+        type: 'error',
+        title: 'Nothing to undo'
+      })
       throw new Error('Nothing to undo')
     }
 
@@ -295,8 +582,14 @@ export class CollabService extends BaseService {
     return operations
   }
 
-  redo () {
+  redo() {
     if (!this._redoStack.length) {
+      const state = this._stateManager?.root
+      const el = state.__element
+      el.call('openNotification', {
+        type: 'error',
+        title: 'Nothing to redo'
+      })
       throw new Error('Nothing to redo')
     }
 
@@ -332,74 +625,133 @@ export class CollabService extends BaseService {
   }
 
   /* ---------- Undo/Redo State ---------- */
-  canUndo () {
+  canUndo() {
     return this._undoStack.length > 0
   }
 
-  canRedo () {
+  canRedo() {
     return this._redoStack.length > 0
   }
 
-  getUndoStackSize () {
+  getUndoStackSize() {
     return this._undoStack.length
   }
 
-  getRedoStackSize () {
+  getRedoStackSize() {
     return this._redoStack.length
   }
 
-  clearUndoHistory () {
+  clearUndoHistory() {
     this._undoStack.length = 0
     this._redoStack.length = 0
   }
 
-  addItem (type, data, opts = {}) {
-    const { value, ...schema } = data
-    const tuples = [
-      ['update', [type, data.key], value],
-      ['update', ['schema', type, data.key], schema],
-      ...(opts.additionalChanges || [])
-    ]
-    return this.updateData(tuples, opts)
+  addItem(type, data, opts = {}) {
+    try {
+      validateParams.type(type)
+      validateParams.data(data, type)
+
+      const { value, ...schema } = data
+
+      // Base tuple for the actual value update
+      const tuples = [
+        ['update', [type, data.key], value],
+        ['update', ['schema', type, data.key], schema || {}]
+      ]
+
+      // Prevent components:changed event emission when updateData is invoked via addItem
+      const updatedOpts = { ...opts, skipComponentsChangedEvent: true }
+
+      return this.updateData(tuples, updatedOpts)
+    } catch (error) {
+      throw new Error(`Failed to add item: ${error.message}`, { cause: error })
+    }
   }
 
-  addMultipleItems (items, opts = {}) {
+  addMultipleItems(items, opts = {}) {
     const tuples = []
-    items.forEach(([type, data]) => {
+
+    try {
+      items.forEach(([type, data]) => {
+        validateParams.type(type)
+        validateParams.data(data, type)
+
+        const { value, ...schema } = data
+
+        tuples.push(
+          ['update', [type, data.key], value],
+          ['update', ['schema', type, data.key], schema]
+        )
+      })
+
+      this.updateData([...tuples, ...(opts.append || [])], {
+        message: `Created ${tuples.length} items`,
+        ...opts
+      })
+      return tuples
+    } catch (error) {
+      const state = this._stateManager?.root
+      const el = state.__element
+      el.call('openNotification', {
+        type: 'error',
+        title: 'Failed to add item',
+        message: error.message
+      })
+      throw new Error(`Failed to add item: ${error.message}`, { cause: error })
+    }
+  }
+
+  updateItem(type, data, opts = {}) {
+    try {
+      validateParams.type(type)
+      validateParams.data(data, type)
+
       const { value, ...schema } = data
-      tuples.push(
+      const tuples = [
         ['update', [type, data.key], value],
         ['update', ['schema', type, data.key], schema]
-      )
-    })
-
-    this.updateData([...tuples, ...(opts.additionalChanges || [])], {
-      message: `Created ${tuples.length} items`,
-      ...opts
-    })
-
-    return tuples
+      ]
+      return this.updateData(tuples, opts)
+    } catch (error) {
+      const state = this._stateManager?.root
+      const el = state.__element
+      el.call('openNotification', {
+        type: 'error',
+        title: 'Failed to update item',
+        message: error.message
+      })
+      throw new Error(`Failed to update item: ${error.message}`, {
+        cause: error
+      })
+    }
   }
 
-  updateItem (type, data, opts = {}) {
-    const { value, ...schema } = data
-    const tuples = [
-      ['update', [type, data.key], value],
-      ['update', ['schema', type, data.key], schema]
-    ]
-    return this.updateData(tuples, opts)
-  }
+  deleteItem(type, key, opts = {}) {
+    try {
+      validateParams.type(type)
+      validateParams.key(key, type)
 
-  deleteItem (type, key, opts = {}) {
-    const tuples = [
-      ['delete', [type, key]],
-      ['delete', ['schema', type, key]],
-      ...(opts.additionalChanges || [])
-    ]
-    return this.updateData(tuples, {
-      message: `Deleted ${key} from ${type}`,
-      ...opts
-    })
+      const tuples = [
+        ['delete', [type, key]],
+        ['delete', ['schema', type, key]],
+        ...(opts.append || [])
+      ]
+      return this.updateData(tuples, {
+        message: `Deleted ${key} from ${type}`,
+        ...opts
+      })
+    } catch (error) {
+      const state = this._stateManager?.root
+      const el = state.__element
+      el.call('openNotification', {
+        type: 'error',
+        title: 'Failed to delete item',
+        message: error.message
+      })
+      throw new Error(`Failed to delete item: ${error.message}`, {
+        cause: error
+      })
+    }
   }
 
   /* ---------- socket event helpers ---------- */
@@ -409,71 +761,128 @@ export class CollabService extends BaseService {
    * the root state, mimicking the legacy SocketService behaviour so that
    * existing UI components keep working unmodified.
    */
-  _handleClientsEvent (data = {}) {
+  _handleClientsEvent(data = {}) {
     const root = this._stateManager?.root
     if (root && typeof root.replace === 'function') {
-      root.replace(
-        { clients: data },
-        {
-          fromSocket: true,
-          preventUpdate: true
-        }
-      )
+      root.clients = data
     }
+    rootBus.emit('clients:updated', data)
   }
 
-  /**
-   * Handle granular cursor updates coming from the socket.
-   * Expected payload: { userId, positions?, chosenPos?, ... }
-   * Only the provided fields are patched into the state tree.
-   */
-  _handleCursorEvent (payload = {}) {
-    const { userId, positions, chosenPos, ...rest } = payload || {}
-    if (!userId) {
-      return
+  /* ---------- Dependency bundling events ---------- */
+  _handleBundleDoneEvent({
+    project,
+    ticket,
+    dependencies = {},
+    schema = {}
+  } = {}) {
+    console.info('[CollabService] Bundle done', { project, ticket })
+
+    // Update local state with latest dependency information
+    try {
+      this._ensureStateManager()
+
+      const { dependencies: schemaDependencies = {} } = schema || {}
+
+      const tuples = [
+        ['update', ['dependencies'], dependencies],
+        ['update', ['schema', 'dependencies'], schemaDependencies]
+      ]
+
+      this._stateManager.applyChanges(tuples, {
+        fromSocket: true,
+        preventFetchDeps: true,
+        preventUpdate: ['Iframe']
+      })
+    } catch (err) {
+      console.error('[CollabService] Failed to update deps after bundle', err)
     }
 
-    const tuples = []
+    // Notify UI via rootBus and toast/notification helper if available
+    const root = this._stateManager?.root
+    const el = root?.__element
 
-    if (positions) {
-      tuples.push([
-        'update',
-        ['canvas', 'clients', userId, 'positions'],
-        positions
-      ])
+    if (el?.call) {
+      el.call('openNotification', {
+        type: 'success',
+        title: 'Dependencies ready',
+        message: `Project ${project} dependencies have been bundled successfully.`
+      })
     }
 
-    if (chosenPos) {
-      tuples.push([
-        'update',
-        ['canvas', 'clients', userId, 'chosenPos'],
-        chosenPos
-      ])
+    rootBus.emit('bundle:done', { project, ticket })
+  }
+
+  _handleBundleErrorEvent({ project, ticket, error } = {}) {
+    console.error('[CollabService] Bundle error', { project, ticket, error })
+
+    const root = this._stateManager?.root
+    const el = root?.__element
+
+    if (el?.call) {
+      el.call('openNotification', {
+        type: 'error',
+        title: 'Dependency bundle failed',
+        message:
+          error ||
+          `An error occurred while bundling dependencies for project ${project}.`
+      })
     }
 
-    // merge any additional cursor–related fields directly under the user node
-    if (Object.keys(rest).length) {
-      tuples.push(['update', ['canvas', 'clients', userId], rest])
-    }
-
-    if (tuples.length) {
-      this._stateManager.applyChanges(tuples, { fromSocket: true })
-    }
+    rootBus.emit('bundle:error', { project, ticket, error })
   }
 
   /* ---------- Manual checkpoint ---------- */
+  _attachSocketLifecycleListeners() {
+    const socket = this._client?.socket
+    if (!socket) {
+      return
+    }
+
+    socket.on('connect', this._onSocketConnect)
+    socket.on('disconnect', this._onSocketDisconnect)
+    socket.on('connect_error', this._onSocketError)
+  }
+
+  _detachSocketLifecycleListeners() {
+    const socket = this._client?.socket
+    if (!socket) {
+      return
+    }
+
+    socket.off('connect', this._onSocketConnect)
+    socket.off('disconnect', this._onSocketDisconnect)
+    socket.off('connect_error', this._onSocketError)
+  }
+
+  _onSocketConnect() {
+    this._connected = true
+  }
+
+  _onSocketDisconnect(reason) {
+    this._connected = false
+
+    if (reason && reason !== 'io client disconnect') {
+      console.warn('[CollabService] Socket disconnected', reason)
+    }
+  }
+
+  _onSocketError(error) {
+    console.warn('[CollabService] Socket connection error', error)
+  }
+
   /**
    * Manually request a checkpoint / commit of buffered operations on the server.
    * Resolves with the new version number once the backend confirms via the
    * regular "commit" event.
    */
-  checkpoint () {
+  checkpoint() {
     if (!this.isConnected()) {
       console.warn('[CollabService] Not connected, cannot request checkpoint')
       return Promise.reject(new Error('Not connected'))
     }
 
-    return new Promise(resolve => {
+    return new Promise((resolve) => {
       const handler = ({ version }) => {
         // Ensure we clean up the listener after the first commit event.
         this.socket?.off('commit', handler)

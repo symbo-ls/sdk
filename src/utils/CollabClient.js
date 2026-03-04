@@ -1,7 +1,5 @@
 import { io } from 'socket.io-client'
 import * as Y from 'yjs'
-import { IndexeddbPersistence } from 'y-indexeddb'
-import Dexie from 'dexie'
 import { nanoid } from 'nanoid'
 import environment from '../config/environment.js'
 // import gzip from 'gzip-js' // reserved for future compression features
@@ -10,6 +8,8 @@ import environment from '../config/environment.js'
 import { diffJson, applyOpsToJson } from './jsonDiff.js'
 
 /* eslint-disable no-use-before-define, no-new, no-promise-executor-return */
+
+// Dexie and IndexeddbPersistence will be conditionally imported in browser environments
 
 export class CollabClient {
   /* public fields */
@@ -24,7 +24,7 @@ export class CollabClient {
   _buffer = []
   _flushTimer = null
   _clientId = nanoid()
-  _outboxStore = null // Dexie table
+  _outboxStore = createMemoryOutbox() // Dexie table fallback
   _readyResolve
   ready = new Promise(res => (this._readyResolve = res))
 
@@ -33,10 +33,35 @@ export class CollabClient {
 
     /* 1️⃣  create Yjs doc + offline persistence */
     this.ydoc = new Y.Doc()
-    new IndexeddbPersistence(`${projectId}:${branch}`, this.ydoc)
 
-    /* 2️⃣  init Dexie for outbox */
-    this._outboxStore = createDexieOutbox(`${projectId}:${branch}`)
+    // Only use IndexeddbPersistence in browser environments
+    const hasIndexedDB = typeof globalThis.indexedDB !== 'undefined'
+
+    if (typeof window === 'undefined' || !hasIndexedDB) {
+      // In Node.js (or when indexedDB is not available), skip persistence
+      console.log('[CollabClient] IndexedDB not available – skipping offline persistence')
+    } else {
+      // Dynamically import IndexeddbPersistence only when indexedDB exists
+      import('y-indexeddb')
+        .then(({ IndexeddbPersistence }) => {
+          new IndexeddbPersistence(`${projectId}:${branch}`, this.ydoc)
+        })
+        .catch(err => {
+          console.warn('[CollabClient] Failed to load IndexeddbPersistence:', err)
+        })
+    }
+
+    /* 2️⃣  init Dexie for outbox (browser only) */
+    if (typeof window !== 'undefined' && hasIndexedDB) {
+      // In browser environments, use Dexie
+      createDexieOutbox(`${projectId}:${branch}`)
+        .then(outboxStore => {
+          this._outboxStore = outboxStore
+        })
+        .catch(err => {
+          console.warn('[CollabClient] Failed to load Dexie:', err)
+        })
+    }
 
     /* 3️⃣  WebSocket transport */
     this.socket = io(environment.socketUrl, {
@@ -52,9 +77,9 @@ export class CollabClient {
       .on('snapshot', this._onSnapshot)
       .on('ops', this._onOps)
       .on('commit', this._onCommit)
-      .on('liveMode', flag => { this.live = flag })
+      .on('liveMode', this._onLiveMode)
       .on('connect', this._onConnect)
-      .on('error', e => console.warn('[collab] socket error', e))
+      .on('error', this._onError)
 
     /* Track last known JSON representation so we can compute granular diffs. */
     this._prevJson = this.ydoc.getMap('root').toJSON()
@@ -84,8 +109,12 @@ export class CollabClient {
 
   /* ---------- private handlers ---------- */
   _onSnapshot = ({ data /* Uint8Array */ }) => {
-    // first paint; trust server compressed payload (≤256 kB)
-    Y.applyUpdate(this.ydoc, Uint8Array.from(data))
+    if (Array.isArray(data) ? data.length : (data && data.byteLength)) {
+      // First paint; trust server compressed payload (≤256 kB)
+      Y.applyUpdate(this.ydoc, Uint8Array.from(data))
+    } else {
+      console.warn('[collab] Received empty snapshot – skipping applyUpdate')
+    }
 
     // Store current state as baseline for future diffs.
     this._prevJson = this.ydoc.getMap('root').toJSON()
@@ -151,10 +180,68 @@ export class CollabClient {
     })
     this._buffer.length = 0
   }
+
+  dispose () {
+    clearTimeout(this._flushTimer)
+    this._flushTimer = null
+    this._buffer.length = 0
+
+    if (this._outboxStore?.clear) {
+      try {
+        const result = this._outboxStore.clear()
+        if (result && typeof result.catch === 'function') {
+          result.catch(() => {})
+        }
+      } catch (error) {
+        console.warn('[CollabClient] Failed to clear outbox store during dispose:', error)
+      }
+    }
+
+    if (this.socket) {
+      this.socket.off('snapshot', this._onSnapshot)
+      this.socket.off('ops', this._onOps)
+      this.socket.off('commit', this._onCommit)
+      this.socket.off('liveMode', this._onLiveMode)
+      this.socket.off('connect', this._onConnect)
+      this.socket.off('error', this._onError)
+      this.socket.removeAllListeners()
+      this.socket.disconnect()
+      this.socket = null
+    }
+
+    if (this.ydoc) {
+      this.ydoc.destroy()
+      this.ydoc = null
+    }
+
+    if (typeof this._readyResolve === 'function') {
+      this._readyResolve()
+      this._readyResolve = null
+    }
+  }
+
+  _onLiveMode = (flag) => {
+    this.live = flag
+  }
+
+  _onError = (e) => {
+    console.warn('[collab] socket error', e)
+  }
 }
 
-/* ---------- Dexie helper ---------- */
-function createDexieOutbox (name) {
+/* ---------- Memory storage helper for Node.js ---------- */
+function createMemoryOutbox () {
+  const store = new Map()
+  return {
+    put: (item) => store.set(item.id, item),
+    toArray: () => Array.from(store.values()),
+    clear: () => store.clear()
+  }
+}
+
+/* ---------- Dexie helper for browser ---------- */
+async function createDexieOutbox (name) {
+  const { default: Dexie } = await import('dexie')
   const db = new Dexie(`collab-${name}`)
   db.version(1).stores({ outbox: 'id, ops' })
   return db.table('outbox')

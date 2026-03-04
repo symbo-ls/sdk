@@ -1,220 +1,885 @@
-/* eslint-disable require-await */
 import { BaseService } from './BaseService.js'
 import {
-  PERMISSION_MAP,
   ROLE_PERMISSIONS,
   TIER_FEATURES,
   PROJECT_ROLE_PERMISSIONS
 } from '../utils/permission.js'
 
+const PLUGIN_SESSION_STORAGE_KEY = 'plugin_auth_session'
+
 export class AuthService extends BaseService {
-  constructor (config) {
+  constructor(config) {
     super(config)
     this._userRoles = new Set(['guest', 'editor', 'admin', 'owner'])
     this._projectTiers = new Set([
       'ready',
-      'free',
+      'starter',
       'pro1',
       'pro2',
       'enterprise'
     ])
-    this._initialized = false
+    this._projectRoleCache = new Map() // Cache for project roles
+    this._roleCacheExpiry = 5 * 60 * 1000 // 5 minutes cache expiry
+    this._pluginSession = null
+
+    this._resolvePluginSession(
+      config?.session ||
+        config?.pluginSession ||
+        config?.options?.pluginSession ||
+        config?.context?.pluginSession ||
+        null
+    )
   }
 
-  // eslint-disable-next-line no-empty-pattern
-  init ({}) {
-    try {
-      const { authToken, appKey } = this._context || {}
+  // Use BaseService.init/_request/_requireReady implementations
 
-      // Store masked configuration info
-      this._info = {
-        config: {
-          appKey: appKey
-            ? `${appKey.substr(0, 4)}...${appKey.substr(-4)}`
-            : undefined, // eslint-disable-line no-undefined
-          hasToken: Boolean(authToken)
+  // ==================== AUTH METHODS ====================
+
+  async register(userData, options = {}) {
+    try {
+      const { payload, session } = this._preparePluginPayload(
+        { ...(userData || {}) },
+        options.session
+      )
+
+      const response = await this._request('/auth/register', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+        methodName: 'register'
+      })
+      if (response.success) {
+        if (session) {
+          this._clearPluginSession(session)
+        }
+        return response.data
+      }
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Registration failed: ${error.message}`, { cause: error })
+    }
+  }
+
+  async login(email, password, options = {}) {
+    try {
+      const { payload, session } = this._preparePluginPayload(
+        {
+          email,
+          password
+        },
+        options.session
+      )
+
+      const response = await this._request('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+        methodName: 'login'
+      })
+
+      // Handle new response format: response.data.tokens
+      if (response.success && response.data && response.data.tokens) {
+        const { tokens } = response.data
+        const tokenData = {
+          access_token: tokens.accessToken,
+          refresh_token: tokens.refreshToken,
+          expires_in: tokens.accessTokenExp?.expiresIn,
+          token_type: 'Bearer'
+        }
+
+        // Set tokens in TokenManager (will handle persistence and refresh scheduling)
+        if (this._tokenManager) {
+          this._tokenManager.setTokens(tokenData)
         }
       }
 
-      this._initialized = true
-      this._setReady()
-    } catch (error) {
-      this._setError(error)
-      throw error
-    }
-  }
-
-  _requiresInit (methodName) {
-    const noInitMethods = new Set([
-      'users:login',
-      'users:register',
-      'users:request-password-reset',
-      'users:reset-password',
-      'users:reset-password-confirm',
-      'users:register-confirmation',
-      'users:google-auth',
-      'users:github-auth'
-    ])
-    return !noInitMethods.has(methodName)
-  }
-
-  _requireReady (methodName) {
-    if (this._requiresInit(methodName) && !this._initialized) {
-      throw new Error('Service not initialized')
-    }
-  }
-
-  _getBasedService (methodName) {
-    const based = this._context.services?.based
-    if (this._requiresInit(methodName) && !based) {
-      throw new Error('Based service not available')
-    }
-    return based._client
-  }
-
-  async login (identifier, password) {
-    try {
-      const based = this._getBasedService('login')
-      const response = await based.call('users:login', { identifier, password })
-
-      if (this._initialized) {
-        this.updateContext({ authToken: response.token })
+      if (response.success) {
+        if (session) {
+          this._clearPluginSession(session)
+        }
+        return response.data
       }
-      based.setAuthState({
-        token: response.token,
-        userId: response.userId,
-        projectRoles: response.projectRoles,
-        globalRole: response.globalRole,
-        persistent: true
-      })
-
-      return response
+      throw new Error(response.message)
     } catch (error) {
-      throw new Error(`Login failed: ${error.message}`)
+      throw new Error(`Login failed: ${error.message}`, { cause: error })
     }
   }
 
-  async register (userData) {
-    try {
-      const based = this._getBasedService('register')
-      return await based.call('users:register', userData)
-    } catch (error) {
-      throw new Error(`Registration failed: ${error.message}`)
-    }
-  }
-
-  async googleAuth (idToken) {
-    try {
-      const based = this._getBasedService('googleAuth')
-      const response = await based.call('users:google-auth', { idToken })
-
-      if (this._initialized) {
-        this.updateContext({ authToken: response.token })
-      }
-
-      based.setAuthState({
-        token: response.token,
-        userId: response.userId,
-        persistent: true
-      })
-
-      return response
-    } catch (error) {
-      throw new Error(`Google auth failed: ${error.message}`)
-    }
-  }
-
-  async googleAuthCallback (code, redirectUri) {
-    try {
-      const based = this._getBasedService('googleAuthCallback')
-      const response = await based.call('users:google-auth-callback', {
-        code,
-        redirectUri
-      })
-
-      if (this._initialized) {
-        this.updateContext({ authToken: response.token })
-      }
-
-      based.setAuthState({
-        token: response.token,
-        userId: response.userId,
-        persistent: true
-      })
-      return response
-    } catch (error) {
-      throw new Error(`Google auth callback failed: ${error.message}`)
-    }
-  }
-
-  async githubAuth (code) {
-    try {
-      const based = this._getBasedService('githubAuth')
-      const response = await based.call('users:github-auth', { code })
-
-      if (this._initialized) {
-        this.updateContext({ authToken: response.token })
-      }
-
-      based.setAuthState({
-        token: response.token,
-        userId: response.userId,
-        persistent: true
-      })
-
-      return response
-    } catch (error) {
-      throw new Error(`GitHub auth failed: ${error.message}`)
-    }
-  }
-
-  async logout () {
+  async logout() {
     this._requireReady('logout')
     try {
-      const based = this._getBasedService('logout')
-      await based.call('users:logout')
-      this.updateContext({ authToken: null })
+      // Call the logout API endpoint
+      await this._request('/auth/logout', {
+        method: 'POST',
+        methodName: 'logout'
+      })
+
+      // Clear tokens from TokenManager and context
+      if (this._tokenManager) {
+        this._tokenManager.clearTokens()
+      }
     } catch (error) {
-      throw new Error(`Logout failed: ${error.message}`)
+      // Even if the API call fails, clear local tokens
+      if (this._tokenManager) {
+        this._tokenManager.clearTokens()
+      }
+
+      throw new Error(`Logout failed: ${error.message}`, { cause: error })
     }
   }
 
-  async updateUserRole (userId, newRole) {
-    this._requireReady('updateUserRole')
+  async refreshToken(refreshToken) {
+    try {
+      const response = await this._request('/auth/refresh', {
+        method: 'POST',
+        body: JSON.stringify({ refreshToken }),
+        methodName: 'refreshToken'
+      })
+      if (response.success) {
+        return response.data
+      }
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Token refresh failed: ${error.message}`, { cause: error })
+    }
+  }
+
+  async googleAuth(idToken, inviteToken = null, options = {}) {
+    try {
+      const { payload, session } = this._preparePluginPayload({ idToken }, options.session)
+      if (inviteToken) {
+        payload.inviteToken = inviteToken
+      }
+
+      const response = await this._request('/auth/google', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+        methodName: 'googleAuth'
+      })
+
+      // Handle new response format: response.data.tokens
+      if (response.success && response.data && response.data.tokens) {
+        const { tokens } = response.data
+        const tokenData = {
+          access_token: tokens.accessToken,
+          refresh_token: tokens.refreshToken,
+          expires_in: tokens.accessTokenExp?.expiresIn,
+          token_type: 'Bearer'
+        }
+
+        // Set tokens in TokenManager
+        if (this._tokenManager) {
+          this._tokenManager.setTokens(tokenData)
+        }
+      }
+
+      if (response.success) {
+        if (session) {
+          this._clearPluginSession(session)
+        }
+        return response.data
+      }
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Google auth failed: ${error.message}`, { cause: error })
+    }
+  }
+
+  async githubAuth(code, inviteToken = null, options = {}) {
+    try {
+      const { payload, session } = this._preparePluginPayload({ code }, options.session)
+      if (inviteToken) {
+        payload.inviteToken = inviteToken
+      }
+
+      const response = await this._request('/auth/github', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+        methodName: 'githubAuth'
+      })
+
+      // Handle new response format: response.data.tokens
+      if (response.success && response.data && response.data.tokens) {
+        const { tokens } = response.data
+        const tokenData = {
+          access_token: tokens.accessToken,
+          refresh_token: tokens.refreshToken,
+          expires_in: tokens.accessTokenExp?.expiresIn,
+          token_type: 'Bearer'
+        }
+
+        // Set tokens in TokenManager
+        if (this._tokenManager) {
+          this._tokenManager.setTokens(tokenData)
+        }
+      }
+
+      if (response.success) {
+        if (session) {
+          this._clearPluginSession(session)
+        }
+        return response.data
+      }
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`GitHub auth failed: ${error.message}`, { cause: error })
+    }
+  }
+
+  async googleAuthCallback (code, redirectUri, inviteToken = null, options = {}) {
+    try {
+      const { payload: body, session } = this._preparePluginPayload(
+        { code, redirectUri },
+        options.session
+      )
+      if (inviteToken) {
+        body.inviteToken = inviteToken
+      }
+
+      const response = await this._request('/auth/google/callback', {
+        method: 'POST',
+        body: JSON.stringify(body),
+        methodName: 'googleAuthCallback'
+      })
+
+      // Handle new response format: response.data.tokens
+      if (response.success && response.data && response.data.tokens) {
+        const { tokens } = response.data
+        const tokenData = {
+          access_token: tokens.accessToken,
+          refresh_token: tokens.refreshToken,
+          expires_in: tokens.accessTokenExp?.expiresIn,
+          token_type: 'Bearer'
+        }
+
+        // Set tokens in TokenManager
+        if (this._tokenManager) {
+          this._tokenManager.setTokens(tokenData)
+        }
+      }
+
+      if (response.success) {
+        if (session) {
+          this._clearPluginSession(session)
+        }
+        return response.data
+      }
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Google auth callback failed: ${error.message}`, { cause: error })
+    }
+  }
+
+  async requestPasswordReset(email) {
+    try {
+      const response = await this._request('/auth/request-password-reset', {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+        methodName: 'requestPasswordReset'
+      })
+      if (response.success) {
+        return response.data
+      }
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Password reset request failed: ${error.message}`, { cause: error })
+    }
+  }
+
+  async confirmPasswordReset(token, password) {
+    try {
+      const response = await this._request('/auth/reset-password-confirm', {
+        method: 'POST',
+        body: JSON.stringify({ token, password }),
+        methodName: 'confirmPasswordReset'
+      })
+      if (response.success) {
+        return response.data
+      }
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Password reset confirmation failed: ${error.message}`, { cause: error })
+    }
+  }
+
+  async confirmRegistration(token) {
+    try {
+      const response = await this._request('/auth/register-confirmation', {
+        method: 'POST',
+        body: JSON.stringify({ token }),
+        methodName: 'confirmRegistration'
+      })
+      if (response.success) {
+        return response.data
+      }
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Registration confirmation failed: ${error.message}`, { cause: error })
+    }
+  }
+
+  async requestPasswordChange() {
+    this._requireReady('requestPasswordChange')
+    try {
+      const response = await this._request('/auth/request-password-change', {
+        method: 'POST',
+        methodName: 'requestPasswordChange'
+      })
+      if (response.success) {
+        return response.data
+      }
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Password change request failed: ${error.message}`, { cause: error })
+    }
+  }
+
+  async confirmPasswordChange(currentPassword, newPassword, code) {
+    this._requireReady('confirmPasswordChange')
+    try {
+      const response = await this._request('/auth/confirm-password-change', {
+        method: 'POST',
+        body: JSON.stringify({ currentPassword, newPassword, code }),
+        methodName: 'confirmPasswordChange'
+      })
+      if (response.success) {
+        return response.data
+      }
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Password change confirmation failed: ${error.message}`, { cause: error })
+    }
+  }
+
+  async getMe(options = {}) {
+    this._requireReady('getMe')
+    try {
+      const session = this._resolvePluginSession(options.session)
+      const endpoint = session
+        ? `/auth/me?session=${encodeURIComponent(session)}`
+        : '/auth/me'
+
+      const response = await this._request(endpoint, {
+        method: 'GET',
+        methodName: 'getMe'
+      })
+      if (response.success) {
+        return response.data
+      }
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Failed to get user profile: ${error.message}`, { cause: error })
+    }
+  }
+
+  getAuthToken() {
+    if (!this._tokenManager) {
+      return null
+    }
+    return this._tokenManager.getAccessToken()
+  }
+
+  /**
+   * Get stored authentication state (backward compatibility method)
+   * Replaces AuthService.getStoredAuthState()
+   */
+  async getStoredAuthState() {
+    try {
+      if (!this._tokenManager) {
+        return {
+          userId: false,
+          authToken: false
+        }
+      }
+
+      const tokenStatus = this._tokenManager.getTokenStatus()
+
+      if (!tokenStatus.hasTokens) {
+        return {
+          userId: false,
+          authToken: false
+        }
+      }
+
+      // If tokens exist but are invalid, try to refresh
+      if (!tokenStatus.isValid && tokenStatus.hasRefreshToken) {
+        try {
+          await this._tokenManager.ensureValidToken()
+        } catch (error) {
+          console.warn('[AuthService] Token refresh failed:', error.message)
+          // Only clear tokens if it's definitely an auth error, not a network error
+          if (
+            error.message.includes('401') ||
+            error.message.includes('403') ||
+            error.message.includes('invalid') ||
+            error.message.includes('expired')
+          ) {
+            this._tokenManager.clearTokens()
+            return {
+              userId: false,
+              authToken: false,
+              error: `Authentication failed: ${error.message}`
+            }
+          }
+          // For network errors, keep tokens and return what we have
+          return {
+            userId: false,
+            authToken: this._tokenManager.getAccessToken(),
+            error: `Network error during token refresh: ${error.message}`,
+            hasTokens: true
+          }
+        }
+      }
+
+      // Check if we have a valid token now
+      const currentAccessToken = this._tokenManager.getAccessToken()
+      if (!currentAccessToken) {
+        return {
+          userId: false,
+          authToken: false
+        }
+      }
+
+      // Get current user data if we have valid tokens
+      // Be more lenient with API failures - don't immediately clear tokens
+      try {
+        const currentUser = await this.getMe()
+
+        return {
+          userId: currentUser.user.id,
+          authToken: currentAccessToken,
+          ...currentUser,
+          error: null
+        }
+      } catch (error) {
+        console.warn('[AuthService] Failed to get user data:', error.message)
+
+        // Only clear tokens if it's an auth error (401, 403), not network errors
+        if (error.message.includes('401') || error.message.includes('403')) {
+          this._tokenManager.clearTokens()
+          return {
+            userId: false,
+            authToken: false,
+            error: `Authentication failed: ${error.message}`
+          }
+        }
+
+        // For other errors (network, 500, etc.), keep tokens but return minimal state
+        return {
+          userId: false,
+          authToken: currentAccessToken,
+          error: `Failed to get user data: ${error.message}`,
+          hasTokens: true
+        }
+      }
+    } catch (error) {
+      console.error(
+        '[AuthService] Unexpected error in getStoredAuthState:',
+        error
+      )
+      return {
+        userId: false,
+        authToken: false,
+        error: `Failed to get stored auth state: ${error.message}`
+      }
+    }
+  }
+
+  // ==================== USER METHODS ====================
+
+  async getUserProfile() {
+    this._requireReady('getUserProfile')
+    try {
+      const response = await this._request('/users/profile', {
+        method: 'GET',
+        methodName: 'getUserProfile'
+      })
+      if (response.success) {
+        return response.data
+      }
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Failed to get user profile: ${error.message}`, { cause: error })
+    }
+  }
+
+  async updateUserProfile(profileData) {
+    this._requireReady('updateUserProfile')
+    try {
+      const response = await this._request('/users/profile', {
+        method: 'PATCH',
+        body: JSON.stringify(profileData),
+        methodName: 'updateUserProfile'
+      })
+      if (response.success) {
+        return response.data
+      }
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Failed to update user profile: ${error.message}`, { cause: error })
+    }
+  }
+
+  async getUserProjects() {
+    this._requireReady('getUserProjects')
+    try {
+      const response = await this._request('/users/projects', {
+        method: 'GET',
+        methodName: 'getUserProjects'
+      })
+      if (response.success) {
+        return response.data.map((project) => ({
+          ...project,
+          ...(project.icon && {
+            icon: {
+              src: `${this._apiUrl}/core/files/public/${project.icon.id}/download`,
+              ...project.icon
+            }
+          })
+        }))
+      }
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Failed to get user projects: ${error.message}`, { cause: error })
+    }
+  }
+
+  async getUser(userId) {
+    this._requireReady('getUser')
     if (!userId) {
       throw new Error('User ID is required')
     }
-    if (!this._userRoles.has(newRole)) {
-      throw new Error(`Invalid role: ${newRole}`)
-    }
     try {
-      const based = this._getBasedService('updateUserRole')
-      return await based.call('users:update-role', { userId, role: newRole })
+      const response = await this._request(`/users/${userId}`, {
+        method: 'GET',
+        methodName: 'getUser'
+      })
+      if (response.success) {
+        return response.data
+      }
+      throw new Error(response.message)
     } catch (error) {
-      throw new Error(`Failed to update user role: ${error.message}`)
+      throw new Error(`Failed to get user: ${error.message}`, { cause: error })
     }
   }
 
-  async updateProjectTier (projectId, newTier) {
-    this._requireReady('updateProjectTier')
+  async getUserByEmail(email) {
+    this._requireReady('getUserByEmail')
+    if (!email) {
+      throw new Error('Email is required')
+    }
+    try {
+      const response = await this._request(`/auth/user?email=${email}`, {
+        method: 'GET',
+        methodName: 'getUserByEmail'
+      })
+      if (response.success) {
+        return response.data.user
+      }
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Failed to get user by email: ${error.message}`, { cause: error })
+    }
+  }
+
+  // ==================== PROJECT ROLE METHODS ====================
+
+  /**
+   * Get the current user's role for a specific project by project ID
+   * Uses caching to avoid repeated API calls
+   */
+  async getMyProjectRole(projectId) {
+    this._requireReady('getMyProjectRole')
     if (!projectId) {
       throw new Error('Project ID is required')
     }
-    if (!this._projectTiers.has(newTier)) {
-      throw new Error(`Invalid project tier: ${newTier}`)
+
+    // If there are no valid tokens, treat user as guest for public access
+    if (!this.hasValidTokens()) {
+      return 'guest'
     }
+
+    // Check cache first
+    const cacheKey = `role_${projectId}`
+    const cached = this._projectRoleCache.get(cacheKey)
+
+    if (cached && Date.now() - cached.timestamp < this._roleCacheExpiry) {
+      return cached.role
+    }
+
     try {
-      const based = this._getBasedService('updateProjectTier')
-      return await based.call('projects:update-tier', {
-        projectId,
-        tier: newTier
+      const response = await this._request(`/projects/${projectId}/role`, {
+        method: 'GET',
+        methodName: 'getMyProjectRole'
       })
+
+      if (response.success) {
+        const { role } = response.data
+        // Cache the result
+        this._projectRoleCache.set(cacheKey, {
+          role,
+          timestamp: Date.now()
+        })
+        return role
+      }
+      throw new Error(response.message)
     } catch (error) {
-      throw new Error(`Failed to update project tier: ${error.message}`)
+      const message = error?.message || ''
+      // If request failed due to missing/invalid auth, default to guest
+      if (/401|403|unauthorized|no token|invalid token/iu.test(message)) {
+        return 'guest'
+      }
+      throw new Error(`Failed to get project role: ${message}`, { cause: error })
     }
   }
 
-  hasPermission (requiredPermission) {
+  /**
+   * Get the current user's role for a specific project by project key
+   * Uses caching to avoid repeated API calls
+   */
+  async getMyProjectRoleByKey(projectKey) {
+    this._requireReady('getMyProjectRoleByKey')
+    if (!projectKey) {
+      throw new Error('Project key is required')
+    }
+
+    // If there are no valid tokens, treat user as guest for public access
+    if (!this.hasValidTokens()) {
+      return 'guest'
+    }
+
+    // Check cache first
+    const cacheKey = `role_key_${projectKey}`
+    const cached = this._projectRoleCache.get(cacheKey)
+
+    if (cached && Date.now() - cached.timestamp < this._roleCacheExpiry) {
+      return cached.role
+    }
+
+    try {
+      const response = await this._request(`/projects/key/${projectKey}/role`, {
+        method: 'GET',
+        methodName: 'getMyProjectRoleByKey'
+      })
+
+      if (response.success) {
+        const { role } = response.data
+        // Cache the result
+        this._projectRoleCache.set(cacheKey, {
+          role,
+          timestamp: Date.now()
+        })
+        return role
+      }
+      throw new Error(response.message)
+    } catch (error) {
+      const message = error?.message || ''
+      // If request failed due to missing/invalid auth, default to guest
+      if (/401|403|unauthorized|no token|invalid token/iu.test(message)) {
+        return 'guest'
+      }
+      throw new Error(`Failed to get project role by key: ${message}`, { cause: error })
+    }
+  }
+
+  /**
+   * Clear the project role cache for a specific project or all projects
+   */
+  clearProjectRoleCache(projectId = null) {
+    if (projectId) {
+      // Clear specific project cache
+      this._projectRoleCache.delete(`role_${projectId}`)
+      // Also clear by key if we have it cached
+      for (const [key] of this._projectRoleCache) {
+        if (key.startsWith('role_key_')) {
+          this._projectRoleCache.delete(key)
+        }
+      }
+    } else {
+      // Clear all cache
+      this._projectRoleCache.clear()
+    }
+  }
+
+  /**
+   * Get project role with fallback to user projects list
+   * This method tries to get the role from user projects first,
+   * then falls back to API call if not found
+   */
+  async getProjectRoleWithFallback(projectId, userProjects = null) {
+    this._requireReady('getProjectRoleWithFallback')
+    if (!projectId) {
+      throw new Error('Project ID is required')
+    }
+
+    // First try to find in user projects if provided
+    if (userProjects && Array.isArray(userProjects)) {
+      const userProject = userProjects.find(p => p.id === projectId)
+      if (userProject && userProject.role) {
+        return userProject.role
+      }
+    }
+
+    // Fallback to API call
+    return await this.getMyProjectRole(projectId)
+  }
+
+  /**
+   * Get project role with fallback to user projects list (by project key)
+   * This method tries to get the role from user projects first,
+   * then falls back to API call if not found
+   */
+  async getProjectRoleByKeyWithFallback(projectKey, userProjects = null) {
+    this._requireReady('getProjectRoleByKeyWithFallback')
+    if (!projectKey) {
+      throw new Error('Project key is required')
+    }
+
+    // First try to find in user projects if provided
+    if (userProjects && Array.isArray(userProjects)) {
+      const userProject = userProjects.find(p => p.key === projectKey)
+      if (userProject && userProject.role) {
+        return userProject.role
+      }
+    }
+
+    // Fallback to API call
+    return await this.getMyProjectRoleByKey(projectKey)
+  }
+
+  // ==================== AUTH HELPER METHODS ====================
+
+  /**
+   * Debug method to check token status
+   */
+  getTokenDebugInfo() {
+    if (!this._tokenManager) {
+      return {
+        tokenManagerExists: false,
+        error: 'TokenManager not initialized'
+      }
+    }
+
+    const tokenStatus = this._tokenManager.getTokenStatus()
+    const { tokens } = this._tokenManager
+
+    return {
+      tokenManagerExists: true,
+      tokenStatus,
+      hasAccessToken: Boolean(tokens.accessToken),
+      hasRefreshToken: Boolean(tokens.refreshToken),
+      accessTokenPreview: tokens.accessToken
+        ? `${tokens.accessToken.substring(0, 20)}...`
+        : null,
+      expiresAt: tokens.expiresAt,
+      timeToExpiry: tokenStatus.timeToExpiry,
+      authHeader: this._tokenManager.getAuthHeader()
+    }
+  }
+
+  /**
+   * Helper method to check if user is authenticated
+   */
+  isAuthenticated() {
+    if (!this._tokenManager) {
+      return false
+    }
+    return this._tokenManager.hasTokens()
+  }
+
+  /**
+   * Helper method to check if user has valid tokens
+   */
+  hasValidTokens() {
+    if (!this._tokenManager) {
+      return false
+    }
+    return (
+      this._tokenManager.hasTokens() && this._tokenManager.isAccessTokenValid()
+    )
+  }
+
+  /**
+   * Helper method to get current user info
+   */
+  async getCurrentUser() {
+    try {
+      return await this.getMe()
+    } catch (error) {
+      throw new Error(`Failed to get current user: ${error.message}`, { cause: error })
+    }
+  }
+
+  /**
+   * Helper method to validate user data for registration
+   */
+  validateRegistrationData(userData) {
+    const errors = []
+
+    if (!userData.email || typeof userData.email !== 'string') {
+      errors.push('Email is required and must be a string')
+    } else if (!this._isValidEmail(userData.email)) {
+      errors.push('Email must be a valid email address')
+    }
+
+    if (!userData.password || typeof userData.password !== 'string') {
+      errors.push('Password is required and must be a string')
+    } else if (userData.password.length < 8) {
+      errors.push('Password must be at least 8 characters long')
+    }
+
+    if (userData.username && typeof userData.username !== 'string') {
+      errors.push('Username must be a string')
+    } else if (userData.username && userData.username.length < 3) {
+      errors.push('Username must be at least 3 characters long')
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors
+    }
+  }
+
+  /**
+   * Helper method to register with validation
+   */
+  async registerWithValidation(userData, options = {}) {
+    const validation = this.validateRegistrationData(userData)
+    if (!validation.isValid) {
+      throw new Error(`Validation failed: ${validation.errors.join(', ')}`)
+    }
+
+    return await this.register(userData, options)
+  }
+
+  /**
+   * Helper method to login with validation
+   */
+  async loginWithValidation(email, password, options = {}) {
+    if (!email || typeof email !== 'string') {
+      throw new Error('Email is required and must be a string')
+    }
+
+    if (!password || typeof password !== 'string') {
+      throw new Error('Password is required and must be a string')
+    }
+
+    if (!this._isValidEmail(email)) {
+      throw new Error('Email must be a valid email address')
+    }
+
+    return await this.login(email, password, options)
+  }
+
+  /**
+   * Private helper to validate email format
+   */
+  _isValidEmail(email) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u
+    return emailRegex.test(email)
+  }
+
+  // ==================== PERMISSION METHODS (Existing) ====================
+
+  hasPermission(requiredPermission) {
     const authState = this._context?.state
     if (!authState) {
       return false
@@ -230,21 +895,21 @@ export class AuthService extends BaseService {
     )
   }
 
-  hasGlobalPermission (globalRole, requiredPermission) {
+  hasGlobalPermission(globalRole, requiredPermission) {
     return ROLE_PERMISSIONS[globalRole]?.includes(requiredPermission) || false
   }
 
-  checkProjectPermission (projectRole, requiredPermission) {
+  checkProjectPermission(projectRole, requiredPermission) {
     return (
       PROJECT_ROLE_PERMISSIONS[projectRole]?.includes(requiredPermission) ||
       false
     )
   }
 
-  checkProjectFeature (projectTier, feature) {
+  checkProjectFeature(projectTier, feature) {
     if (feature.startsWith('aiCopilot') || feature.startsWith('aiChatbot')) {
       const [featureBase] = feature.split(':')
-      const tierFeature = TIER_FEATURES[projectTier]?.find(f =>
+      const tierFeature = TIER_FEATURES[projectTier]?.find((f) =>
         f.startsWith(featureBase)
       )
       if (!tierFeature) {
@@ -258,7 +923,7 @@ export class AuthService extends BaseService {
   }
 
   // Operation checking
-  async canPerformOperation (projectId, operation, options = {}) {
+  async canPerformOperation(projectId, operation, options = {}) {
     this._requireReady()
     if (!projectId) {
       throw new Error('Project ID is required')
@@ -270,17 +935,14 @@ export class AuthService extends BaseService {
     if (!operationConfig) {
       return false
     }
-    if (!operationConfig) {
-      return false
-    }
 
     const { permissions = [], features = [] } = operationConfig
 
     try {
       // Check permissions
       const permissionResults = await Promise.all(
-        permissions.map(permission =>
-          this.hasProjectPermission(projectId, permission)
+        permissions.map((permission) =>
+          this.checkProjectPermission(projectId, permission)
         )
       )
 
@@ -291,13 +953,10 @@ export class AuthService extends BaseService {
       if (!hasPermissions) {
         return false
       }
-      if (!hasPermissions) {
-        return false
-      }
 
       // Check features if required
       if (checkFeatures && features.length > 0) {
-        const featureResults = features.map(feature => {
+        const featureResults = features.map((feature) => {
           const result = this.hasProjectFeature(projectId, feature)
           return feature.includes(':')
             ? typeof result === 'number' && result > 0
@@ -311,9 +970,6 @@ export class AuthService extends BaseService {
         if (!hasFeatures) {
           return false
         }
-        if (!hasFeatures) {
-          return false
-        }
       }
 
       return true
@@ -324,7 +980,7 @@ export class AuthService extends BaseService {
   }
 
   // Higher-level permission methods
-  async withPermission (projectId, operation, action) {
+  async withPermission(projectId, operation, action) {
     this._requireReady()
     if (!projectId) {
       throw new Error('Project ID is required')
@@ -340,225 +996,115 @@ export class AuthService extends BaseService {
     return action()
   }
 
-  // Project access information
-  async getProjectAccess (projectId) {
-    this._requireReady()
-    if (!projectId) {
-      throw new Error('Project ID is required')
+  // Cleanup
+  destroy() {
+    if (this._tokenManager) {
+      this._tokenManager.destroy()
+      this._tokenManager = null
+    }
+    // Clear project role cache
+    this._projectRoleCache.clear()
+    this._setReady(false)
+  }
+
+  _preparePluginPayload(payload, sessionOverride = null) {
+    const target =
+      payload && typeof payload === 'object'
+        ? { ...payload }
+        : {}
+
+    const session = this._resolvePluginSession(sessionOverride)
+
+    if (session && !Object.hasOwn(target, 'session')) {
+      target.session = session
+      return { payload: target, session }
     }
 
-    const operations = Object.keys(PERMISSION_MAP)
+    return { payload: target, session: null }
+  }
 
-    const access = await Promise.all(
-      operations.map(async operation => {
-        const allowed = await this.canPerformOperation(projectId, operation)
-        const config = PERMISSION_MAP[operation]
+  _resolvePluginSession(sessionOverride = null) {
+    if (sessionOverride) {
+      return this._cachePluginSession(sessionOverride)
+    }
 
-        return {
-          operation,
-          allowed,
-          permissions: config.permissions,
-          features: config.features,
-          aiTokens: operation.startsWith('ai')
-            ? this._getAITokens(projectId, operation.replace('ai', ''))
-            : null
+    if (this._pluginSession) {
+      return this._pluginSession
+    }
+
+    const optionSession = this._options?.pluginSession
+    if (optionSession) {
+      return this._cachePluginSession(optionSession)
+    }
+
+    const contextSession = this._context?.pluginSession
+    if (contextSession) {
+      return this._cachePluginSession(contextSession)
+    }
+
+    if (typeof window !== 'undefined') {
+      try {
+        const sessionFromUrl = new URL(window.location.href).searchParams.get('session')
+        if (sessionFromUrl) {
+          return this._cachePluginSession(sessionFromUrl)
         }
-      })
-    )
+      } catch {
+        // Ignore URL parsing errors
+      }
 
-    return {
-      projectId,
-      permissions: access.reduce(
-        (acc, { operation, ...details }) => ({
-          ...acc,
-          [operation]: details
-        }),
-        {}
-      ),
-      timestamp: new Date().toISOString()
-    }
-  }
-
-  // AI token management
-  _getAITokens (projectId, featureType) {
-    const tokenFeatures = [
-      `ai${featureType}:3`,
-      `ai${featureType}:5`,
-      `ai${featureType}:15`
-    ]
-
-    return tokenFeatures.reduce((total, feature) => {
-      const tokens = this.hasProjectFeature(projectId, feature)
-      return total + (typeof tokens === 'number' ? tokens : 0)
-    }, 0)
-  }
-
-  async getProjectMembers (projectId) {
-    this._requireReady('getProjectMembers')
-    if (!projectId) {
-      throw new Error('Project ID is required')
-    }
-    try {
-      const based = this._getBasedService('getProjectMembers')
-      return await based.call('projects:get-members', { projectId })
-    } catch (error) {
-      if (error.message?.includes('Authentication failed. Please try again'))
-        window.location.reload()
-      throw new Error(`Failed to get project members: ${error.message}`)
-    }
-  }
-
-  async inviteMember (projectId, email, role, name, callbackUrl) {
-    this._requireReady('inviteMember')
-    if (!projectId) {
-      throw new Error('Project ID is required')
-    }
-    if (!email) {
-      throw new Error('Email is required')
-    }
-    if (!callbackUrl || Object.keys(callbackUrl).length === 0) {
-      throw new Error('Callback Url is required')
-    }
-    if (!role || !this._userRoles.has(role)) {
-      throw new Error(`Invalid role: ${role}`)
-    }
-    try {
-      const based = this._getBasedService('inviteMember')
-      return await based.call('projects:invite-member', {
-        projectId,
-        email,
-        role,
-        name,
-        callbackUrl
-      })
-    } catch (error) {
-      throw new Error(`Failed to invite member: ${error.message}`)
-    }
-  }
-
-  async acceptInvite (token) {
-    this._requireReady('acceptInvite')
-    try {
-      const based = this._getBasedService('acceptInvite')
-      return await based.call('projects:accept-invite', { token })
-    } catch (error) {
-      throw new Error(`Failed to accept invite: ${error.message}`)
-    }
-  }
-
-  async updateMemberRole (projectId, userId, role) {
-    this._requireReady('updateMemberRole')
-    if (!projectId) {
-      throw new Error('Project ID is required')
-    }
-    if (!userId) {
-      throw new Error('User ID is required')
-    }
-    if (!this._userRoles.has(role)) {
-      throw new Error(`Invalid role: ${role}`)
-    }
-    try {
-      const based = this._getBasedService('updateMemberRole')
-      return await based.call('projects:update-member-role', {
-        projectId,
-        userId,
-        role
-      })
-    } catch (error) {
-      throw new Error(`Failed to update member role: ${error.message}`)
-    }
-  }
-
-  async removeMember (projectId, userId) {
-    this._requireReady('removeMember')
-    if (!projectId || !userId) {
-      throw new Error('Project ID and user ID are required')
-    }
-    try {
-      const based = this._getBasedService('removeMember')
-      return await based.call('projects:remove-member', { projectId, userId })
-    } catch (error) {
-      throw new Error(`Failed to remove member: ${error.message}`)
-    }
-  }
-
-  async confirmRegistration (token) {
-    try {
-      const based = this._getBasedService('confirmRegistration')
-      return await based.call('users:register-confirmation', { token })
-    } catch (error) {
-      throw new Error(`Registration confirmation failed: ${error.message}`)
-    }
-  }
-
-  async requestPasswordReset (email, callbackUrl) {
-    try {
-      const based = this._getBasedService('requestPasswordReset')
-      return await based.call('users:reset-password', { email, callbackUrl })
-    } catch (error) {
-      throw new Error(`Password reset request failed: ${error.message}`)
-    }
-  }
-
-  async confirmPasswordReset (token, newPassword) {
-    try {
-      const based = this._getBasedService('confirmPasswordReset')
-      return await based.call('users:reset-password-confirm', {
-        token,
-        newPassword
-      })
-    } catch (error) {
-      throw new Error(`Password reset confirmation failed: ${error.message}`)
-    }
-  }
-
-  async getStoredAuthState () {
-    try {
-      const based = this._getBasedService('getStoredAuthState')
-      const { authState } = based
-
-      if (authState?.token) {
-        return {
-          userId: authState.userId,
-          authToken: authState.token,
-          projectRoles: authState.projectRoles,
-          globalRole: authState.globalRole,
-          error: null
+      try {
+        if (window.localStorage) {
+          const stored = window.localStorage.getItem(PLUGIN_SESSION_STORAGE_KEY)
+          if (stored) {
+            this._pluginSession = stored
+            return stored
+          }
         }
-      }
-
-      return {
-        userId: false,
-        authToken: false
-      }
-    } catch (error) {
-      this._setError(error)
-      return {
-        userId: false,
-        authToken: false,
-        error: `Failed to get stored auth state: ${error.message}`
+      } catch {
+        // Ignore storage access issues
       }
     }
+
+    return null
   }
 
-  async subscribeToAuthChanges (callback) {
-    const based = this._getBasedService('subscribeToAuthChanges')
-    based.on('authstate-change', async authState => {
-      const formattedState = authState?.token
-        ? {
-            userId: authState.userId,
-            authToken: authState.token,
-            projectRoles: authState.projectRoles,
-            globalRole: authState.globalRole,
-            error: null
-          }
-        : {
-            userId: false,
-            authToken: false
-          }
-      await callback(formattedState)
-    })
+  _cachePluginSession(session) {
+    if (!session) {
+      return null
+    }
 
-    return () => based.off('authstate-change')
+    this._pluginSession = session
+
+    if (typeof window !== 'undefined') {
+      try {
+        if (window.localStorage) {
+          window.localStorage.setItem(PLUGIN_SESSION_STORAGE_KEY, session)
+        }
+      } catch {
+        // Ignore storage access issues
+      }
+    }
+
+    return session
+  }
+
+  setPluginSession(session) {
+    this._cachePluginSession(session)
+  }
+
+  _clearPluginSession(session = null) {
+    if (!session || this._pluginSession === session) {
+      this._pluginSession = null
+    }
+
+    if (typeof window !== 'undefined') {
+      try {
+        if (window.localStorage) {
+          window.localStorage.removeItem(PLUGIN_SESSION_STORAGE_KEY)
+        }
+      } catch {
+        // Ignore storage access issues
+      }
+    }
   }
 }

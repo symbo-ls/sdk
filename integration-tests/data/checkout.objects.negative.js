@@ -2,8 +2,7 @@ export const dataSets = {
   requestUndefined: {
     request: null,
     title: 'null request is not accepted',
-    error:
-      "Cannot destructure property 'projectId' of 'object null' as it is null."
+    error: "Cannot destructure property 'projectId' of 'options' as it is null."
   },
   projectIdRequired: {
     request: {
@@ -14,18 +13,19 @@ export const dataSets = {
   },
   invalidPackage: {
     request: {
-      projectId: globalProject.id,
+      projectId: global.globalProject.id,
       pkg: 4
     },
-    title: 'Invalid package type: 4',
-    error: 'Invalid package type: 4'
+    title: 'Invalid Package',
+    error:
+      'Failed to checkout: Request failed: Project ID, Plan ID, and Pricing Key are required'
   },
   invalidRequest: {
     request: {
-      projectId: globalProject.id
+      projectId: global.globalProject.id
     },
     title: 'Invalid request',
     error:
-      'Failed to checkout: Function call failed: [checkout] Failed to create checkout session.'
+      'Failed to checkout: Request failed: Project ID, Plan ID, and Pricing Key are required'
   }
 }

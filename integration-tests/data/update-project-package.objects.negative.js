@@ -4,13 +4,13 @@ export const dataSets = {
     package: 1,
     title: 'empty string for project ID',
     error:
-      'Failed to update project package: Function call failed: [projects:update] Authorize rejected access.'
+      'Project ID is required'
   },
   invalidPackage: {
     projectId: globalProject.id,
     package: 7,
     title: 'invalid package value',
     error:
-      'Failed to update project package: Function call failed: [projects:update] Invalid package value. Must be an integer between 0 and 6.'
+      'Failed to update project package: Request failed: Package must be one of: 0, 1, 2, 3, 4, 5, 6'
   }
 }

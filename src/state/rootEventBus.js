@@ -5,11 +5,27 @@ const getGlobalBus = () => {
     return globalThis.__SMBLS_ROOT_BUS__
   }
 
+  // Stores arrays of handlers for each event
   const events = {}
+
+  // Stores the last payload emitted for each event so that late subscribers
+  // can receive the most recent value immediately.
+  const lastPayloads = {}
 
   const bus = {
     on (event, handler) {
       (events[event] ||= []).push(handler)
+
+      // If we already have a payload for this event (it was emitted before the
+      // listener subscribed), deliver it immediately so late subscribers do
+      // not miss any state.
+      if (Object.hasOwn(lastPayloads, event)) {
+        try {
+          handler(lastPayloads[event])
+        } catch (err) {
+          console.error('[rootBus] handler error for (replay)', event, err)
+        }
+      }
     },
 
     off (event, handler) {
@@ -20,6 +36,9 @@ const getGlobalBus = () => {
     },
 
     emit (event, payload) {
+      // Remember the last payload for future late subscribers.
+      lastPayloads[event] = payload
+
       const list = events[event]
       if (!list || !list.length) {return}
       // copy to avoid mutation during iteration

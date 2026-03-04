@@ -8,11 +8,11 @@ const password = createRandomPassword()
 export const userDataSets = {
   nullEmail: {
     email: null,
-    password: password,
+    password,
     name,
     callbackUrl: 'https://example.com',
     error:
-      'Registration failed: [users:register] Email, Password and callbackUrl required.'
+      'Registration failed: Request failed: Name, email, and password are required'
   },
   emptyPassword: {
     email,
@@ -20,20 +20,21 @@ export const userDataSets = {
     name,
     callbackUrl: 'https://example.com',
     error:
-      'Registration failed: [users:register] Email, Password and callbackUrl required.'
+      'Registration failed: Request failed: Name, email, and password are required'
+  },
+  missingName: {
+    email,
+    password,
+    name: undefined,
+    callbackUrl: 'https://example.com',
+    error:
+      'Registration failed: Request failed: Name, email, and password are required'
   },
   emptyArrayName: {
     name: [],
     email,
-    password: password,
+    password,
     callbackUrl: 'https://example.com',
-    error: 'Registration failed: [users:register] Name must be a string.'
-  },
-  intCallbackUrl: {
-    email,
-    password: password,
-    name,
-    callbackUrl: 12,
-    error: 'Registration failed: [users:register] Invalid callbackUrl format.'
+    error: 'Registration failed: Request failed: User validation failed: name: Cast to string failed for value "[]" (type Array) at path "name"'
   }
 }

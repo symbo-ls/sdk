@@ -377,6 +377,147 @@ const ai = sdk.getService('ai')
 const response = await ai.prompt(query, options)
 ```
 
+### Tracking Service (Grafana Faro)
+```javascript
+// 1) Initialize SDK with tracking config (early in app startup)
+const sdk = new SDK({
+  useNewServices: true,
+  apiUrl: 'https://api.symbols.app',
+  // Tracking configuration mirrors TrackingService options
+  tracking: {
+    url: 'https://<your-faro-receiver-url>', // FO ingest/collector URL
+    appName: 'Symbols Platform',
+    environment: 'development',              // 'production' | 'staging' | 'testing' | 'development'
+    appVersion: '1.0.0',
+    sessionTracking: true,
+    enableTracing: true,                     // adds browser tracing when available
+    globalAttributes: { region: 'us-east-1' }
+  }
+})
+await sdk.initialize()
+
+// 2) Get the tracking service
+const tracking = sdk.getService('tracking')
+
+// 3) Send signals
+tracking.trackEvent('purchase', { amount: 42, currency: 'USD' })
+tracking.trackMeasurement('cart_value', { value: 42 })
+tracking.logError('checkout failed', { step: 'payment' })
+tracking.trackView('Checkout', { stage: 'payment' })
+tracking.setUser({ id: 'u_123', email: 'user@example.com' })
+```
+
+#### Configuration
+Provide these under `tracking` when creating the `SDK` (or later via `tracking.configureTracking()`):
+
+- `url` string: Frontend Observability/Faro ingestion URL. If omitted and no custom transports are provided, tracking is disabled.
+- `appName` string: Logical application name used in Grafana dashboards.
+- `appVersion` string: App version shown in Grafana.
+- `environment` string: One of your environments; default resolves from runtime (`production`, `staging`, `testing`, `development`).
+- `sessionTracking` boolean: Enable Faro session tracking. Default: `true`.
+- `enableTracing` boolean: Enable web tracing and send to Tempo (if collector configured). Default: `true`.
+- `globalAttributes` object: Key/values merged into every signal.
+- `user` object: Initial user attributes.
+- `maxQueueSize` number: Max queued calls before client setup. Default: `100`.
+- `isolate` boolean: Create an isolated Faro instance.
+- `transports` array | `transport` any: Custom transports (advanced).
+- `instrumentations` array | `instrumentationsFactory(runtime) => Promise<array>` | `webInstrumentationOptions` object: Control Faro web instrumentations.
+
+Note:
+- Tracking is automatically disabled in non‑browser environments.
+- Calls are queued until the Faro client is ready. For specific calls, pass `{ queue: false }` to skip queuing.
+
+#### Method reference
+The following methods are available via `sdk.getService('tracking')` and map to `utils/services.js`:
+
+- `configureTracking(trackingOptions)` / `configure(trackingOptions)`: Merge/override runtime tracking options (supports all config keys above).
+- `trackEvent(name, attributes?, options?)`
+  - `name` string (required)
+  - `attributes` object merged with global attributes
+  - `options` object:
+    - `domain` string | null
+    - `queue` boolean (whether to queue if client not ready)
+    - Additional transport options are forwarded to Faro
+  - Example:
+  ```javascript
+  tracking.trackEvent('signup_attempt', { method: 'email' }, { domain: 'auth' })
+  ```
+- `trackError(error, options?)` / `captureException(error, options?)`
+  - `error` Error | string
+  - `options` can be:
+    - object with Faro error options (`context`, `type`, `stackFrames`, `skipDedupe`, `timestampOverwriteMs`, etc.)
+    - or a plain context object (shorthand)
+    - `queue` boolean supported
+  - Example:
+  ```javascript
+  tracking.trackError(new Error('Login failed'), { context: { screen: 'Login' } })
+  ```
+- `logMessage(message, level='info', context?)`
+  - Convenience wrappers: `logDebug`, `logInfo`, `logWarning`/`logWarn`, `logErrorMessage`/`logError`
+  - `message` string | string[]
+  - `context` object merged with global attributes
+  - Example:
+  ```javascript
+  tracking.logWarning('Slow response', { route: '/checkout', ttfbMs: 900 })
+  ```
+- `addBreadcrumb(message, attributes?)`
+  - Adds a low‑cost breadcrumb via `trackEvent('breadcrumb', ...)`
+  - Example:
+  ```javascript
+  tracking.addBreadcrumb('Open modal', { id: 'planLimits' })
+  ```
+- `trackMeasurement(type, values, options?)`
+  - `type` string (required)
+  - `values` object | number. If number, it becomes `{ value: <number> }`.
+  - `options`:
+    - `attributes` object (merged into payload.attributes)
+    - `context` object (transport context)
+    - `queue` boolean
+    - Any additional transport options
+  - Example:
+  ```javascript
+  tracking.trackMeasurement('cart_value', 42, { context: { currency: 'USD' } })
+  ```
+- `trackView(name, attributes?)`
+  - Sets the current view/page in Faro
+  - Example:
+  ```javascript
+  tracking.trackView('Dashboard', { section: 'Analytics' })
+  ```
+- `setUser(user, options?)` / `clearUser()`
+  - `user` object with arbitrary attributes; supports `{ queue: boolean }`
+  - Example:
+  ```javascript
+  tracking.setUser({ id: 'u_123', role: 'admin' })
+  ```
+- `setSession(session, options?)` / `clearSession()`
+  - Attach custom session data; supports `{ queue: boolean, ...sessionOptions }`
+- `setGlobalAttributes(attributes)` / `setGlobalAttribute(key, value)` / `removeGlobalAttribute(key)`
+  - Manage the global attributes merged into every signal
+- `flushQueue()`
+  - Immediately runs all queued calls (no‑op if client not ready)
+- `getClient()`
+  - Returns the underlying Faro client (or `null` if not ready)
+- `isEnabled()` / `isInitialized()`
+  - Status helpers
+
+#### Example: auth error tracking from services
+The SDK’s services automatically send errors to tracking:
+```javascript
+try {
+  await auth.login(email, password)
+} catch (error) {
+  // BaseService forwards details to tracking.trackError(...)
+}
+```
+
+#### Visualizing in Grafana
+- Use the Frontend Observability (Faro) data source and pick:
+  - Service = your `appName`
+  - Environment = your `environment`
+- Panels for page loads and Web Vitals require web instrumentations and real page traffic.
+- If self‑hosting with a Faro collector → Loki/Tempo, ensure the FO app is installed and the dashboard uses the FO data source; otherwise create custom panels with LogQL over Loki.
+
 ## Error Handling
 ```javascript
 try {

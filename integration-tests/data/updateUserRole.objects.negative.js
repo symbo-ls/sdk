@@ -6,7 +6,7 @@ export const dataSets = {
     error: 'User ID is required'
   },
   invalidRole: {
-    userId: globalUser.userId,
+    userId: globalUser.user.id,
     role: 'invalid-role',
     title: 'Failed to update user role: Invalid role',
     error: 'Invalid role: invalid-role'

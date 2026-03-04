@@ -3,12 +3,13 @@ export const dataSets = {
     token: '',
     title: 'Registration confirmation failed: Invalid request',
     error:
-      'Registration confirmation failed: [users:register-confirmation] Invalid request.'
+      'Registration confirmation failed: Request failed: Verification token is required'
   },
   invalidToken: {
     token: 'invalid-token',
-    title: 'Registration confirmation failed: JsonWebTokenError jwt malformed',
+    title:
+      'Registration confirmation failed: Request failed: Email verification token is invalid',
     error:
-      'Registration confirmation failed: [users:register-confirmation] [JsonWebTokenError] jwt malformed.'
+      'Registration confirmation failed: Request failed: Email verification token is invalid'
   }
 }

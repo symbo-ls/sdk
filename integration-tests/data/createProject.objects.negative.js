@@ -3,25 +3,35 @@ import { faker } from '@faker-js/faker'
 export const dataSets = {
   keyRequired: {
     data: {
-      key: '',
+      projectType: 'web',
       name: 'Integration Test Project'
     },
     title: 'Failed to create project: Project key is required',
     error:
       'Failed to create project: Function call failed: [projects:create] Project key and name are required.'
   },
+  projectTypeRequired: {
+    data: {
+      key: `${faker.string.uuid()}.symbo.ls`,
+      name: 'Project Name'
+    },
+    title: 'Failed to create project: Project type is required',
+    error:
+      'Failed to create project: Request failed: Project type is required'
+  },
   nameRequired: {
     data: {
       key: `${faker.string.uuid()}.symbo.ls`,
-      name: ''
+      projectType: 'web'
     },
     title: 'Failed to create project: Project name is required',
     error:
-      'Failed to create project: Function call failed: [projects:create] Project key and name are required.'
+      'Failed to create project: Request failed: Name is required'
   },
   mustBeSymbols: {
     data: {
-      key: 'wrong-key',
+      key: `${faker.string.uuid()}`,
+      projectType: 'web',
       name: 'Integration Test Project'
     },
     title: 'Failed to create project: Project key must end with .symbo.ls',
@@ -31,6 +41,7 @@ export const dataSets = {
   designToolIncorrectPayload: {
     data: {
       key: `${faker.string.uuid()}.symbo.ls`,
+      projectType: 'web',
       name: 'Integration Test Project'
     },
     title:
@@ -42,6 +53,7 @@ export const dataSets = {
     data: {
       key: `${faker.string.uuid()}.symbo.ls`,
       name: 'Integration Test Project',
+      projectType: 'web',
       designTool: 'figma'
     },
     title:

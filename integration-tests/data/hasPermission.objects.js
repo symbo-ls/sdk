@@ -1,19 +1,4 @@
 export const pageDataSets = {
-  owner: {
-    allowed: [
-      'platformSettings',
-      'showContent',
-      'showCode',
-      'editMode',
-      'versions',
-      'inviteMembers',
-      'branchProtection',
-      'projectSettings',
-      'copyPasteAllowanceSetting',
-      'iam'
-    ],
-    denied: []
-  },
   admin: {
     allowed: [
       'platformSettings',
@@ -56,5 +41,20 @@ export const pageDataSets = {
       'copyPasteAllowanceSetting',
       'iam'
     ]
+  },
+  owner: {
+    allowed: [
+      'platformSettings',
+      'showContent',
+      'showCode',
+      'editMode',
+      'versions',
+      'inviteMembers',
+      'branchProtection',
+      'projectSettings',
+      'copyPasteAllowanceSetting',
+      'iam'
+    ],
+    denied: []
   }
 }

@@ -16,7 +16,7 @@ function createglobalSdkInstance () {
     getDesignSystem: sinon.stub().returns({
       color: { blue: '#0000FF', red: '#FF0000' }
     }),
-    getData: sinon.stub().returns({
+    getProjectData: sinon.stub().returns({
       user: { name: 'John', age: 30 }
     }),
     call: sinon.stub().returns(false),

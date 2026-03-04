@@ -3,50 +3,50 @@ export const projectIconDataSets = {
     title: 'null value',
     icon: null,
     error:
-      "Failed to update project icon: Cannot read properties of null (reading 'id')"
+      'Project ID and icon file are required'
   },
   invalidIntegerValue: {
     title: 'integer value',
     icon: 12345,
     error:
-      'Failed to update project icon: Function call failed: [projects:update] Type or $id or $alias required for nested single reference in icon, got: {}.'
+      'Failed to update project icon: Request failed: An image file is required for project icon'
   },
   invalidBooleanValue: {
     title: 'true boolean value',
     icon: true,
     error:
-      'Failed to update project icon: Function call failed: [projects:update] Type or $id or $alias required for nested single reference in icon, got: {}.'
+      'Failed to update project icon: Request failed: An image file is required for project icon'
   },
   invalidObjectValue: {
     title: 'empty object',
     icon: {},
     error:
-      'Failed to update project icon: Function call failed: [projects:update] Type or $id or $alias required for nested single reference in icon, got: {}.'
+      'Failed to update project icon: Request failed: An image file is required for project icon'
   },
   invalidArrayValue: {
     title: 'empty array',
     icon: [],
     src: 'test-icon.png',
     error:
-      'Failed to update project icon: Function call failed: [projects:update] Type or $id or $alias required for nested single reference in icon, got: {}.'
+      'Failed to update project icon: Request failed: An image file is required for project icon'
   },
   invalidStringValue: {
     title: 'string of special characters',
     icon: '@#$%^&*()',
     error:
-      'Failed to update project icon: Function call failed: [projects:update] Type or $id or $alias required for nested single reference in icon, got: {}.'
+      'Failed to update project icon: Request failed: An image file is required for project icon'
   },
   undefinedDataValue: {
     title: 'undefined icon',
     // eslint-disable-next-line no-undefined
     icon: undefined,
     error:
-      "Failed to update project icon: Cannot read properties of undefined (reading 'id')"
+      'Project ID and icon file are required'
   },
   emptyData: {
     title: 'empty string',
     icon: '',
     error:
-      'Failed to update project icon: Function call failed: [projects:update] Type or $id or $alias required for nested single reference in icon, got: {}.'
+      'Project ID and icon file are required'
   }
 }

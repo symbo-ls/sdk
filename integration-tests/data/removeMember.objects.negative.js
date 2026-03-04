@@ -1,26 +1,21 @@
-import { createAndGetUser } from '../base.js'
-
-const randomUser = await createAndGetUser()
-const randomUserId = await globalSdk.getUserByEmail(randomUser.email)
-
 export const dataSets = {
   projectIdRequired: {
-    projectId: '',
-    userId: globalUser.userId,
+    projectId: undefined,
+    userId: globalUser.user.id,
     title: 'Failed to remove member: Project ID is required',
-    error: 'Project ID and user ID are required'
+    error: 'Project ID and member ID are required'
   },
   userIdRequired: {
     projectId: globalProject.id,
-    userId: '',
+    userId: undefined,
     title: 'Failed to remove member: User ID is required',
-    error: 'Project ID and user ID are required'
+    error: 'Project ID and member ID are required'
   },
   AuthorizeRejectedAccess: {
     projectId: globalProject.id,
-    userId: randomUserId.id,
+    userId: 'incorrect userID',
     title: 'Failed to remove member: Member not found in project',
     error:
-      'Failed to remove member: [projects:remove-member] Member not found in project.'
+      'Failed to remove member: Request failed: Cast to ObjectId failed for value "incorrect userID" (type string) at path "_id" for model "ProjectMember"'
   }
 }

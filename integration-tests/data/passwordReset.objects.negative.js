@@ -4,14 +4,14 @@ export const dataSets = {
     callbackUrl: 'https://test.com',
     title: 'Password reset request failed: Email and callbackUrl are required',
     error:
-      'Password reset request failed: [users:reset-password] Email and callbackUrl are required.'
+      'Password reset request failed: Request failed: Email is required'
   },
   requestPasswordReset_emptyCallbackUrl: {
     email: 'test@symbols.app',
     callbackUrl: '',
     title: 'Password reset request failed: Email and callbackUrl are required',
     error:
-      'Password reset request failed: [users:reset-password] Email and callbackUrl are required.'
+      'Password reset request failed: Request failed: No account found with that email'
   },
   confirmPasswordReset_emptyToken: {
     token: '',
@@ -19,7 +19,7 @@ export const dataSets = {
     title:
       'Password reset confirmation failed: Token and new password are required',
     error:
-      'Password reset confirmation failed: [users:reset-password-confirm] Token and new password are required.'
+      'Password reset confirmation failed: Request failed: Token and new password are required'
   },
   confirmPasswordReset_emptyPassword: {
     token: 'token123',
@@ -27,7 +27,7 @@ export const dataSets = {
     title:
       'Password reset confirmation failed: Token and new password are required',
     error:
-      'Password reset confirmation failed: [users:reset-password-confirm] Token and new password are required.'
+      'Password reset confirmation failed: Request failed: Token and new password are required'
   },
   confirmPasswordReset_invalidPassword: {
     token: 'token123',
@@ -35,6 +35,6 @@ export const dataSets = {
     title:
       'Password reset confirmation failed: Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character',
     error:
-      'Password reset confirmation failed: [users:reset-password-confirm] Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character.'
+      'Password reset confirmation failed: Request failed: Password must contain at least one uppercase letter,Password must contain at least one number,Password must contain at least one special character (@$!%*?&)'
   }
 }

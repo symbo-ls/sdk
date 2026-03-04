@@ -6,8 +6,8 @@ export const dataSets = {
   },
   projectDoesNotExists: {
     projectId: 'non-existing-project-id',
-    title: 'Failed to remove project: Project ID is required',
+    title: 'Failed to remove project: Incorrect project ID',
     error:
-      'Failed to remove project: Function call failed: [projects:remove] Authorize rejected access.'
+      'Failed to remove project: Request failed: Cast to ObjectId failed for value "non-existing-project-id" (type string) at path "_id" for model "Project"'
   }
 }

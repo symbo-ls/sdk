@@ -10,7 +10,9 @@ const CONFIG = {
     // Feature toggles that apply across all environments by default
     features: {
       newUserOnboarding: true,
-      betaFeatures: false
+      betaFeatures: false,
+      // Tracking is enabled by default unless overridden per environment
+      trackingEnabled: true
     }
   },
 
@@ -23,16 +25,36 @@ const CONFIG = {
     basedEnv: 'development', // For based api
     basedProject: 'platform-v2-sm', // For based api
     basedOrg: 'symbols', // For based api
-    githubClientId: 'Ov23liHxyWFBxS8f1gnF', // For github api
+    githubClientId: 'Ov23liAFrsR0StbAO6PO', // For github api
+    grafanaUrl: '', // For grafana tracing
+    grafanaAppName: 'Symbols Localhost',
     // Environment-specific feature toggles (override common)
     features: {
-      betaFeatures: true // Enable beta features in local dev
-    }
+      // Disable tracking by default on localhost/dev machines
+      trackingEnabled: false,
+      // Enable beta features in local dev
+      betaFeatures: true,
+      // Preserve common defaults explicitly for local
+      newUserOnboarding: true
+    },
+    typesenseCollectionName: 'docs',
+    typesenseApiKey: 'vZya3L2zpq8L6iI5WWMUZJZABvT63VDb',
+    typesenseHost: 'localhost',
+    typesensePort: '8108',
+    typesenseProtocol: 'http'
   },
   development: {
     socketUrl: 'https://dev.api.symbols.app',
     apiUrl: 'https://dev.api.symbols.app',
-    githubClientId: 'Ov23liHxyWFBxS8f1gnF'
+    githubClientId: 'Ov23liHxyWFBxS8f1gnF',
+    grafanaUrl:
+      'https://faro-collector-prod-us-east-0.grafana.net/collect/7a3ba473cee2025c68513667024316b8', // For grafana tracing
+    grafanaAppName: 'Symbols Dev',
+    typesenseCollectionName: 'docs',
+    typesenseApiKey: 'awmcVpbWqZi9IUgmvslp1C5LKDU8tMjA',
+    typesenseHost: 'tl2qpnwxev4cjm36p-1.a1.typesense.net',
+    typesensePort: '443',
+    typesenseProtocol: 'https'
   },
   testing: {
     socketUrl: 'https://test.api.symbols.app',
@@ -40,12 +62,26 @@ const CONFIG = {
     basedEnv: 'testing',
     basedProject: 'platform-v2-sm',
     basedOrg: 'symbols',
-    githubClientId: 'Ov23liHxyWFBxS8f1gnF'
+    githubClientId: 'Ov23liHxyWFBxS8f1gnF',
+    grafanaUrl: '', // For grafana tracing
+    grafanaAppName: 'Symbols Test',
+    typesenseCollectionName: 'docs',
+    typesenseApiKey: 'awmcVpbWqZi9IUgmvslp1C5LKDU8tMjA',
+    typesenseHost: 'tl2qpnwxev4cjm36p-1.a1.typesense.net',
+    typesensePort: '443',
+    typesenseProtocol: 'https'
   },
   upcoming: {
     socketUrl: 'https://upcoming.api.symbols.app',
     apiUrl: 'https://upcoming.api.symbols.app',
-    githubClientId: 'Ov23liWF7NvdZ056RV5J'
+    githubClientId: 'Ov23liWF7NvdZ056RV5J',
+    grafanaUrl: '', // For grafana tracing
+    grafanaAppName: 'Symbols Upcoming',
+    typesenseCollectionName: 'docs',
+    typesenseApiKey: 'awmcVpbWqZi9IUgmvslp1C5LKDU8tMjA',
+    typesenseHost: 'tl2qpnwxev4cjm36p-1.a1.typesense.net',
+    typesensePort: '443',
+    typesenseProtocol: 'https'
   },
   staging: {
     socketUrl: 'https://staging.api.symbols.app',
@@ -53,7 +89,30 @@ const CONFIG = {
     basedEnv: 'staging',
     basedProject: 'platform-v2-sm',
     basedOrg: 'symbols',
-    githubClientId: 'Ov23ligwZDQVD0VfuWNa'
+    githubClientId: 'Ov23ligwZDQVD0VfuWNa',
+    grafanaUrl: '', // For grafana tracing
+    grafanaAppName: 'Symbols Staging',
+    typesenseCollectionName: 'docs',
+    typesenseApiKey: 'awmcVpbWqZi9IUgmvslp1C5LKDU8tMjA',
+    typesenseHost: 'tl2qpnwxev4cjm36p-1.a1.typesense.net',
+    typesensePort: '443',
+    typesenseProtocol: 'https'
+  },
+  preview: {
+    socketUrl: 'https://api.symbols.app',
+    apiUrl: 'https://api.symbols.app',
+    basedEnv: 'production',
+    basedProject: 'platform-v2-sm',
+    basedOrg: 'symbols',
+    githubClientId: 'Ov23liFAlOEIXtX3dBtR',
+    grafanaUrl:
+      'https://faro-collector-prod-us-east-0.grafana.net/collect/5c1089f3c3eea4ec5658e05c3f53baae', // For grafana tracing
+    grafanaAppName: 'Symbols Preview',
+    typesenseCollectionName: 'docs',
+    typesenseApiKey: 'awmcVpbWqZi9IUgmvslp1C5LKDU8tMjA',
+    typesenseHost: 'tl2qpnwxev4cjm36p-1.a1.typesense.net',
+    typesensePort: '443',
+    typesenseProtocol: 'https'
   },
   production: {
     socketUrl: 'https://api.symbols.app',
@@ -61,7 +120,15 @@ const CONFIG = {
     basedEnv: 'production',
     basedProject: 'platform-v2-sm',
     basedOrg: 'symbols',
-    githubClientId: 'Ov23liFAlOEIXtX3dBtR'
+    githubClientId: 'Ov23liFAlOEIXtX3dBtR',
+    grafanaUrl:
+      'https://faro-collector-prod-us-east-0.grafana.net/collect/5c1089f3c3eea4ec5658e05c3f53baae', // For grafana tracing
+    grafanaAppName: 'Symbols',
+    typesenseCollectionName: 'docs',
+    typesenseApiKey: 'awmcVpbWqZi9IUgmvslp1C5LKDU8tMjA',
+    typesenseHost: 'tl2qpnwxev4cjm36p-1.a1.typesense.net',
+    typesensePort: '443',
+    typesenseProtocol: 'https'
   }
 }
 
@@ -87,6 +154,11 @@ export const getConfig = () => {
     // Create the final config with environment variable overrides
     const finalConfig = {
       ...envConfig,
+      // Deep-merge feature flags so env-specific overrides don't drop common defaults
+      features: {
+        ...(CONFIG.common.features || {}),
+        ...((CONFIG[env] && CONFIG[env].features) || {})
+      },
       socketUrl: process.env.SYMBOLS_APP_SOCKET_URL || envConfig.socketUrl,
       apiUrl: process.env.SYMBOLS_APP_API_URL || envConfig.apiUrl,
       basedEnv: process.env.SYMBOLS_APP_BASED_ENV || envConfig.basedEnv,
@@ -95,9 +167,20 @@ export const getConfig = () => {
       basedOrg: process.env.SYMBOLS_APP_BASED_ORG || envConfig.basedOrg,
       githubClientId:
         process.env.SYMBOLS_APP_GITHUB_CLIENT_ID || envConfig.githubClientId,
+      grafanaUrl: process.env.SYMBOLS_APP_GRAFANA_URL || envConfig.grafanaUrl,
+      typesenseCollectionName:
+        process.env.TYPESENSE_COLLECTION_NAME ||
+        envConfig.typesenseCollectionName,
+      typesenseApiKey:
+        process.env.TYPESENSE_API_KEY || envConfig.typesenseApiKey,
+      typesenseHost: process.env.TYPESENSE_HOST || envConfig.typesenseHost,
+      typesensePort: process.env.TYPESENSE_PORT || envConfig.typesensePort,
+      typesenseProtocol:
+        process.env.TYPESENSE_PROTOCOL || envConfig.typesenseProtocol,
       isDevelopment: isDevelopment(env),
       isTesting: env === 'testing',
       isStaging: env === 'staging',
+      isPreview: env === 'preview',
       isProduction: env === 'production'
       // Store all environment variables for potential future use
     }
@@ -119,11 +202,13 @@ export const getConfig = () => {
     }
 
     if (finalConfig.isDevelopment) {
-      console.log(
+      console.warn(
         'environment in SDK:',
         env || process.env.NODE_ENV || process.env.NODE_ENV
       )
       console.log(finalConfig)
+    } else if (global.window) {
+      global.window.finalConfig = finalConfig
     }
 
     return finalConfig

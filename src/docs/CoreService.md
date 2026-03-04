@@ -182,9 +182,6 @@ const dnsRecord = await coreService.getDnsRecord('example.com')
 
 // Remove DNS record
 await coreService.removeDnsRecord('example.com')
-
-// Set project domains
-await coreService.setProjectDomains('my-project-key', 'custom.example.com', true)
 ```
 
 ### Library Management
