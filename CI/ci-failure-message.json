@@ -1,0 +1,79 @@
+{
+  "cardsV2": [
+    {
+      "cardId": "unique-card-id",
+      "card": {
+        "header": {
+          "title": "CI Pipeline Notification",
+          "subtitle": "🚨 Build Failure Alert"
+        },
+        "sections": [
+          {
+            "widgets": [
+              {
+                "decoratedText": {
+                  "text": "<b><font color=\"#FF0000\">❌ SDK Test Failed</font></b>"
+                }
+              },
+              {
+                "decoratedText": {
+                  "startIcon": { "knownIcon": "BOOKSHELF" },
+                  "text": "<b>Repository:</b> RepoNamePlaceholder"
+                }
+              },
+              {
+                "decoratedText": {
+                  "startIcon": { "knownIcon": "CLOCK" },
+                  "text": "<b>Timestamp:</b> 2025-03-17 21:51:51 UTC"
+                }
+              },
+              {
+                "decoratedText": {
+                  "startIcon": { "knownIcon": "DESCRIPTION" },
+                  "text": "<b>Commit SHA:</b> <a href=\"https://github.com/RepoNamePlaceholder/commit/1a2b3c4d\">1a2b3c4d</a>"
+                }
+              },
+              {
+                "decoratedText": {
+                  "startIcon": { "knownIcon": "BOOKMARK" },
+                  "text": "<b>Branch:</b> main"
+                }
+              },
+              {
+                "decoratedText": {
+                  "startIcon": { "knownIcon": "PERSON" },
+                  "text": "<b>Commit Author:</b> John Doe"
+                }
+              },
+              {
+                "decoratedText": {
+                  "startIcon": { "knownIcon": "INVITE" },
+                  "text": "<b>Test Suite:</b> Smoke"
+                }
+              },
+              {
+                "textParagraph": {
+                  "text": "<b>🔥 Failure Summary:</b> FAILURE_SUMMARY_PLACEHOLDER"
+                }
+              },
+              {
+                "buttonList": {
+                  "buttons": [
+                    {
+                      "text": "🔗 View Pipeline",
+                      "onClick": {
+                        "openLink": {
+                          "url": "https://ci.example.com/pipeline/1234"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

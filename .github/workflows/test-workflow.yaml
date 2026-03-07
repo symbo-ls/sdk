@@ -1,0 +1,105 @@
+name: SDK Tests Workflow
+on:
+  workflow_call:
+    inputs:
+      node_env:
+        required: false
+        type: string
+        default: 'testing'
+        description: 'The Node.js environment (e.g., production, development, testing, etc.)'
+      suite:
+        required: false
+        type: string
+        default: 'smoke'
+        description: 'The suite being run (e.g., smoke, branch, project, etc.)'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      id-token: write
+      contents: write
+      packages: write
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      GUEST_PASSWORD: ${{ secrets.GUEST_PASSWORD }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Npm install
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_SECRET }}" > .npmrc
+          npm install --verbose
+
+      - name: Build
+        run: npm run build
+        env:
+          NODE_ENV: ${{ inputs.node_env }}
+
+      - name: Run Tests
+        env:
+          MESSAGE: ${{ github.event.client_payload.repo }} ${{ github.event.client_payload.message }}
+          NODE_ENV: ${{ inputs.node_env }}
+        run: |
+          set -o pipefail
+          echo $MESSAGE
+          npm run test:${{ inputs.suite }} 2>&1 | tee test-output.log
+
+      - name: Extract Failure Summary
+        if: failure()
+        run: |
+          SUMMARY=$(grep "✖ Error" test-output.log | tail -n 10 | jq -Rs .)
+          echo "FAILURE_SUMMARY=$SUMMARY" >> $GITHUB_ENV
+
+      - name: Prep Notification Message
+        if: failure()
+        env:
+          FAILURE_SUMMARY: ${{ env.FAILURE_SUMMARY }}
+        run: |
+          TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            REPO_NAME="${{ github.repository }}"
+            BRANCH_NAME="${{ github.head_ref }}"
+            COMMIT_SHA="${{ github.event.pull_request.head.sha }}"
+            COMMIT_AUTHOR="${{ github.event.pull_request.user.login }}"
+            TEST_SUITE="${{inputs.suite}}"
+          else
+            REPO_NAME="${{ github.repository }}"
+            BRANCH_NAME="${{ github.ref_name }}"
+            COMMIT_SHA="${{ github.sha }}"
+            COMMIT_AUTHOR="${{ github.actor }}"
+            TEST_SUITE="${{inputs.suite}}"
+          fi
+
+          CI_RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
+          ESCAPED_SUMMARY=$(echo "$FAILURE_SUMMARY" | tr '\n' ' ' | sed 's/  */ /g' | sed 's/✖/<br>✖/g')
+
+          cd ./CI
+          sed -e "s|2025-03-17 21:51:51 UTC|$TIMESTAMP|" \
+              -e "s|1a2b3c4d|$COMMIT_SHA|" \
+              -e "s|main|$BRANCH_NAME|" \
+              -e "s|John Doe|$COMMIT_AUTHOR|" \
+              -e "s|Smoke|$TEST_SUITE|" \
+              -e "s|RepoNamePlaceholder|$REPO_NAME|" \
+              -e "s|https://ci.example.com/pipeline/1234|$CI_RUN_URL|" \
+              -e "s|<b>Failure Summary:</b> .*|<b>Failure Summary:</b> ${ESCAPED_SUMMARY}|" \
+              ci-failure-message.json > ci-failure-message-updated.json
+
+      - name: Send Google Chat Notification
+        if: failure()
+        env:
+          GCHAT_WEBHOOK_URL: ${{ secrets.GCHAT_WEBHOOK_URL }}
+        run: |
+          curl -X POST -H 'Content-Type: application/json' \
+            -d @./CI/ci-failure-message-updated.json \
+            "$GCHAT_WEBHOOK_URL"

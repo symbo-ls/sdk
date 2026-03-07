@@ -1,0 +1,68 @@
+{
+    "cardsV2": [
+      {
+        "cardId": "deployment-success",
+        "card": {
+          "header": {
+            "title": "🚀 Deployment Notification",
+            "subtitle": "✅ Deployment Successful!"
+          },
+          "sections": [
+            {
+              "widgets": [
+                {
+                  "decoratedText": {
+                    "text": "<b>🎉 Deployment Completed Successfully!</b>"
+                  }
+                },
+                {
+                  "decoratedText": {
+                    "startIcon": { "knownIcon": "BOOKSHELF" },
+                    "text": "<b>Repository:</b> RepoNamePlaceholder"
+                  }
+                },
+                {
+                  "decoratedText": {
+                    "startIcon": { "knownIcon": "BOOKMARK" },
+                    "text": "<b>Branch:</b> BranchPlaceholder"
+                  }
+                },
+                {
+                  "decoratedText": {
+                    "startIcon": { "knownIcon": "DESCRIPTION" },
+                    "text": "<b>Commit SHA:</b> <a href=\"https://github.com/RepoNamePlaceholder/commit/CommitShaPlaceholder\">CommitShaPlaceholder</a>"
+                  }
+                },
+                {
+                  "decoratedText": {
+                    "startIcon": { "knownIcon": "PERSON" },
+                    "text": "<b>Commit Author:</b> CommitAuthorPlaceholder"
+                  }
+                },
+                {
+                  "decoratedText": {
+                    "startIcon": { "knownIcon": "CLOCK" },
+                    "text": "<b>Deployment Time:</b> TIMESTAMP_PLACEHOLDER"
+                  }
+                },
+                {
+                  "buttonList": {
+                    "buttons": [
+                      {
+                        "text": "🔗 View Pipeline",
+                        "onClick": {
+                          "openLink": {
+                            "url": "PipelineUrlPlaceholder"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  }

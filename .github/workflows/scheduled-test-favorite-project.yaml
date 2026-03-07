@@ -1,0 +1,15 @@
+name: Scheduled Tests Workflow
+on:
+  repository_dispatch:
+    types: [run_sdk_tests]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 5 * * *'
+
+jobs:
+  scheduled-tests:
+    uses: ./.github/workflows/test-workflow.yaml
+    with:
+      node_env: 'testing'
+      suite: 'favorite-project'
+    secrets: inherit
