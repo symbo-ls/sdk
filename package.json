@@ -80,5 +80,8 @@
     "tap-spec": "^5.0.0",
     "tape": "^5.9.0"
   },
-  "gitHead": "0be12bcdd99c265fdeded6d756a1a3616a943ffc"
+  "gitHead": "0be12bcdd99c265fdeded6d756a1a3616a943ffc",
+  "publishConfig": {
+    "access": "public"
+  }
 }
