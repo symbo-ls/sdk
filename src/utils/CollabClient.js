@@ -2,6 +2,7 @@ import { io } from 'socket.io-client'
 import * as Y from 'yjs'
 import { nanoid } from 'nanoid'
 import environment from '../config/environment.js'
+import { logger } from './logger.js'
 // import gzip from 'gzip-js' // reserved for future compression features
 
 // diff / patch helpers
@@ -39,7 +40,7 @@ export class CollabClient {
 
     if (typeof window === 'undefined' || !hasIndexedDB) {
       // In Node.js (or when indexedDB is not available), skip persistence
-      console.log('[CollabClient] IndexedDB not available – skipping offline persistence')
+      logger.log('[CollabClient] IndexedDB not available – skipping offline persistence')
     } else {
       // Dynamically import IndexeddbPersistence only when indexedDB exists
       import('y-indexeddb')
@@ -47,7 +48,7 @@ export class CollabClient {
           new IndexeddbPersistence(`${projectId}:${branch}`, this.ydoc)
         })
         .catch(err => {
-          console.warn('[CollabClient] Failed to load IndexeddbPersistence:', err)
+          logger.warn('[CollabClient] Failed to load IndexeddbPersistence:', err)
         })
     }
 
@@ -59,7 +60,7 @@ export class CollabClient {
           this._outboxStore = outboxStore
         })
         .catch(err => {
-          console.warn('[CollabClient] Failed to load Dexie:', err)
+          logger.warn('[CollabClient] Failed to load Dexie:', err)
         })
     }
 
@@ -113,7 +114,7 @@ export class CollabClient {
       // First paint; trust server compressed payload (≤256 kB)
       Y.applyUpdate(this.ydoc, Uint8Array.from(data))
     } else {
-      console.warn('[collab] Received empty snapshot – skipping applyUpdate')
+      logger.warn('[collab] Received empty snapshot – skipping applyUpdate')
     }
 
     // Store current state as baseline for future diffs.
@@ -135,7 +136,7 @@ export class CollabClient {
 
   _onCommit = async ({ version }) => {
     await this._outboxStore.clear()
-    console.info('[collab] committed', version)
+    logger.log('[collab] committed', version)
   }
 
   _onConnect = async () => {
@@ -193,7 +194,7 @@ export class CollabClient {
           result.catch(() => {})
         }
       } catch (error) {
-        console.warn('[CollabClient] Failed to clear outbox store during dispose:', error)
+        logger.warn('[CollabClient] Failed to clear outbox store during dispose:', error)
       }
     }
 
@@ -225,7 +226,7 @@ export class CollabClient {
   }
 
   _onError = (e) => {
-    console.warn('[collab] socket error', e)
+    logger.warn('[collab] socket error', e)
   }
 }
 

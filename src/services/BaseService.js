@@ -1,5 +1,6 @@
 import environment from '../config/environment.js'
 import { getTokenManager } from '../utils/TokenManager.js'
+import { logger } from '../utils/logger.js'
 
 export class BaseService {
   constructor ({ context, options } = {}) {
@@ -27,7 +28,7 @@ export class BaseService {
       this._tokenManager = getTokenManager({
         apiUrl: this._apiUrl,
         onTokenError: error => {
-          console.error('Token management error:', error)
+          logger.error('Token management error:', error)
         }
       })
 
@@ -135,7 +136,7 @@ export class BaseService {
           }
         }
       } catch (error) {
-        console.warn(
+        logger.warn(
           'Token management failed, proceeding without authentication:',
           error
         )

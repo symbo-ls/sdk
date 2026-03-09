@@ -1,4 +1,5 @@
 import { BaseService } from './BaseService.js'
+import { logger } from '../utils/logger.js'
 
 export class PaymentService extends BaseService {
   // ==================== PAYMENT METHODS ====================
@@ -118,7 +119,7 @@ export class PaymentService extends BaseService {
       const status = await this.getSubscriptionStatus(projectId)
       return status?.active === true
     } catch (error) {
-      console.warn('Failed to check subscription status:', error.message)
+      logger.warn('Failed to check subscription status:', error.message)
       return false
     }
   }

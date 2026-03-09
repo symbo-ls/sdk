@@ -1,3 +1,5 @@
+import { logger } from './logger.js'
+
 /**
  * TokenManager - Handles access and refresh token management
  * Provides persistence, automatic refresh, and token lifecycle management
@@ -167,7 +169,7 @@ export class TokenManager {
     const isValid = now < (this.tokens.expiresAt - this.config.refreshBuffer)
 
     if (!isValid) {
-      console.log('[TokenManager] Access token is expired or near expiry:', {
+      logger.log('[TokenManager] Access token is expired or near expiry:', {
         now: new Date(now).toISOString(),
         expiresAt: new Date(this.tokens.expiresAt).toISOString(),
         refreshBuffer: this.config.refreshBuffer
@@ -329,7 +331,7 @@ export class TokenManager {
       try {
         await this.refreshTokens()
       } catch (error) {
-        console.error('Automatic token refresh failed:', error)
+        logger.error('Automatic token refresh failed:', error)
         if (this.config.onTokenError) {
           this.config.onTokenError(error)
         }
@@ -362,7 +364,7 @@ export class TokenManager {
       }
 
     } catch (error) {
-      console.error('[TokenManager] Error saving tokens to storage:', error)
+      logger.error('[TokenManager] Error saving tokens to storage:', error)
       // Don't throw here as it would break the token setting flow
       // but log the error for debugging
     }
@@ -394,7 +396,7 @@ export class TokenManager {
         this.scheduleRefresh()
       }
     } catch (error) {
-      console.error('[TokenManager] Error loading tokens from storage:', error)
+      logger.error('[TokenManager] Error loading tokens from storage:', error)
       this.tokens = {
         accessToken: null,
         refreshToken: null,

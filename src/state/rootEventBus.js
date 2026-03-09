@@ -1,3 +1,5 @@
+import { logger } from '../utils/logger.js'
+
 // Ensure we always reuse a single instance even if this file is evaluated
 // multiple times from different bundle copies or with differing specifiers.
 const getGlobalBus = () => {
@@ -23,7 +25,7 @@ const getGlobalBus = () => {
         try {
           handler(lastPayloads[event])
         } catch (err) {
-          console.error('[rootBus] handler error for (replay)', event, err)
+          logger.error('[rootBus] handler error for (replay)', event, err)
         }
       }
     },
@@ -46,7 +48,7 @@ const getGlobalBus = () => {
         try {
           fn(payload)
         } catch (err) {
-          console.error('[rootBus] handler error for', event, err)
+          logger.error('[rootBus] handler error for', event, err)
         }
       })
     }

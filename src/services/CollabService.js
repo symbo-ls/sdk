@@ -5,6 +5,7 @@ import { rootBus } from '../state/rootEventBus.js'
 import { validateParams } from '../utils/validation.js'
 import { deepStringifyFunctions } from '@domql/utils'
 import { preprocessChanges } from '../utils/changePreprocessor.js'
+import { logger } from '../utils/logger.js'
 
 // Helper: clone a value while converting all functions to strings. This is
 // tailored for collab payloads (tuples / granularChanges) and is more robust
@@ -131,8 +132,8 @@ export class CollabService extends BaseService {
             case 'openNotification': {
               const [payload = {}] = args
               const { type = 'info', title = '', message = '' } = payload
-              const logger = type === 'error' ? console.error : console.log
-              logger(`[Notification] ${title}${message ? ` – ${message}` : ''}`)
+              const logFn = type === 'error' ? logger.error : logger.log
+              logFn(`[Notification] ${title}${message ? ` – ${message}` : ''}`)
               return
             }
             case 'deepStringifyFunctions': {
@@ -173,7 +174,7 @@ export class CollabService extends BaseService {
         try {
           jwt = await this._tokenManager.ensureValidToken()
         } catch (error) {
-          console.warn(
+          logger.warn(
             '[CollabService] Failed to obtain auth token from token manager',
             error
           )
@@ -295,7 +296,7 @@ export class CollabService extends BaseService {
 
       // Set up event listeners
       socket?.on('ops', ({ changes }) => {
-        console.log(`ops event`)
+        logger.log(`ops event`)
         this._stateManager.applyChanges(changes, { fromSocket: true })
       })
 
@@ -317,7 +318,7 @@ export class CollabService extends BaseService {
 
       // Flush any operations that were queued while we were offline.
       if (this._pendingOps.length) {
-        console.log(
+        logger.log(
           `[CollabService] Flushing ${this._pendingOps.length} offline operation batch(es)`
         )
         this._pendingOps.forEach(
@@ -378,7 +379,7 @@ export class CollabService extends BaseService {
     this._connecting = false
     this._connectionMeta = null
     this._pendingConnectReject = null
-    console.log('[CollabService] Disconnected')
+    logger.log('[CollabService] Disconnected')
   }
 
   isConnected() {
@@ -455,7 +456,7 @@ export class CollabService extends BaseService {
 
     // If not connected yet, queue the operations for later synchronisation.
     if (!this.isConnected()) {
-      console.warn('[CollabService] Not connected, queuing real-time update')
+      logger.warn('[CollabService] Not connected, queuing real-time update')
       this._pendingOps.push({
         changes: stringifiedTuples,
         granularChanges: stringifiedGranularTuples,
@@ -535,7 +536,7 @@ export class CollabService extends BaseService {
     try {
       return state.getByPath(path)
     } catch (error) {
-      console.warn('[CollabService] Could not get value at path:', path, error)
+      logger.warn('[CollabService] Could not get value at path:', path, error)
       return null
     }
   }
@@ -552,7 +553,7 @@ export class CollabService extends BaseService {
     }
 
     if (!this.isConnected()) {
-      console.warn('[CollabService] Not connected, cannot undo')
+      logger.warn('[CollabService] Not connected, cannot undo')
       return
     }
 
@@ -594,7 +595,7 @@ export class CollabService extends BaseService {
     }
 
     if (!this.isConnected()) {
-      console.warn('[CollabService] Not connected, cannot redo')
+      logger.warn('[CollabService] Not connected, cannot redo')
       return
     }
 
@@ -776,7 +777,7 @@ export class CollabService extends BaseService {
     dependencies = {},
     schema = {}
   } = {}) {
-    console.info('[CollabService] Bundle done', { project, ticket })
+    logger.log('[CollabService] Bundle done', { project, ticket })
 
     // Update local state with latest dependency information
     try {
@@ -795,7 +796,7 @@ export class CollabService extends BaseService {
         preventUpdate: ['Iframe']
       })
     } catch (err) {
-      console.error('[CollabService] Failed to update deps after bundle', err)
+      logger.error('[CollabService] Failed to update deps after bundle', err)
     }
 
     // Notify UI via rootBus and toast/notification helper if available
@@ -814,7 +815,7 @@ export class CollabService extends BaseService {
   }
 
   _handleBundleErrorEvent({ project, ticket, error } = {}) {
-    console.error('[CollabService] Bundle error', { project, ticket, error })
+    logger.error('[CollabService] Bundle error', { project, ticket, error })
 
     const root = this._stateManager?.root
     const el = root?.__element
@@ -863,12 +864,12 @@ export class CollabService extends BaseService {
     this._connected = false
 
     if (reason && reason !== 'io client disconnect') {
-      console.warn('[CollabService] Socket disconnected', reason)
+      logger.warn('[CollabService] Socket disconnected', reason)
     }
   }
 
   _onSocketError(error) {
-    console.warn('[CollabService] Socket connection error', error)
+    logger.warn('[CollabService] Socket connection error', error)
   }
 
   /**
@@ -878,7 +879,7 @@ export class CollabService extends BaseService {
    */
   checkpoint() {
     if (!this.isConnected()) {
-      console.warn('[CollabService] Not connected, cannot request checkpoint')
+      logger.warn('[CollabService] Not connected, cannot request checkpoint')
       return Promise.reject(new Error('Not connected'))
     }
 

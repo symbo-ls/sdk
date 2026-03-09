@@ -1,5 +1,6 @@
 import { BaseService } from './BaseService.js'
 import environment from '../config/environment.js'
+import { logger } from '../utils/logger.js'
 
 const DEFAULT_MAX_QUEUE_SIZE = 100
 
@@ -28,7 +29,7 @@ const sanitizeAttributes = (value) => {
   try {
     return JSON.parse(JSON.stringify(value))
   } catch (error) {
-    console.warn('[TrackingService] Failed to sanitize attributes:', error)
+    logger.warn('[TrackingService] Failed to sanitize attributes:', error)
     return { ...value }
   }
 }
@@ -91,7 +92,7 @@ export class TrackingService extends BaseService {
       this._runtimeConfig.transports.length > 0
 
     if (!this._runtimeConfig.url && !hasCustomTransports) {
-      console.warn('[TrackingService] Grafana Faro URL missing. Tracking will stay disabled.')
+      logger.warn('[TrackingService] Grafana Faro URL missing. Tracking will stay disabled.')
       this._enabled = false
       this._setReady()
       return this
@@ -168,7 +169,7 @@ export class TrackingService extends BaseService {
     const invokeTracking = client => {
       const api = client?.api
       if (!api?.pushEvent) {
-        console.warn('[TrackingService] Faro pushEvent API not available')
+        logger.warn('[TrackingService] Faro pushEvent API not available')
         return
       }
 
@@ -224,7 +225,7 @@ export class TrackingService extends BaseService {
     const invokeTracking = client => {
       const api = client?.api
       if (!api?.pushError) {
-        console.warn('[TrackingService] Faro pushError API not available')
+        logger.warn('[TrackingService] Faro pushError API not available')
         return
       }
 
@@ -259,7 +260,7 @@ export class TrackingService extends BaseService {
     this._withClient(client => {
       const api = client?.api
       if (!api?.pushLog) {
-        console.warn('[TrackingService] Faro pushLog API not available')
+        logger.warn('[TrackingService] Faro pushLog API not available')
         return
       }
 
@@ -360,7 +361,7 @@ export class TrackingService extends BaseService {
     const invokeTracking = client => {
       const api = client?.api
       if (!api?.pushMeasurement) {
-        console.warn('[TrackingService] Faro pushMeasurement API not available')
+        logger.warn('[TrackingService] Faro pushMeasurement API not available')
         return
       }
 
@@ -385,7 +386,7 @@ export class TrackingService extends BaseService {
     this._withClient(client => {
       const api = client?.api
       if (!api?.setView) {
-        console.warn('[TrackingService] Faro setView API not available')
+        logger.warn('[TrackingService] Faro setView API not available')
         return
       }
 
@@ -414,7 +415,7 @@ export class TrackingService extends BaseService {
     const invokeTracking = client => {
       const api = client?.api
       if (!api?.setUser) {
-        console.warn('[TrackingService] Faro setUser API not available')
+        logger.warn('[TrackingService] Faro setUser API not available')
         return
       }
 
@@ -434,7 +435,7 @@ export class TrackingService extends BaseService {
       if (api?.setUser) {
         api.setUser(null)
       } else {
-        console.warn('[TrackingService] Faro setUser API not available')
+        logger.warn('[TrackingService] Faro setUser API not available')
       }
     })
   }
@@ -456,7 +457,7 @@ export class TrackingService extends BaseService {
     const invokeTracking = client => {
       const api = client?.api
       if (!api?.setSession) {
-        console.warn('[TrackingService] Faro setSession API not available')
+        logger.warn('[TrackingService] Faro setSession API not available')
         return
       }
 
@@ -476,7 +477,7 @@ export class TrackingService extends BaseService {
       if (api?.setSession) {
         api.setSession(null)
       } else {
-        console.warn('[TrackingService] Faro setSession API not available')
+        logger.warn('[TrackingService] Faro setSession API not available')
       }
     })
   }
@@ -553,7 +554,7 @@ export class TrackingService extends BaseService {
       try {
         callback(this._faroClient)
       } catch (error) {
-        console.error('[TrackingService] Failed to flush queued tracking call', error)
+        logger.error('[TrackingService] Failed to flush queued tracking call', error)
       }
     })
   }
@@ -577,7 +578,7 @@ export class TrackingService extends BaseService {
       try {
         this._faroClient.destroy()
       } catch (error) {
-        console.warn('[TrackingService] Failed to destroy Faro client cleanly', error)
+        logger.warn('[TrackingService] Failed to destroy Faro client cleanly', error)
       }
     }
 
@@ -707,7 +708,7 @@ export class TrackingService extends BaseService {
       const tracingImport = runtimeConfig.enableTracing === false
         ? Promise.resolve(null)
         : import('@grafana/faro-web-tracing').catch(error => {
-            console.warn('[TrackingService] Tracing instrumentation failed to load:', error)
+            logger.warn('[TrackingService] Tracing instrumentation failed to load:', error)
             return null
           })
 
@@ -768,7 +769,7 @@ export class TrackingService extends BaseService {
       this._enabled = false
       this._setError(error)
       this._ready = true
-      console.error('[TrackingService] Failed to initialize Grafana Faro client:', error)
+      logger.error('[TrackingService] Failed to initialize Grafana Faro client:', error)
     } finally {
       this._setupPromise = null
     }
@@ -795,7 +796,7 @@ export class TrackingService extends BaseService {
           return instrumentations
         }
       } catch (error) {
-        console.warn('[TrackingService] Custom instrumentation factory failed:', error)
+        logger.warn('[TrackingService] Custom instrumentation factory failed:', error)
       }
     }
 
@@ -810,7 +811,7 @@ export class TrackingService extends BaseService {
       try {
         defaultInstrumentations.push(new TracingInstrumentation())
       } catch (error) {
-        console.warn('[TrackingService] Failed to instantiate tracing instrumentation:', error)
+        logger.warn('[TrackingService] Failed to instantiate tracing instrumentation:', error)
       }
     }
 
@@ -826,7 +827,7 @@ export class TrackingService extends BaseService {
       try {
         return callback(this._faroClient)
       } catch (error) {
-        console.error('[TrackingService] Tracking callback failed:', error)
+        logger.error('[TrackingService] Tracking callback failed:', error)
         return null
       }
     }

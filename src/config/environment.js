@@ -1,4 +1,5 @@
 import { isDevelopment } from '@domql/utils'
+import { logger } from '../utils/logger.js'
 
 // Base configuration with defaults and environment-specific overrides
 const CONFIG = {
@@ -135,7 +136,7 @@ const CONFIG = {
 // Determine environment with error handling
 const getEnvironment = () => {
   // @preserve-env
-  const env = process.env.SYMBOLS_APP_ENV || process.env.NODE_ENV
+  const env = process.env.SYMBOLS_APP_ENV || process.env.NODE_ENV || 'development'
 
   // Validate that the environment exists in our config
   if (!CONFIG[env]) {
@@ -196,24 +197,24 @@ export const getConfig = () => {
     const missingFields = requiredFields.filter(field => !finalConfig[field])
 
     if (missingFields.length > 0) {
-      console.error(
+      logger.error(
         `Missing required configuration: ${missingFields.join(', ')}`
       )
     }
 
     if (finalConfig.isDevelopment) {
-      console.warn(
+      logger.warn(
         'environment in SDK:',
         env || process.env.NODE_ENV || process.env.NODE_ENV
       )
-      console.log(finalConfig)
+      logger.log(finalConfig)
     } else if (global.window) {
       global.window.finalConfig = finalConfig
     }
 
     return finalConfig
   } catch (error) {
-    console.error('Failed to load environment configuration:', error)
+    logger.error('Failed to load environment configuration:', error)
 
     // Return safe fallback values to prevent crashes
     return {

@@ -4,6 +4,7 @@ import {
   TIER_FEATURES,
   PROJECT_ROLE_PERMISSIONS
 } from '../utils/permission.js'
+import { logger } from '../utils/logger.js'
 
 const PLUGIN_SESSION_STORAGE_KEY = 'plugin_auth_session'
 
@@ -404,7 +405,7 @@ export class AuthService extends BaseService {
         try {
           await this._tokenManager.ensureValidToken()
         } catch (error) {
-          console.warn('[AuthService] Token refresh failed:', error.message)
+          logger.warn('[AuthService] Token refresh failed:', error.message)
           // Only clear tokens if it's definitely an auth error, not a network error
           if (
             error.message.includes('401') ||
@@ -450,7 +451,7 @@ export class AuthService extends BaseService {
           error: null
         }
       } catch (error) {
-        console.warn('[AuthService] Failed to get user data:', error.message)
+        logger.warn('[AuthService] Failed to get user data:', error.message)
 
         // Only clear tokens if it's an auth error (401, 403), not network errors
         if (error.message.includes('401') || error.message.includes('403')) {
@@ -471,7 +472,7 @@ export class AuthService extends BaseService {
         }
       }
     } catch (error) {
-      console.error(
+      logger.error(
         '[AuthService] Unexpected error in getStoredAuthState:',
         error
       )

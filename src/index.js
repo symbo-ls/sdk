@@ -21,6 +21,7 @@ import {
 import { SERVICE_METHODS } from './utils/services.js'
 import environment from './config/environment.js'
 import { rootBus } from './state/rootEventBus.js'
+import { logger, setDebug } from './utils/logger.js'
 
 const isBrowserEnvironment = () => typeof window !== 'undefined'
 
@@ -37,6 +38,9 @@ export class SDK {
     this._services = new Map()
     this._context = {}
     this._options = this._validateOptions(options)
+
+    // Enable logger output when debug mode is on
+    setDebug(this._options.debug)
 
     // Expose resolved environment config on SDK instance
     this.environment = environment
@@ -308,7 +312,7 @@ export class SDK {
         .filter(([, service]) => typeof service.destroy === 'function')
         .map(async ([name, service]) => {
           await service.destroy()
-          console.log(`Service ${name} destroyed successfully`)
+          logger.log(`Service ${name} destroyed successfully`)
         })
 
       await Promise.all(destroyPromises)
@@ -319,7 +323,7 @@ export class SDK {
 
       return true
     } catch (error) {
-      console.error('Error during SDK destruction:', error)
+      logger.error('Error during SDK destruction:', error)
       throw error
     }
   }
