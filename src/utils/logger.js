@@ -1,4 +1,4 @@
-const isBrowser = typeof window !== 'undefined'
+const isBrowser = typeof window !== 'undefined' && !!(typeof process === 'undefined' || (typeof process.versions === 'undefined' || !process.versions.node))
 
 let _debug = false
 

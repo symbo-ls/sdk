@@ -202,13 +202,7 @@ export const getConfig = () => {
       )
     }
 
-    if (finalConfig.isDevelopment) {
-      logger.warn(
-        'environment in SDK:',
-        env || process.env.NODE_ENV || process.env.NODE_ENV
-      )
-      logger.log(finalConfig)
-    } else if (global.window) {
+    if (global.window) {
       global.window.finalConfig = finalConfig
     }
 
