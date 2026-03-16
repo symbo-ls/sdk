@@ -15,7 +15,8 @@ import {
   createWaitlistService,
   createMetricsService,
   createIntegrationService,
-  createFeatureFlagService
+  createFeatureFlagService,
+  createOrganizationService
 } from './services/index.js'
 
 import { SERVICE_METHODS } from './utils/services.js'
@@ -38,6 +39,11 @@ export class SDK {
     this._services = new Map()
     this._context = {}
     this._options = this._validateOptions(options)
+
+    // Seed context with apiUrl from options so services resolve the correct host
+    if (this._options.apiUrl) {
+      this._context.apiUrl = this._options.apiUrl
+    }
 
     // Enable logger output when debug mode is on
     setDebug(this._options.debug)
@@ -178,6 +184,13 @@ export class SDK {
       this._initService(
         'featureFlag',
         createFeatureFlagService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      this._initService(
+        'organization',
+        createOrganizationService({
           context: this._context,
           options: this._options
         })
@@ -348,7 +361,8 @@ export {
   createWaitlistService,
   createMetricsService,
   createIntegrationService,
-  createFeatureFlagService
+  createFeatureFlagService,
+  createOrganizationService
 } from './services/index.js'
 
 // Export environment configuration

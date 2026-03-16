@@ -15,6 +15,7 @@ import { WaitlistService } from './WaitlistService.js'
 import { MetricsService } from './MetricsService.js'
 import { IntegrationService } from './IntegrationService.js'
 import { FeatureFlagService } from './FeatureFlagService.js'
+import { OrganizationService } from './OrganizationService.js'
 
 const createService = (ServiceClass, config) => new ServiceClass(config)
 
@@ -69,6 +70,9 @@ export const createIntegrationService = config =>
 export const createFeatureFlagService = config =>
   createService(FeatureFlagService, config)
 
+export const createOrganizationService = config =>
+  createService(OrganizationService, config)
+
 export {
   AuthService,
   CollabService,
@@ -86,5 +90,6 @@ export {
   WaitlistService,
   MetricsService,
   IntegrationService,
-  FeatureFlagService
+  FeatureFlagService,
+  OrganizationService
 }

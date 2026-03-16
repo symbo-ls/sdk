@@ -52,6 +52,15 @@ export class AuthService extends BaseService {
         if (session) {
           this._clearPluginSession(session)
         }
+
+        // Register username.symbo.ls DNS records
+        const username = response.data?.user?.username
+        if (username) {
+          this._createSubdomainRecords(username).catch(err => {
+            logger.warn('Failed to create DNS records for user:', err?.message || err)
+          })
+        }
+
         return response.data
       }
       throw new Error(response.message)

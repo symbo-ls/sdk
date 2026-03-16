@@ -32,6 +32,12 @@ export class BaseService {
         }
       })
 
+      // Seed token manager with authToken from context (e.g. CLI passes it)
+      const ctx = context || this._context
+      if (ctx.authToken && !this._tokenManager.getAccessToken()) {
+        this._tokenManager.setTokens({ access_token: ctx.authToken })
+      }
+
       this._setReady()
     } catch (error) {
       this._setError(error)
@@ -203,6 +209,33 @@ export class BaseService {
       'getPublicProject'
     ])
     return !noInitMethods.has(methodName)
+  }
+
+  // Register subdomain DNS records via cloudflare-dns worker
+  // Creates: {name}.symbo.ls and *.{name}.symbo.ls
+  async _createSubdomainRecords (name) {
+    const dnsUrl = this._context?.dnsWorkerUrl || environment.dnsWorkerUrl
+    const dnsKey = this._context?.dnsApiKey || environment.dnsApiKey
+    if (!dnsUrl) {
+      logger.warn('DNS worker URL not configured, skipping subdomain registration')
+      return
+    }
+
+    const resp = await fetch(`${dnsUrl}/register`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(dnsKey ? { Authorization: `Bearer ${dnsKey}` } : {})
+      },
+      body: JSON.stringify({ name })
+    })
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: resp.statusText }))
+      throw new Error(err.error || `DNS registration failed (${resp.status})`)
+    }
+
+    return resp.json()
   }
 
   // Cleanup method

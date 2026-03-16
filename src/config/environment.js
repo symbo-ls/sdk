@@ -23,6 +23,7 @@ const CONFIG = {
     // local
     socketUrl: 'http://localhost:8080', // For socket api
     apiUrl: 'http://localhost:8080', // For server api
+    dnsWorkerUrl: 'https://dns.symbo.ls',
     basedEnv: 'development', // For based api
     basedProject: 'platform-v2-sm', // For based api
     basedOrg: 'symbols', // For based api
@@ -45,8 +46,9 @@ const CONFIG = {
     typesenseProtocol: 'http'
   },
   development: {
-    socketUrl: 'https://dev.api.symbols.app',
-    apiUrl: 'https://dev.api.symbols.app',
+    socketUrl: 'https://api.dev.symbols.app',
+    apiUrl: 'https://api.dev.symbols.app',
+    dnsWorkerUrl: 'https://dns.symbo.ls',
     githubClientId: 'Ov23liHxyWFBxS8f1gnF',
     grafanaUrl:
       'https://faro-collector-prod-us-east-0.grafana.net/collect/7a3ba473cee2025c68513667024316b8', // For grafana tracing
@@ -58,8 +60,8 @@ const CONFIG = {
     typesenseProtocol: 'https'
   },
   testing: {
-    socketUrl: 'https://test.api.symbols.app',
-    apiUrl: 'https://test.api.symbols.app',
+    socketUrl: 'https://api.test.symbols.app',
+    apiUrl: 'https://api.test.symbols.app',
     basedEnv: 'testing',
     basedProject: 'platform-v2-sm',
     basedOrg: 'symbols',
@@ -73,8 +75,8 @@ const CONFIG = {
     typesenseProtocol: 'https'
   },
   upcoming: {
-    socketUrl: 'https://upcoming.api.symbols.app',
-    apiUrl: 'https://upcoming.api.symbols.app',
+    socketUrl: 'https://api.upcoming.symbols.app',
+    apiUrl: 'https://api.upcoming.symbols.app',
     githubClientId: 'Ov23liWF7NvdZ056RV5J',
     grafanaUrl: '', // For grafana tracing
     grafanaAppName: 'Symbols Upcoming',
@@ -85,8 +87,8 @@ const CONFIG = {
     typesenseProtocol: 'https'
   },
   staging: {
-    socketUrl: 'https://staging.api.symbols.app',
-    apiUrl: 'https://staging.api.symbols.app',
+    socketUrl: 'https://api.staging.symbols.app',
+    apiUrl: 'https://api.staging.symbols.app',
     basedEnv: 'staging',
     basedProject: 'platform-v2-sm',
     basedOrg: 'symbols',
@@ -102,6 +104,7 @@ const CONFIG = {
   preview: {
     socketUrl: 'https://api.symbols.app',
     apiUrl: 'https://api.symbols.app',
+    dnsWorkerUrl: 'https://dns.symbo.ls',
     basedEnv: 'production',
     basedProject: 'platform-v2-sm',
     basedOrg: 'symbols',
@@ -118,6 +121,7 @@ const CONFIG = {
   production: {
     socketUrl: 'https://api.symbols.app',
     apiUrl: 'https://api.symbols.app',
+    dnsWorkerUrl: 'https://dns.symbo.ls',
     basedEnv: 'production',
     basedProject: 'platform-v2-sm',
     basedOrg: 'symbols',
@@ -169,6 +173,8 @@ export const getConfig = () => {
       githubClientId:
         process.env.SYMBOLS_APP_GITHUB_CLIENT_ID || envConfig.githubClientId,
       grafanaUrl: process.env.SYMBOLS_APP_GRAFANA_URL || envConfig.grafanaUrl,
+      dnsWorkerUrl: process.env.SYMBOLS_DNS_WORKER_URL || envConfig.dnsWorkerUrl,
+      dnsApiKey: process.env.SYMBOLS_DNS_API_KEY || envConfig.dnsApiKey,
       typesenseCollectionName:
         process.env.TYPESENSE_COLLECTION_NAME ||
         envConfig.typesenseCollectionName,
