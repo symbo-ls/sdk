@@ -416,6 +416,20 @@ export class ProjectService extends BaseService {
     }
   }
 
+  async transferProjectOwnership (projectId, { targetType, userId, organizationId }) {
+    this._requireReady('transferProjectOwnership')
+    if (!projectId) throw new Error('Project ID is required')
+    if (!targetType) throw new Error('targetType is required (user or organization)')
+
+    const response = await this._request(`/projects/${projectId}/transfer-ownership`, {
+      method: 'POST',
+      body: JSON.stringify({ targetType, userId, organizationId }),
+      methodName: 'transferProjectOwnership'
+    })
+    if (response.success) return response.data
+    throw new Error(response.message)
+  }
+
   async checkProjectKeyAvailability (key) {
     this._requireReady('checkProjectKeyAvailability')
     if (!key) {

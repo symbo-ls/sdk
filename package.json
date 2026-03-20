@@ -1,6 +1,6 @@
 {
   "name": "@symbo.ls/sdk",
-  "version": "3.5.1",
+  "version": "3.8.0",
   "type": "module",
   "main": "dist/esm/index.js",
   "module": "dist/esm/index.js",
@@ -52,12 +52,9 @@
     "test:unit-all": "cross-env NODE_ENV=$NODE_ENV tape src/services/tests/**/*.test.js | tap-spec"
   },
   "dependencies": {
-    "@domql/element": "^3.5.1",
-    "@domql/utils": "^3.5.1",
+    "@domql/utils": "^3.8.0",
     "@grafana/faro-web-sdk": "^1.19.0",
     "@grafana/faro-web-tracing": "^1.19.0",
-    "@symbo.ls/router": "^3.5.1",
-    "@symbo.ls/sync": "^3.5.1",
     "acorn": "^8.14.0",
     "acorn-walk": "^8.3.4",
     "dexie": "^4.0.11",
@@ -71,7 +68,7 @@
   "devDependencies": {
     "@faker-js/faker": "^9.5.1",
     "cross-env": "^7.0.3",
-    "esbuild": "^0.26.0",
+    "esbuild": "^0.27.4",
     "esbuild-plugins-node-modules-polyfill": "^1.6.8",
     "glob": "^12.0.0",
     "jsdom": "^26.1.0",
@@ -80,5 +77,8 @@
     "tap-spec": "^5.0.0",
     "tape": "^5.9.0"
   },
-  "gitHead": "0be12bcdd99c265fdeded6d756a1a3616a943ffc"
+  "gitHead": "0be12bcdd99c265fdeded6d756a1a3616a943ffc",
+  "publishConfig": {
+    "access": "public"
+  }
 }

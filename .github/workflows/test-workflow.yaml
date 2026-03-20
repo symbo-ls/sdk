@@ -36,7 +36,7 @@ jobs:
 
       - name: Npm install
         run: |
-          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_SECRET }}" > .npmrc
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
           npm install --verbose
 
       - name: Build
