@@ -7,13 +7,14 @@
   "files": [
     "src/**/*.js",
     "dist/**/*.js",
+    "dist/**/*.cjs",
     "README.md"
   ],
   "exports": {
     ".": {
       "node": "./dist/node/index.js",
       "browser": "./dist/esm/index.js",
-      "require": "./dist/cjs/index.js",
+      "require": "./dist/cjs/index.cjs",
       "default": "./dist/esm/index.js"
     },
     "./environment": {
@@ -23,18 +24,16 @@
     "./utils/services": {
       "node": "./dist/node/utils/services.js",
       "import": "./dist/esm/utils/services.js",
-      "require": "./dist/cjs/utils/services.js",
+      "require": "./dist/cjs/utils/services.cjs",
       "default": "./dist/esm/utils/services.js"
     }
   },
   "scripts": {
-    "copy:package:cjs": "cp ./package-cjs.json dist/cjs/package.json",
     "build:esm": "cross-env NODE_ENV=$NODE_ENV esbuild ./src/*.js ./src/**/*.js --target=es2019 --format=esm --bundle --external:@domql/utils --external:@symbo.ls/router --external:@symbo.ls/sync --outdir=dist/esm --define:process.env.NODE_ENV=process.env.NODE_ENV",
-    "build:cjs": "cross-env NODE_ENV=$NODE_ENV esbuild ./src/*.js ./src/**/*.js --target=node16 --format=cjs --outdir=dist/cjs --define:process.env.NODE_ENV=process.env.NODE_ENV",
+    "build:cjs": "cross-env NODE_ENV=$NODE_ENV esbuild ./src/*.js ./src/**/*.js --target=node16 --format=cjs --out-extension:.js=.cjs --outdir=dist/cjs --define:process.env.NODE_ENV=process.env.NODE_ENV",
     "build:node": "cross-env NODE_ENV=$NODE_ENV esbuild ./src/*.js ./src/**/*.js --target=node16 --format=esm --platform=node --outdir=dist/node --define:process.env.NODE_ENV=process.env.NODE_ENV",
-    "build": "node ../smbls/build/build.js",
-    "// prepublish": "rimraf -I dist; npm run build; npm run copy:package:cjs; npm run test",
-    "prepublish": "rimraf -I dist; npm run build; npm run copy:package:cjs;",
+    "build": "rimraf dist && npm run build:esm && npm run build:cjs && npm run build:node",
+    "prepublishOnly": "npm run build",
     "test:all": "cross-env NODE_ENV=$NODE_ENV tape integration-tests/index.js integration-tests/*.test.js | tap-spec",
     "test:smoke": "cross-env NODE_ENV=$NODE_ENV tape integration-tests/index.js integration-tests/smoke/*.test.js | tap-spec",
     "test:auth": "cross-env NODE_ENV=$NODE_ENV tape integration-tests/index.js integration-tests/auth/*.test.js | tap-spec",
@@ -69,6 +68,7 @@
     "@faker-js/faker": "^9.5.1",
     "cross-env": "^7.0.3",
     "esbuild": "^0.27.4",
+    "rimraf": "^6.0.1",
     "esbuild-plugins-node-modules-polyfill": "^1.6.8",
     "glob": "^12.0.0",
     "jsdom": "^26.1.0",
