@@ -24,6 +24,7 @@ jobs:
     env:
       NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       GUEST_PASSWORD: ${{ secrets.GUEST_PASSWORD }}
+      LOCAL_EMAIL: ${{ secrets.LOCAL_EMAIL }}
 
     steps:
       - uses: actions/checkout@v4
