@@ -210,4 +210,104 @@ export class FileService extends BaseService {
       error: result.status === 'rejected' ? result.reason.message : null
     }))
   }
+
+  // ==================== PROJECT FILE UPLOAD ====================
+
+  /**
+   * Upload a file to the server and add its metadata to the project files map.
+   *
+   * Uses the project key from symbols.json (passed via context or options) to
+   * associate the upload with a project. After upload, patches the project's
+   * `files` map with a metadata entry matching the format used in the local
+   * `files/` directory (content.src, key, type, format).
+   *
+   * @param {File|Blob} file - The file to upload
+   * @param {Object} options
+   * @param {string} options.key - File key in the project files map (defaults to file.name)
+   * @param {string} options.projectId - Project ID (falls back to context)
+   * @param {string} options.projectKey - Project key from symbols.json (falls back to context.appKey)
+   * @param {string} options.visibility - File visibility (default: 'public')
+   * @param {string[]} options.tags - Tags for the uploaded file
+   * @param {Object} options.metadata - Extra metadata for the upload
+   * @param {string} options.branch - Project branch (default: 'main')
+   * @returns {Object} The file metadata entry that was added to the project
+   */
+  async uploadProjectFile (file, options = {}) {
+    this._requireReady('uploadProjectFile')
+    if (!file) {
+      throw new Error('File is required for upload')
+    }
+
+    const fileKey = options.key || file.name
+    if (!fileKey) {
+      throw new Error('File key is required (provide options.key or a file with a name)')
+    }
+
+    // Upload the file to the server
+    const uploadData = await this.uploadFile(file, {
+      projectId: options.projectId,
+      visibility: options.visibility || 'public',
+      tags: options.tags,
+      metadata: options.metadata
+    })
+
+    // Build the file metadata entry (same format as files/ directory)
+    const fileId = uploadData._id || uploadData.id
+    const format = _extractFormat(fileKey, uploadData)
+    const entry = {
+      content: {
+        src: this.getFileUrl(fileId)
+      },
+      code: '',
+      key: fileKey,
+      type: 'file',
+      format
+    }
+
+    // Patch the project files map on the server
+    const projectService = this._context?.services?.project
+    const projectId = options.projectId || this._context.project?.id
+    if (projectService && projectId) {
+      const branch = options.branch || 'main'
+      const changes = [['update', ['files', fileKey], entry]]
+      await projectService.applyProjectChanges(projectId, changes, { branch })
+    }
+
+    return entry
+  }
+
+  /**
+   * Upload multiple files to the project files map.
+   *
+   * @param {Array<File|Blob>} files - Files to upload
+   * @param {Object} options - Same options as uploadProjectFile (key is derived from each file name)
+   * @returns {Array<Object>} Results with success/error status and metadata entries
+   */
+  async uploadMultipleProjectFiles (files, options = {}) {
+    if (!Array.isArray(files) || files.length === 0) {
+      throw new Error('Files array is required and must not be empty')
+    }
+
+    const results = []
+    for (const file of files) {
+      try {
+        const entry = await this.uploadProjectFile(file, {
+          ...options,
+          key: file.name || options.key
+        })
+        results.push({ file, success: true, data: entry, error: null })
+      } catch (error) {
+        results.push({ file, success: false, data: null, error: error.message })
+      }
+    }
+
+    return results
+  }
+}
+
+function _extractFormat (fileKey, uploadData) {
+  if (uploadData.extension) return uploadData.extension.toLowerCase()
+  const dotIdx = fileKey.lastIndexOf('.')
+  if (dotIdx !== -1) return fileKey.slice(dotIdx + 1).toLowerCase()
+  return ''
 }
