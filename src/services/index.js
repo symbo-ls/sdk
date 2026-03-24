@@ -16,6 +16,7 @@ import { MetricsService } from './MetricsService.js'
 import { IntegrationService } from './IntegrationService.js'
 import { FeatureFlagService } from './FeatureFlagService.js'
 import { OrganizationService } from './OrganizationService.js'
+import { KvService } from './KvService.js'
 
 const createService = (ServiceClass, config) => new ServiceClass(config)
 
@@ -73,6 +74,9 @@ export const createFeatureFlagService = config =>
 export const createOrganizationService = config =>
   createService(OrganizationService, config)
 
+export const createKvService = config =>
+  createService(KvService, config)
+
 export {
   AuthService,
   CollabService,
@@ -91,5 +95,6 @@ export {
   MetricsService,
   IntegrationService,
   FeatureFlagService,
-  OrganizationService
+  OrganizationService,
+  KvService
 }

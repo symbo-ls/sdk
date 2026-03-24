@@ -16,7 +16,8 @@ import {
   createMetricsService,
   createIntegrationService,
   createFeatureFlagService,
-  createOrganizationService
+  createOrganizationService,
+  createKvService
 } from './services/index.js'
 
 import { SERVICE_METHODS } from './utils/services.js'
@@ -194,6 +195,13 @@ export class SDK {
           context: this._context,
           options: this._options
         })
+      ),
+      this._initService(
+        'kv',
+        createKvService({
+          context: this._context,
+          options: this._options
+        })
       )
     ])
 
@@ -362,7 +370,8 @@ export {
   createMetricsService,
   createIntegrationService,
   createFeatureFlagService,
-  createOrganizationService
+  createOrganizationService,
+  createKvService
 } from './services/index.js'
 
 // Export environment configuration

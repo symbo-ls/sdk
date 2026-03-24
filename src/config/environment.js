@@ -23,6 +23,7 @@ const CONFIG = {
     // local
     socketUrl: 'http://localhost:8080', // For socket api
     apiUrl: 'http://localhost:8080', // For server api
+    kvUrl: 'https://smbls-kv-dev.nika-980.workers.dev',
     dnsWorkerUrl: 'https://dns.symbo.ls',
     basedEnv: 'development', // For based api
     basedProject: 'platform-v2-sm', // For based api
@@ -48,6 +49,7 @@ const CONFIG = {
   development: {
     socketUrl: 'https://api.dev.symbols.app',
     apiUrl: 'https://api.dev.symbols.app',
+    kvUrl: 'https://smbls-kv-dev.nika-980.workers.dev',
     dnsWorkerUrl: 'https://dns.symbo.ls',
     githubClientId: 'Ov23liHxyWFBxS8f1gnF',
     grafanaUrl:
@@ -89,6 +91,7 @@ const CONFIG = {
   staging: {
     socketUrl: 'https://api.staging.symbols.app',
     apiUrl: 'https://api.staging.symbols.app',
+    kvUrl: 'https://smbls-kv-staging.nika-980.workers.dev',
     basedEnv: 'staging',
     basedProject: 'platform-v2-sm',
     basedOrg: 'symbols',
@@ -121,6 +124,7 @@ const CONFIG = {
   production: {
     socketUrl: 'https://api.symbols.app',
     apiUrl: 'https://api.symbols.app',
+    kvUrl: 'https://smbls-kv.nika-980.workers.dev',
     dnsWorkerUrl: 'https://dns.symbo.ls',
     basedEnv: 'production',
     basedProject: 'platform-v2-sm',
@@ -173,6 +177,7 @@ export const getConfig = () => {
       githubClientId:
         process.env.SYMBOLS_APP_GITHUB_CLIENT_ID || envConfig.githubClientId,
       grafanaUrl: process.env.SYMBOLS_APP_GRAFANA_URL || envConfig.grafanaUrl,
+      kvUrl: process.env.SYMBOLS_KV_URL || envConfig.kvUrl,
       dnsWorkerUrl: process.env.SYMBOLS_DNS_WORKER_URL || envConfig.dnsWorkerUrl,
       dnsApiKey: process.env.SYMBOLS_DNS_API_KEY || envConfig.dnsApiKey,
       typesenseCollectionName:
