@@ -1,7 +1,7 @@
 import { BaseService } from './BaseService.js'
 import { computeOrdersForTuples } from '../utils/ordering.js'
 import { preprocessChanges } from '../utils/changePreprocessor.js'
-import { deepStringifyFunctions } from '@domql/utils'
+import { deepStringifyFunctions } from '@symbo.ls/utils'
 
 export class ProjectService extends BaseService {
   // ==================== PROJECT METHODS ====================

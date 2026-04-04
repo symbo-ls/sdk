@@ -3,7 +3,7 @@ import { CollabClient } from '../utils/CollabClient.js'
 import { RootStateManager } from '../state/RootStateManager.js'
 import { rootBus } from '../state/rootEventBus.js'
 import { validateParams } from '../utils/validation.js'
-import { deepStringifyFunctions } from '@domql/utils'
+import { deepStringifyFunctions } from '@symbo.ls/utils'
 import { preprocessChanges } from '../utils/changePreprocessor.js'
 import { logger } from '../utils/logger.js'
 
