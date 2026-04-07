@@ -1,4 +1,4 @@
-import { isDevelopment } from '@domql/utils'
+import { isDevelopment } from '@symbo.ls/utils'
 import { logger } from '../utils/logger.js'
 
 // Base configuration with defaults and environment-specific overrides

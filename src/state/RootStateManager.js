@@ -1,4 +1,4 @@
-import * as utils from '@domql/utils'
+import * as utils from '@symbo.ls/utils'
 import { rootBus } from './rootEventBus.js'
 
 const { isFunction } = utils.default || utils

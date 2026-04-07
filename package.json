@@ -1,6 +1,6 @@
 {
   "name": "@symbo.ls/sdk",
-  "version": "3.8.9",
+  "version": "4.0.0",
   "type": "module",
   "main": "dist/esm/index.js",
   "module": "dist/esm/index.js",
@@ -29,7 +29,7 @@
     }
   },
   "scripts": {
-    "build:esm": "cross-env NODE_ENV=$NODE_ENV esbuild ./src/*.js ./src/**/*.js --target=es2019 --format=esm --bundle --external:@domql/utils --external:@symbo.ls/router --external:@symbo.ls/sync --outdir=dist/esm --define:process.env.NODE_ENV=process.env.NODE_ENV",
+    "build:esm": "cross-env NODE_ENV=$NODE_ENV esbuild ./src/*.js ./src/**/*.js --target=es2019 --format=esm --bundle --external:@symbo.ls/utils --external:@symbo.ls/router --external:@symbo.ls/sync --outdir=dist/esm --define:process.env.NODE_ENV=process.env.NODE_ENV",
     "build:cjs": "cross-env NODE_ENV=$NODE_ENV esbuild ./src/*.js ./src/**/*.js --target=node16 --format=cjs --out-extension:.js=.cjs --outdir=dist/cjs --define:process.env.NODE_ENV=process.env.NODE_ENV",
     "build:node": "cross-env NODE_ENV=$NODE_ENV esbuild ./src/*.js ./src/**/*.js --target=node16 --format=esm --platform=node --outdir=dist/node --define:process.env.NODE_ENV=process.env.NODE_ENV",
     "build": "rimraf dist && npm run build:esm && npm run build:cjs && npm run build:node",
@@ -51,7 +51,7 @@
     "test:unit-all": "cross-env NODE_ENV=$NODE_ENV tape src/services/tests/**/*.test.js | tap-spec"
   },
   "dependencies": {
-    "@domql/utils": "^3.8.9",
+    "@symbo.ls/utils": "4.0.0",
     "@grafana/faro-web-sdk": "^1.19.0",
     "@grafana/faro-web-tracing": "^1.19.0",
     "acorn": "^8.14.0",
