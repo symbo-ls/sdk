@@ -15,6 +15,7 @@ export class AdminService extends BaseService {
       ids,
       query,
       status,
+      team,
       page = 1,
       limit = 50,
       sort = { field: 'createdAt', order: 'desc' }
@@ -44,6 +45,9 @@ export class AdminService extends BaseService {
     if (sort && sort.field) {
       queryParams.append('sort[field]', sort.field)
       queryParams.append('sort[order]', sort.order || 'desc')
+    }
+    if (team != null) {
+      queryParams.append('team', team)
     }
 
     const queryString = queryParams.toString()
