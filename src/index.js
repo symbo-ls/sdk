@@ -32,7 +32,7 @@ export const isLocalhost = () => {
     return false
   }
   const host = window.location && window.location.hostname
-  return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '' || !host
+  return host === 'localhost' || host?.endsWith('.localhost') || host === '127.0.0.1' || host === '::1' || host === '' || !host
 }
 
 export class SDK {

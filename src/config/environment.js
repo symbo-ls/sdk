@@ -52,8 +52,7 @@ const CONFIG = {
     kvUrl: 'https://smbls-kv-dev.nika-980.workers.dev',
     dnsWorkerUrl: 'https://dns.symbo.ls',
     githubClientId: 'Ov23liHxyWFBxS8f1gnF',
-    grafanaUrl:
-      'https://faro-collector-prod-us-east-0.grafana.net/collect/7a3ba473cee2025c68513667024316b8', // For grafana tracing
+    grafanaUrl: '', // Disabled in dev — enable only in production
     grafanaAppName: 'Symbols Dev',
     typesenseCollectionName: 'docs',
     typesenseApiKey: 'awmcVpbWqZi9IUgmvslp1C5LKDU8tMjA',
