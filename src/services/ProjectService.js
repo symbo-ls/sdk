@@ -294,6 +294,32 @@ export class ProjectService extends BaseService {
     }
   }
 
+  // Single axis controlling both source read scope AND library consumption
+  // scope — see MODEL.md §Project. Replaces setProjectAccess / setProjectVisibility.
+  async setProjectSourceAccess (projectId, sourceAccess) {
+    this._requireReady('setProjectSourceAccess')
+    if (!projectId) throw new Error('Project ID is required')
+    if (!sourceAccess) throw new Error('sourceAccess is required')
+
+    const allowed = ['public', 'org', 'workspace', 'restricted']
+    if (!allowed.includes(sourceAccess)) {
+      throw new Error(`Invalid sourceAccess: ${sourceAccess}. Must be one of: ${allowed.join(', ')}`)
+    }
+
+    try {
+      const response = await this._request(`/projects/${projectId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ sourceAccess }),
+        methodName: 'setProjectSourceAccess'
+      })
+      if (response.success) return response.data
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Failed to set sourceAccess: ${error.message}`, { cause: error })
+    }
+  }
+
+  /** @deprecated Use setProjectSourceAccess. Removed when server drops Project.access (Phase 3). */
   async setProjectAccess (projectId, access) {
     this._requireReady('setProjectAccess')
     if (!projectId) {
@@ -325,6 +351,7 @@ export class ProjectService extends BaseService {
     }
   }
 
+  /** @deprecated visibility moved to per-env (MODEL.md §Project). Kept for compatibility until Phase 3 removes it server-side. */
   async setProjectVisibility (projectId, visibility) {
     this._requireReady('setProjectVisibility')
     if (!projectId) {

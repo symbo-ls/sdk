@@ -197,6 +197,13 @@ export class SDK {
         })
       ),
       this._initService(
+        'workspace',
+        createWorkspaceService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      this._initService(
         'kv',
         createKvService({
           context: this._context,
@@ -371,6 +378,7 @@ export {
   createIntegrationService,
   createFeatureFlagService,
   createOrganizationService,
+  createWorkspaceService,
   createKvService
 } from './services/index.js'
 

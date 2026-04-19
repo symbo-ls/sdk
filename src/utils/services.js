@@ -362,5 +362,24 @@ export const SERVICE_METHODS = {
   updateTeamAccess: 'organization',
   revokeTeamAccess: 'organization',
   createOrgProject: 'organization',
-  adminListOrganizations: 'organization'
+  adminListOrganizations: 'organization',
+
+  // Workspace (billing unit). See /MODEL.md.
+  createWorkspace: 'workspace',
+  listWorkspaces: 'workspace',
+  getWorkspace: 'workspace',
+  updateWorkspace: 'workspace',
+  deleteWorkspace: 'workspace',
+  listWorkspaceMembers: 'workspace',
+  addWorkspaceMember: 'workspace',
+  updateWorkspaceMemberRole: 'workspace',
+  removeWorkspaceMember: 'workspace',
+  grantWorkspaceTeamAccess: 'workspace',
+  revokeWorkspaceTeamAccess: 'workspace',
+  getBilling: 'workspace',
+  getCreditBalance: 'workspace',
+  getCreditLedger: 'workspace',
+  getSpendControls: 'workspace',
+  updateSpendControls: 'workspace',
+  setProjectSourceAccess: 'project'
 }
