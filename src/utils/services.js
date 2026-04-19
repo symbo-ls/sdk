@@ -364,7 +364,6 @@ export const SERVICE_METHODS = {
   createOrgProject: 'organization',
   adminListOrganizations: 'organization',
 
-  // Workspace (billing unit). See /MODEL.md.
   createWorkspace: 'workspace',
   listWorkspaces: 'workspace',
   getWorkspace: 'workspace',

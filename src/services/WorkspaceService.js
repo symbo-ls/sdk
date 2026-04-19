@@ -1,7 +1,5 @@
 import { BaseService } from './BaseService.js'
-
-// SDK client for the Workspace entity (the billing unit).
-// See MODEL.md for the full entity/membership spec.
+import { WORKSPACE_MEMBER_ROLES, TEAM_GRANT_ROLES } from '../constants/roles.js'
 
 export class WorkspaceService extends BaseService {
   // ==================== WORKSPACE CRUD ====================
@@ -86,9 +84,8 @@ export class WorkspaceService extends BaseService {
     this._requireReady('addWorkspaceMember')
     if (!workspaceId) throw new Error('workspaceId is required')
     if (!userId) throw new Error('userId is required')
-    const allowed = ['owner', 'admin', 'editor', 'viewer', 'guest']
-    if (!allowed.includes(role)) {
-      throw new Error(`Invalid role: ${role}. Must be one of: ${allowed.join(', ')}`)
+    if (!WORKSPACE_MEMBER_ROLES.includes(role)) {
+      throw new Error(`Invalid role: ${role}. Must be one of: ${WORKSPACE_MEMBER_ROLES.join(', ')}`)
     }
 
     const response = await this._request(`/workspaces/${workspaceId}/members`, {
@@ -100,10 +97,13 @@ export class WorkspaceService extends BaseService {
     throw new Error(response.message)
   }
 
-  async updateWorkspaceMemberRole (workspaceId, userId, role) {
+  async updateWorkspaceMemberRole (workspaceId, userId, { role }) {
     this._requireReady('updateWorkspaceMemberRole')
     if (!workspaceId || !userId || !role) {
       throw new Error('workspaceId, userId, role are required')
+    }
+    if (!WORKSPACE_MEMBER_ROLES.includes(role)) {
+      throw new Error(`Invalid role: ${role}. Must be one of: ${WORKSPACE_MEMBER_ROLES.join(', ')}`)
     }
 
     const response = await this._request(`/workspaces/${workspaceId}/members/${userId}`, {
@@ -132,9 +132,8 @@ export class WorkspaceService extends BaseService {
   async grantWorkspaceTeamAccess (workspaceId, { teamId, role = 'guest' }) {
     this._requireReady('grantWorkspaceTeamAccess')
     if (!workspaceId || !teamId) throw new Error('workspaceId and teamId are required')
-    const allowed = ['viewer', 'guest', 'editor', 'admin']
-    if (!allowed.includes(role)) {
-      throw new Error(`Invalid role: ${role}. Must be one of: ${allowed.join(', ')}`)
+    if (!TEAM_GRANT_ROLES.includes(role)) {
+      throw new Error(`Invalid role: ${role}. Must be one of: ${TEAM_GRANT_ROLES.join(', ')}`)
     }
 
     const response = await this._request(`/workspaces/${workspaceId}/team-access`, {

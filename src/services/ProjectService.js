@@ -2,6 +2,7 @@ import { BaseService } from './BaseService.js'
 import { computeOrdersForTuples } from '../utils/ordering.js'
 import { preprocessChanges } from '../utils/changePreprocessor.js'
 import { deepStringifyFunctions } from '@symbo.ls/utils'
+import { PROJECT_SOURCE_ACCESS } from '../constants/roles.js'
 
 export class ProjectService extends BaseService {
   // ==================== PROJECT METHODS ====================
@@ -294,16 +295,17 @@ export class ProjectService extends BaseService {
     }
   }
 
-  // Single axis controlling both source read scope AND library consumption
-  // scope — see MODEL.md §Project. Replaces setProjectAccess / setProjectVisibility.
+  // Single axis controlling both source read scope AND library consumption scope.
+  // Replaces setProjectAccess / setProjectVisibility.
   async setProjectSourceAccess (projectId, sourceAccess) {
     this._requireReady('setProjectSourceAccess')
     if (!projectId) throw new Error('Project ID is required')
     if (!sourceAccess) throw new Error('sourceAccess is required')
 
-    const allowed = ['public', 'org', 'workspace', 'restricted']
-    if (!allowed.includes(sourceAccess)) {
-      throw new Error(`Invalid sourceAccess: ${sourceAccess}. Must be one of: ${allowed.join(', ')}`)
+    if (!PROJECT_SOURCE_ACCESS.includes(sourceAccess)) {
+      throw new Error(
+        `Invalid sourceAccess: ${sourceAccess}. Must be one of: ${PROJECT_SOURCE_ACCESS.join(', ')}`
+      )
     }
 
     try {
