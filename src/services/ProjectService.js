@@ -298,27 +298,17 @@ export class ProjectService extends BaseService {
   // Single axis controlling both source read scope AND library consumption scope.
   // Replaces setProjectAccess / setProjectVisibility.
   async setProjectSourceAccess (projectId, sourceAccess) {
-    this._requireReady('setProjectSourceAccess')
     if (!projectId) throw new Error('Project ID is required')
     if (!sourceAccess) throw new Error('sourceAccess is required')
-
     if (!PROJECT_SOURCE_ACCESS.includes(sourceAccess)) {
       throw new Error(
         `Invalid sourceAccess: ${sourceAccess}. Must be one of: ${PROJECT_SOURCE_ACCESS.join(', ')}`
       )
     }
-
-    try {
-      const response = await this._request(`/projects/${projectId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ sourceAccess }),
-        methodName: 'setProjectSourceAccess'
-      })
-      if (response.success) return response.data
-      throw new Error(response.message)
-    } catch (error) {
-      throw new Error(`Failed to set sourceAccess: ${error.message}`, { cause: error })
-    }
+    return this._call('setProjectSourceAccess', `/projects/${projectId}`, {
+      method: 'PATCH',
+      body: { sourceAccess },
+    })
   }
 
   /** @deprecated Use setProjectSourceAccess. Removed when server drops Project.access (Phase 3). */

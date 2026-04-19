@@ -191,6 +191,25 @@ export class BaseService {
     }
   }
 
+  // Envelope-aware request: expects the server to respond with
+  // { success, data, message } and unwraps to `data` on success or throws
+  // `new Error(message)` otherwise. Collapses the ~5 lines of boilerplate
+  // that every service method repeats.
+  async _call (methodName, endpoint, { method = 'GET', body, headers } = {}) {
+    this._requireReady(methodName)
+    const init = { method, methodName }
+    if (headers) init.headers = headers
+    if (body !== undefined) init.body = body instanceof FormData ? body : JSON.stringify(body)
+
+    const response = await this._request(endpoint, init)
+    // Tolerate both enveloped {success, data, message} and bare payloads.
+    if (response && typeof response === 'object' && 'success' in response) {
+      if (response.success) return response.data
+      throw new Error(response.message || `${methodName} failed`)
+    }
+    return response
+  }
+
   // Helper method to determine if a method requires initialization
   _requiresInit (methodName) {
     const noInitMethods = new Set([
