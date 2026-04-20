@@ -212,6 +212,31 @@ export class ProjectService extends BaseService {
     }
   }
 
+  /**
+   * Anonymous read of a public project's current data for a given env.
+   * Server-side gated on `project.visibility === 'public'`. Returns null on
+   * 403/404 so callers can fall back to the authed route.
+   */
+  async getPublicProjectDataByKey (key, { envKey } = {}) {
+    if (!key) throw new Error('Project key is required')
+    if (!envKey) throw new Error('Environment key is required')
+    try {
+      const response = await this._request(
+        `/projects/key/${key}/public/${encodeURIComponent(envKey)}/data`,
+        { method: 'GET', methodName: 'getPublicProjectDataByKey' }
+      )
+      if (response?.success) return response.data
+      return null
+    } catch (error) {
+      const status = error?.cause?.status || error?.status
+      if (status === 403 || status === 404) return null
+      throw new Error(
+        `Failed to get public project data by key: ${error.message}`,
+        { cause: error }
+      )
+    }
+  }
+
   async updateProject (projectId, data) {
     this._requireReady('updateProject')
     if (!projectId) {
@@ -932,40 +957,6 @@ export class ProjectService extends BaseService {
       throw new Error(response.message)
     } catch (error) {
       throw new Error(`Failed to list environments: ${error.message}`, { cause: error })
-    }
-  }
-
-  /**
-   * Activate multi-environment support for a project.
-   * Optional `force` will reconfigure DNS/TLS even if already active.
-   * Mirrors ProjectController.activateMultipleEnvironments.
-   */
-  async activateMultipleEnvironments (projectId, options = {}) {
-    this._requireReady('activateMultipleEnvironments')
-    if (!projectId) {
-      throw new Error('Project ID is required')
-    }
-
-    const { force = false, headers } = options
-
-    try {
-      const response = await this._request(`/projects/${projectId}/environments/activate`, {
-        method: 'POST',
-        body: JSON.stringify({ ...(force ? { force: true } : {}) }),
-        ...(headers ? { headers } : {}),
-        methodName: 'activateMultipleEnvironments'
-      })
-
-      if (response && response.success) {
-        return response.data
-      }
-
-      throw new Error(response.message)
-    } catch (error) {
-      throw new Error(
-        `Failed to activate multiple environments: ${error.message}`,
-        { cause: error }
-      )
     }
   }
 

@@ -91,7 +91,7 @@ export class AdminService extends BaseService {
     }
 
     try {
-      const response = await this._request('/assign-projects', {
+      const response = await this._request('/users/assign-projects', {
         method: 'POST',
         body: JSON.stringify(requestBody),
         methodName: 'assignProjectsToUser'
