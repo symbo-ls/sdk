@@ -12,10 +12,10 @@ export class SubscriptionService extends BaseService {
       throw new Error('Subscription data is required')
     }
 
-    const { projectId, planId, pricingKey = 'monthly', seats = 1, successUrl, cancelUrl } = subscriptionData
+    const { projectId, workspaceId, planId, pricingKey = 'monthly', seats = 1, successUrl, cancelUrl } = subscriptionData
 
-    if (!projectId) {
-      throw new Error('Project ID is required')
+    if (!projectId && !workspaceId) {
+      throw new Error('Project ID or Workspace ID is required')
     }
     if (!planId) {
       throw new Error('Plan ID is required')
@@ -26,6 +26,7 @@ export class SubscriptionService extends BaseService {
         method: 'POST',
         body: JSON.stringify({
           projectId,
+          workspaceId,
           planId,
           pricingKey,
           seats,
@@ -185,12 +186,13 @@ export class SubscriptionService extends BaseService {
       throw new Error('Subscription data must be a valid object')
     }
 
-    // Basic validation for required fields
-    const requiredFields = ['projectId', 'planId']
-    for (const field of requiredFields) {
-      if (!subscriptionData[field]) {
-        throw new Error(`Required field '${field}' is missing`)
-      }
+    // Either projectId or workspaceId is required (I2 dev-bind supports
+    // workspace-scoped subscriptions; Phase 1 keeps both paths active).
+    if (!subscriptionData.projectId && !subscriptionData.workspaceId) {
+      throw new Error("Required field 'projectId' or 'workspaceId' is missing")
+    }
+    if (!subscriptionData.planId) {
+      throw new Error("Required field 'planId' is missing")
     }
 
     // Validate seats is a positive integer

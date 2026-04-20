@@ -392,6 +392,91 @@ export class OrganizationService extends BaseService {
     throw new Error(response.message)
   }
 
+  // ==================== CREDIT POOL ====================
+
+  async getCreditPool (orgId) {
+    this._requireReady('getCreditPool')
+    if (!orgId) throw new Error('orgId is required')
+
+    const response = await this._request(`/organizations/${orgId}/credit-pool`, {
+      method: 'GET',
+      methodName: 'getCreditPool'
+    })
+    if (response.success) return response.data
+    throw new Error(response.message)
+  }
+
+  async updateCreditPool (orgId, pooledCredits) {
+    this._requireReady('updateCreditPool')
+    if (!orgId) throw new Error('orgId is required')
+
+    const response = await this._request(`/organizations/${orgId}/credit-pool`, {
+      method: 'PATCH',
+      body: JSON.stringify({ pooledCredits }),
+      methodName: 'updateCreditPool'
+    })
+    if (response.success) return response.data
+    throw new Error(response.message)
+  }
+
+  // ==================== SSO ====================
+
+  async getSso (orgId) {
+    this._requireReady('getSso')
+    if (!orgId) throw new Error('orgId is required')
+
+    const response = await this._request(`/organizations/${orgId}/sso`, {
+      method: 'GET',
+      methodName: 'getSso'
+    })
+    if (response.success) return response.data
+    throw new Error(response.message)
+  }
+
+  async updateSso (orgId, sso) {
+    this._requireReady('updateSso')
+    if (!orgId) throw new Error('orgId is required')
+
+    const response = await this._request(`/organizations/${orgId}/sso`, {
+      method: 'PATCH',
+      body: JSON.stringify(sso || {}),
+      methodName: 'updateSso'
+    })
+    if (response.success) return response.data
+    throw new Error(response.message)
+  }
+
+  // ==================== SCIM ====================
+
+  async getScim (orgId) {
+    this._requireReady('getScim')
+    if (!orgId) throw new Error('orgId is required')
+
+    const response = await this._request(`/organizations/${orgId}/scim`, {
+      method: 'GET',
+      methodName: 'getScim'
+    })
+    if (response.success) return response.data
+    throw new Error(response.message)
+  }
+
+  async updateScim (orgId, { enabled, rotateToken } = {}) {
+    this._requireReady('updateScim')
+    if (!orgId) throw new Error('orgId is required')
+
+    const body = {}
+    if (enabled !== undefined) body.enabled = enabled
+    if (rotateToken !== undefined) body.rotateToken = rotateToken
+
+    const response = await this._request(`/organizations/${orgId}/scim`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+      methodName: 'updateScim'
+    })
+    if (response.success) return response.data
+    throw new Error(response.message)
+  }
+
   // ==================== ADMIN ====================
 
   async adminListOrganizations (params = {}) {

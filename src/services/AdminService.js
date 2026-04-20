@@ -369,6 +369,26 @@ export class AdminService extends BaseService {
   }
 
   /**
+   * Get rate-limit stats (admin-only). Exposes the middleware's current
+   * per-user/per-IP counters for ops debugging.
+   */
+  async getRateLimitStats () {
+    this._requireReady('getRateLimitStats')
+    try {
+      const response = await this._request('/users/admin/rate-limit-stats', {
+        method: 'GET',
+        methodName: 'getRateLimitStats'
+      })
+      if (response.success) {
+        return response.data
+      }
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Failed to get rate limit stats: ${error.message}`, { cause: error })
+    }
+  }
+
+  /**
    * Private helper to validate email format
    */
   _isValidEmail (email) {

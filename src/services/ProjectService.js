@@ -474,6 +474,20 @@ export class ProjectService extends BaseService {
     throw new Error(response.message)
   }
 
+  async transferProjectToWorkspace (projectId, targetWorkspaceId) {
+    this._requireReady('transferProjectToWorkspace')
+    if (!projectId) throw new Error('Project ID is required')
+    if (!targetWorkspaceId) throw new Error('targetWorkspaceId is required')
+
+    const response = await this._request(`/projects/${projectId}/transfer-workspace`, {
+      method: 'POST',
+      body: JSON.stringify({ targetWorkspaceId }),
+      methodName: 'transferProjectToWorkspace'
+    })
+    if (response.success) return response.data
+    throw new Error(response.message)
+  }
+
   async checkProjectKeyAvailability (key) {
     this._requireReady('checkProjectKeyAvailability')
     if (!key) {

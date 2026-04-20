@@ -363,6 +363,12 @@ export const SERVICE_METHODS = {
   revokeTeamAccess: 'organization',
   createOrgProject: 'organization',
   adminListOrganizations: 'organization',
+  getCreditPool: 'organization',
+  updateCreditPool: 'organization',
+  getSso: 'organization',
+  updateSso: 'organization',
+  getScim: 'organization',
+  updateScim: 'organization',
 
   createWorkspace: 'workspace',
   listWorkspaces: 'workspace',
@@ -380,5 +386,25 @@ export const SERVICE_METHODS = {
   getCreditLedger: 'workspace',
   getSpendControls: 'workspace',
   updateSpendControls: 'workspace',
-  setProjectSourceAccess: 'project'
+  setProjectSourceAccess: 'project',
+
+  // Project workspace transfer
+  transferProjectToWorkspace: 'project',
+
+  // Admin rate-limit stats
+  getRateLimitStats: 'admin',
+
+  // Allocation rules
+  listRules: 'allocationRule',
+  getRule: 'allocationRule',
+  createRule: 'allocationRule',
+  updateRule: 'allocationRule',
+  deleteRule: 'allocationRule',
+
+  // Shared assets
+  createAsset: 'sharedAsset',
+  listAssets: 'sharedAsset',
+  getAsset: 'sharedAsset',
+  updateAsset: 'sharedAsset',
+  deleteAsset: 'sharedAsset'
 }

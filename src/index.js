@@ -17,7 +17,10 @@ import {
   createIntegrationService,
   createFeatureFlagService,
   createOrganizationService,
-  createKvService
+  createWorkspaceService,
+  createKvService,
+  createAllocationRuleService,
+  createSharedAssetService
 } from './services/index.js'
 
 import { SERVICE_METHODS } from './utils/services.js'
@@ -209,6 +212,20 @@ export class SDK {
           context: this._context,
           options: this._options
         })
+      ),
+      this._initService(
+        'allocationRule',
+        createAllocationRuleService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      this._initService(
+        'sharedAsset',
+        createSharedAssetService({
+          context: this._context,
+          options: this._options
+        })
       )
     ])
 
@@ -243,8 +260,11 @@ export class SDK {
       retryAttempts: 3,
       debug: false,
       tracking: {
-        // Force-disabled on localhost or when no Grafana URL is configured
-        enabled: onLocalhost ? false : (hasGrafanaUrl ? environment.features.trackingEnabled : false)
+        // Faro/Grafana tracking globally disabled — the collector endpoint
+        // rejects CORS from our preview domains, so every call spams the
+        // console with preflight failures. Re-enable per-caller via
+        // `options.tracking.enabled = true` when a valid origin is allowed.
+        enabled: false
       }
     }
 
@@ -379,7 +399,9 @@ export {
   createFeatureFlagService,
   createOrganizationService,
   createWorkspaceService,
-  createKvService
+  createKvService,
+  createAllocationRuleService,
+  createSharedAssetService
 } from './services/index.js'
 
 // Export environment configuration

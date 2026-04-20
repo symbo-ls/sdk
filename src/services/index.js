@@ -18,6 +18,8 @@ import { FeatureFlagService } from './FeatureFlagService.js'
 import { OrganizationService } from './OrganizationService.js'
 import { WorkspaceService } from './WorkspaceService.js'
 import { KvService } from './KvService.js'
+import { AllocationRuleService } from './AllocationRuleService.js'
+import { SharedAssetService } from './SharedAssetService.js'
 
 const createService = (ServiceClass, config) => new ServiceClass(config)
 
@@ -81,6 +83,12 @@ export const createWorkspaceService = config =>
 export const createKvService = config =>
   createService(KvService, config)
 
+export const createAllocationRuleService = config =>
+  createService(AllocationRuleService, config)
+
+export const createSharedAssetService = config =>
+  createService(SharedAssetService, config)
+
 export {
   AuthService,
   CollabService,
@@ -101,5 +109,7 @@ export {
   FeatureFlagService,
   OrganizationService,
   WorkspaceService,
-  KvService
+  KvService,
+  AllocationRuleService,
+  SharedAssetService
 }
