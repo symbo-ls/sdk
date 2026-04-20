@@ -77,6 +77,8 @@ export const createFeatureFlagService = config =>
 export const createOrganizationService = config =>
   createService(OrganizationService, config)
 
+// Workspace service factory. Intranet org switcher + /data/organizations
+// enrichment both depend on listWorkspaces here.
 export const createWorkspaceService = config =>
   createService(WorkspaceService, config)
 

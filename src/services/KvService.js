@@ -1,5 +1,3 @@
-import { logger } from '../utils/logger.js'
-
 /**
  * KvService - Client for @symbo.ls/kv Cloudflare Worker REST API
  *
@@ -17,9 +15,6 @@ export class KvService {
   init ({ context }) {
     const ctx = context || this._context
     this._kvUrl = ctx.kvUrl || this._options.kvUrl
-    if (!this._kvUrl) {
-      logger.warn('KV service URL not configured')
-    }
     this._ready = true
   }
 
