@@ -60,6 +60,26 @@ export class ScreenshotService extends BaseService {
     }
   }
 
+  /**
+   * Recreate screenshots for a project. Smart delta by default; pass
+   * `force: true` to re-render everything. Server-side this enqueues via
+   * BullMQ so the call returns as soon as jobs are queued.
+   *
+   * Body fields:
+   *   - `environment`: 'development' | 'staging' | 'production' (default production).
+   *     Screenshots are captured per-environment — dev/staging/prod don't
+   *     overwrite each other. Only `production` updates `project.thumbnail`.
+   *   - `process_pages` / `process_components` / `process_descriptions`: booleans
+   *   - `force`: boolean — bypass the delta check
+   *   - `priority`: number (default 5)
+   *   - `only_one` + `page_path` | `page_key` | `component_key` | `screenshot_id`: target a single shot
+   *   - `prefer`: 'auto' | 'page' | 'component'
+   *
+   * Note: normal editor saves + publishes already auto-trigger a 15-min
+   * debounced refresh via the server's `scheduleDebouncedRefresh` hook
+   * (dev on save, stag/prod on publish). Only call this directly when you
+   * need an immediate capture or a force-all refresh.
+   */
   async recreateProjectScreenshots (projectKey, body = {}) {
     this._requireReady('recreateProjectScreenshots')
     if (!projectKey) {throw new Error('projectKey is required')}
@@ -73,6 +93,18 @@ export class ScreenshotService extends BaseService {
     } catch (error) {
       throw new Error(`Failed to recreate screenshots: ${error.message}`, { cause: error })
     }
+  }
+
+  /**
+   * Convenience wrapper: force-refresh screenshots for a specific
+   * environment. Equivalent to `recreateProjectScreenshots(projectKey,
+   * { environment, force: true })`.
+   */
+  async refreshForEnvironment (projectKey, environment = 'production', extra = {}) {
+    if (!['development', 'staging', 'production'].includes(environment)) {
+      throw new Error(`environment must be development | staging | production, got ${environment}`)
+    }
+    return this.recreateProjectScreenshots(projectKey, { environment, force: true, ...extra })
   }
 
   async deleteProjectScreenshots (projectKey) {
