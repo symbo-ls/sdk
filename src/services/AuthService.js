@@ -1133,4 +1133,40 @@ export class AuthService extends BaseService {
       }
     }
   }
+
+  /**
+   * Cross-org notification badge counts for the org-switcher dropdown.
+   * NEEDED_FOR_INTRANET §I8. Fails-soft to `{counts: {}}` when the
+   * governance edge-fn is unavailable.
+   *
+   * @returns {Promise<{counts: Record<string, {mentions?: number, ticketsAssigned?: number, meetingInvites?: number}>}>}
+   */
+  async getMyOrgNotifications () {
+    this._requireReady('getMyOrgNotifications')
+    const response = await this._request('/auth/me/org-notifications', {
+      method: 'GET',
+      methodName: 'getMyOrgNotifications'
+    })
+    if (response?.success) return response.data
+    return { counts: {} }
+  }
+
+  /**
+   * Cross-org calendar busy slots for the unified calendar.
+   * NEEDED_FOR_INTRANET §I9. Fails-soft to `{slots: []}`.
+   *
+   * @param {{from: string, to: string}} window - ISO 8601 timestamps
+   * @returns {Promise<{slots: Array<{workspaceId: string, orgId: string, start_at: string, end_at: string, title?: string}>}>}
+   */
+  async getMyFreebusy ({ from, to }) {
+    this._requireReady('getMyFreebusy')
+    if (!from || !to) throw new Error('from + to (ISO 8601) required')
+    const qs = new URLSearchParams({ from, to }).toString()
+    const response = await this._request(`/auth/me/freebusy?${qs}`, {
+      method: 'GET',
+      methodName: 'getMyFreebusy'
+    })
+    if (response?.success) return response.data
+    return { slots: [] }
+  }
 }
