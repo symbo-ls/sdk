@@ -4,6 +4,29 @@ import { preprocessChanges } from '../utils/changePreprocessor.js'
 import { deepStringifyFunctions } from '@symbo.ls/utils'
 import { PROJECT_SOURCE_ACCESS } from '../constants/roles.js'
 
+/**
+ * Normalize a project-key lookup input to a URL path segment.
+ *
+ * Post-§45 the canonical project identity is `(owner, key)` where `key` is a
+ * bare slug. Two owners can legitimately share the same bare key, so the
+ * 1-seg `/projects/key/:key` endpoint can return HTTP 409 `ambiguous_key`
+ * when a bare key matches multiple projects. Callers that know the owner
+ * should pass `{ owner, key }` to hit the collision-safe 2-seg route.
+ *
+ * @param {string | { owner?: string, key: string }} input
+ * @returns {string} URL path suffix like `owner/key` or `key`
+ */
+function keyPath (input) {
+  if (input && typeof input === 'object') {
+    const { owner, key } = input
+    if (!key) throw new Error('Project key is required')
+    if (owner) return `${encodeURIComponent(owner)}/${encodeURIComponent(key)}`
+    return encodeURIComponent(key)
+  }
+  if (!input) throw new Error('Project key is required')
+  return encodeURIComponent(String(input))
+}
+
 export class ProjectService extends BaseService {
   // ==================== PROJECT METHODS ====================
 
@@ -142,14 +165,17 @@ export class ProjectService extends BaseService {
     }
   }
 
-  async getProjectByKey (key) {
+  /**
+   * Look up a project by its key. Pass `{owner, key}` to use the
+   * collision-safe 2-seg route when the owner is known.
+   *
+   * @param {string | { owner?: string, key: string }} keyOrSpec
+   */
+  async getProjectByKey (keyOrSpec) {
     this._requireReady('getProjectByKey')
-    if (!key) {
-      throw new Error('Project key is required')
-    }
+    const path = keyPath(keyOrSpec)
     try {
-      // Fetch project by key using new backend route
-      const response = await this._request(`/projects/key/${key}`, {
+      const response = await this._request(`/projects/key/${path}`, {
         method: 'GET',
         methodName: 'getProjectByKey'
       })
@@ -171,13 +197,16 @@ export class ProjectService extends BaseService {
   }
 
   /**
-   * Get current project data by key (no project ID required)
+   * Get current project data by key (no project ID required). Pass
+   * `{owner, key}` to use the collision-safe 2-seg route when owner is
+   * known.
+   *
+   * @param {string | { owner?: string, key: string }} keyOrSpec
+   * @param {object} [options]
    */
-  async getProjectDataByKey (key, options = {}) {
+  async getProjectDataByKey (keyOrSpec, options = {}) {
     this._requireReady('getProjectDataByKey')
-    if (!key) {
-      throw new Error('Project key is required')
-    }
+    const path = keyPath(keyOrSpec)
 
     const {
       branch = 'main',
@@ -194,7 +223,7 @@ export class ProjectService extends BaseService {
 
     try {
       const response = await this._request(
-        `/projects/key/${key}/data?${queryParams}`,
+        `/projects/key/${path}/data?${queryParams}`,
         {
           method: 'GET',
           methodName: 'getProjectDataByKey',
@@ -215,14 +244,18 @@ export class ProjectService extends BaseService {
   /**
    * Anonymous read of a public project's current data for a given env.
    * Server-side gated on `project.visibility === 'public'`. Returns null on
-   * 403/404 so callers can fall back to the authed route.
+   * 403/404 so callers can fall back to the authed route. Pass `{owner, key}`
+   * to use the collision-safe 2-seg route.
+   *
+   * @param {string | { owner?: string, key: string }} keyOrSpec
+   * @param {{ envKey: string }} opts
    */
-  async getPublicProjectDataByKey (key, { envKey } = {}) {
-    if (!key) throw new Error('Project key is required')
+  async getPublicProjectDataByKey (keyOrSpec, { envKey } = {}) {
     if (!envKey) throw new Error('Environment key is required')
+    const path = keyPath(keyOrSpec)
     try {
       const response = await this._request(
-        `/projects/key/${key}/public/${encodeURIComponent(envKey)}/data`,
+        `/projects/key/${path}/public/${encodeURIComponent(envKey)}/data`,
         { method: 'GET', methodName: 'getPublicProjectDataByKey' }
       )
       if (response?.success) return response.data
@@ -235,6 +268,27 @@ export class ProjectService extends BaseService {
         { cause: error }
       )
     }
+  }
+
+  /**
+   * Resolve a domain / hostname / appkey to `{owner, key}`. Used by mermaid
+   * edge + any client that needs the canonical `(owner, key)` pair from a
+   * raw hostname (e.g. `silverbreeze.silverbreeze-labs.symbo.ls`).
+   *
+   * @param {string} appkey - hostname, custom domain, or bare key
+   * @returns {Promise<{ owner: string | null, key: string }>}
+   */
+  async resolveAppkey (appkey) {
+    if (!appkey) throw new Error('appkey is required')
+    const response = await this._request(
+      `/projects/resolve/${encodeURIComponent(appkey)}`,
+      { method: 'GET', methodName: 'resolveAppkey' }
+    )
+    if (response?.owner !== undefined || response?.key !== undefined) {
+      return response
+    }
+    if (response?.success && response.data) return response.data
+    throw new Error(response?.message || 'Failed to resolve appkey')
   }
 
   async updateProject (projectId, data) {

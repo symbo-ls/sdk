@@ -642,30 +642,46 @@ export class AuthService extends BaseService {
   }
 
   /**
-   * Get the current user's role for a specific project by project key
-   * Uses caching to avoid repeated API calls
+   * Get the current user's role for a specific project by project key.
+   *
+   * Pass `{owner, key}` to use the collision-safe 2-seg route when the
+   * owner is known. Cache is scoped by the full (owner, key) tuple so two
+   * owners sharing a bare key never share a cached role entry.
+   *
+   * @param {string | { owner?: string, key: string }} keyOrSpec
    */
-  async getMyProjectRoleByKey(projectKey) {
+  async getMyProjectRoleByKey(keyOrSpec) {
     this._requireReady('getMyProjectRoleByKey')
-    if (!projectKey) {
-      throw new Error('Project key is required')
+
+    let owner = null
+    let projectKey = null
+    if (keyOrSpec && typeof keyOrSpec === 'object') {
+      owner = keyOrSpec.owner || null
+      projectKey = keyOrSpec.key
+    } else {
+      projectKey = keyOrSpec
     }
+    if (!projectKey) throw new Error('Project key is required')
 
     // If there are no valid tokens, treat user as guest for public access
     if (!this.hasValidTokens()) {
       return 'guest'
     }
 
-    // Check cache first
-    const cacheKey = `role_key_${projectKey}`
+    // Cache is scoped by (owner, key) so bare-key collisions across owners
+    // don't share a cached role entry.
+    const cacheKey = owner ? `role_key_${owner}/${projectKey}` : `role_key_${projectKey}`
     const cached = this._projectRoleCache.get(cacheKey)
 
     if (cached && Date.now() - cached.timestamp < this._roleCacheExpiry) {
       return cached.role
     }
 
+    const path = owner
+      ? `${encodeURIComponent(owner)}/${encodeURIComponent(projectKey)}`
+      : encodeURIComponent(projectKey)
     try {
-      const response = await this._request(`/projects/key/${projectKey}/role`, {
+      const response = await this._request(`/projects/key/${path}/role`, {
         method: 'GET',
         methodName: 'getMyProjectRoleByKey'
       })
