@@ -199,10 +199,15 @@ export class ScreenshotService extends BaseService {
     if (!key) {throw new Error('key is required')}
     const qs = new URLSearchParams()
     if (format) {qs.set('format', format)}
-    const sub = type === 'component' ? 'components' : 'pages'
     try {
+      if (type === 'component') {
+        return await this._request(
+          `/screenshots/projects/${screenshotKeyPath(projectKey)}/components/${encodeURIComponent(key)}${qs.toString() ? `?${qs.toString()}` : ''}`,
+          { method: 'GET', methodName: 'getScreenshotByKey' }
+        )
+      }
       return await this._request(
-        `/screenshots/projects/${screenshotKeyPath(projectKey)}/${sub}/${encodeURIComponent(key)}${qs.toString() ? `?${qs.toString()}` : ''}`,
+        `/screenshots/projects/${screenshotKeyPath(projectKey)}/pages/${encodeURIComponent(key)}${qs.toString() ? `?${qs.toString()}` : ''}`,
         { method: 'GET', methodName: 'getScreenshotByKey' }
       )
     } catch (error) {
