@@ -389,6 +389,21 @@ export class AdminService extends BaseService {
   }
 
   /**
+   * Get Project.key migration health (admin-only). Surfaces bare vs
+   * compound vs suffixed counts, missing-owner-FK count, and any
+   * duplicate `(owner, key)` tuples (should be 0 post-§46).
+   */
+  async getProjectKeyStats () {
+    this._requireReady('getProjectKeyStats')
+    const response = await this._request('/users/admin/project-key-stats', {
+      method: 'GET',
+      methodName: 'getProjectKeyStats'
+    })
+    if (response.success) return response.data
+    throw new Error(response.message || 'Failed to get project key stats')
+  }
+
+  /**
    * Private helper to validate email format
    */
   _isValidEmail (email) {
