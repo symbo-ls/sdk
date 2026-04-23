@@ -616,6 +616,179 @@ export class OrganizationService extends BaseService {
     return { payments: [] }
   }
 
+  // ==================== TEAM INVITATIONS (Phase B) ====================
+  //
+  // Email-based invitations scoped to a single team. Token carries the
+  // (org, team, email, inviteId) tuple so the accept endpoint doesn't
+  // need path params. All mutations gated to owner / co-owner / admin
+  // on the server.
+
+  /**
+   * List pending invitations for a team.
+   * @param {string} orgId
+   * @param {string} teamId
+   * @returns {Promise<{invitations: Array<object>}>}
+   */
+  async listTeamInvitations (orgId, teamId) {
+    this._requireReady('listTeamInvitations')
+    if (!orgId || !teamId) throw new Error('orgId and teamId are required')
+    const response = await this._request(
+      `/organizations/${orgId}/teams/${teamId}/invitations`,
+      { method: 'GET', methodName: 'listTeamInvitations' }
+    )
+    if (response?.success) return response.data
+    return { invitations: [] }
+  }
+
+  /**
+   * Send a team invitation by email. `recipientName` is optional; the
+   * server generates a nanoid token + expiry.
+   * @param {string} orgId
+   * @param {string} teamId
+   * @param {{email: string, recipientName?: string}} args
+   */
+  async createTeamInvitation (orgId, teamId, { email, recipientName } = {}) {
+    this._requireReady('createTeamInvitation')
+    if (!orgId || !teamId) throw new Error('orgId and teamId are required')
+    if (!email) throw new Error('email is required')
+    const response = await this._request(
+      `/organizations/${orgId}/teams/${teamId}/invitations`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ email, ...(recipientName ? { recipientName } : {}) }),
+        methodName: 'createTeamInvitation'
+      }
+    )
+    if (response?.success) return response.data
+    throw new Error(response?.message || 'Failed to create team invitation')
+  }
+
+  /**
+   * Revoke a pending team invitation. 404 if already accepted/revoked.
+   * @param {string} orgId
+   * @param {string} teamId
+   * @param {string} inviteId
+   */
+  async revokeTeamInvitation (orgId, teamId, inviteId) {
+    this._requireReady('revokeTeamInvitation')
+    if (!orgId || !teamId) throw new Error('orgId and teamId are required')
+    if (!inviteId) throw new Error('inviteId is required')
+    const response = await this._request(
+      `/organizations/${orgId}/teams/${teamId}/invitations/${inviteId}/revoke`,
+      { method: 'POST', methodName: 'revokeTeamInvitation' }
+    )
+    if (response?.success) return response.data
+    throw new Error(response?.message || 'Failed to revoke team invitation')
+  }
+
+  /**
+   * Accept a team invitation. The signed token carries org / team /
+   * email / inviteId — no path params needed.
+   * @param {{token: string}} args
+   */
+  async acceptTeamInvitation ({ token } = {}) {
+    this._requireReady('acceptTeamInvitation')
+    if (!token) throw new Error('token is required')
+    const response = await this._request('/organizations/accept-team-invitation', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+      methodName: 'acceptTeamInvitation'
+    })
+    if (response?.success) return response.data
+    throw new Error(response?.message || 'Failed to accept team invitation')
+  }
+
+  // ==================== TEAM WORKSPACE ACCESS ====================
+  //
+  // Parallel to team-project access (see listTeamAccess / grantTeamAccess
+  // above) but at the workspace level. Cross-tenant grants blocked
+  // server-side — the team + workspace must share the same org.
+
+  /**
+   * List all workspace-level access grants for a team.
+   * @param {string} orgId
+   * @param {string} teamId
+   * @returns {Promise<{grants: Array<object>}>}
+   */
+  async listTeamWorkspaceAccess (orgId, teamId) {
+    this._requireReady('listTeamWorkspaceAccess')
+    if (!orgId || !teamId) throw new Error('orgId and teamId are required')
+    const response = await this._request(
+      `/organizations/${orgId}/teams/${teamId}/workspace-access`,
+      { method: 'GET', methodName: 'listTeamWorkspaceAccess' }
+    )
+    if (response?.success) return response.data
+    return { grants: [] }
+  }
+
+  /**
+   * Grant a team access to a workspace. Idempotent upsert — same
+   * (team, workspace) always maps to a single row; role updates
+   * transparently.
+   * @param {string} orgId
+   * @param {string} teamId
+   * @param {{workspaceId: string, role?: string}} args - role defaults to 'guest'
+   */
+  async grantTeamWorkspaceAccess (orgId, teamId, { workspaceId, role = 'guest' } = {}) {
+    this._requireReady('grantTeamWorkspaceAccess')
+    if (!orgId || !teamId) throw new Error('orgId and teamId are required')
+    if (!workspaceId) throw new Error('workspaceId is required')
+    const response = await this._request(
+      `/organizations/${orgId}/teams/${teamId}/workspace-access`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ workspaceId, role }),
+        methodName: 'grantTeamWorkspaceAccess'
+      }
+    )
+    if (response?.success) return response.data
+    throw new Error(response?.message || 'Failed to grant team workspace access')
+  }
+
+  /**
+   * Change the role of an existing team-workspace grant.
+   * @param {string} orgId
+   * @param {string} teamId
+   * @param {string} accessId
+   * @param {{role: string}} updates
+   */
+  async updateTeamWorkspaceAccess (orgId, teamId, accessId, { role } = {}) {
+    this._requireReady('updateTeamWorkspaceAccess')
+    if (!orgId || !teamId || !accessId) {
+      throw new Error('orgId, teamId and accessId are required')
+    }
+    if (!role) throw new Error('role is required')
+    const response = await this._request(
+      `/organizations/${orgId}/teams/${teamId}/workspace-access/${accessId}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ role }),
+        methodName: 'updateTeamWorkspaceAccess'
+      }
+    )
+    if (response?.success) return response.data
+    throw new Error(response?.message || 'Failed to update team workspace access')
+  }
+
+  /**
+   * Revoke a team-workspace access grant.
+   * @param {string} orgId
+   * @param {string} teamId
+   * @param {string} accessId
+   */
+  async revokeTeamWorkspaceAccess (orgId, teamId, accessId) {
+    this._requireReady('revokeTeamWorkspaceAccess')
+    if (!orgId || !teamId || !accessId) {
+      throw new Error('orgId, teamId and accessId are required')
+    }
+    const response = await this._request(
+      `/organizations/${orgId}/teams/${teamId}/workspace-access/${accessId}`,
+      { method: 'DELETE', methodName: 'revokeTeamWorkspaceAccess' }
+    )
+    if (response?.success) return response.data
+    throw new Error(response?.message || 'Failed to revoke team workspace access')
+  }
+
   async adminListOrganizations (params = {}) {
     this._requireReady('adminListOrganizations')
 
