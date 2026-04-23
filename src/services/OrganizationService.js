@@ -798,13 +798,76 @@ export class OrganizationService extends BaseService {
     if (params.limit) queryParams.append('limit', params.limit.toString())
 
     const queryString = queryParams.toString()
-    const url = `/organizations/admin${queryString ? `?${queryString}` : ''}`
 
-    const response = await this._request(url, {
-      method: 'GET',
-      methodName: 'adminListOrganizations'
-    })
+    // Literals inlined at both branches so the drift analyzer can match
+    // /organizations/admin (it can't see through `_request(url, …)`).
+    const response = queryString
+      ? await this._request(`/organizations/admin?${queryString}`, {
+        method: 'GET',
+        methodName: 'adminListOrganizations'
+      })
+      : await this._request('/organizations/admin', {
+        method: 'GET',
+        methodName: 'adminListOrganizations'
+      })
     if (response.success) return response.data
     throw new Error(response.message)
+  }
+
+  // ==================== ADMIN-ONLY / ENTERPRISE BOOTSTRAP ====================
+
+  /**
+   * List every team in an org including confidential ones. Owner /
+   * co-owner only on the server — admin bypass of the default team
+   * visibility filter for audit + governance use.
+   * @param {string} orgId
+   * @returns {Promise<{teams: Array<object>}>}
+   */
+  async adminListAllTeams (orgId) {
+    this._requireReady('adminListAllTeams')
+    if (!orgId) throw new Error('orgId is required')
+    const response = await this._request(
+      `/organizations/${orgId}/teams/admin/all`,
+      { method: 'GET', methodName: 'adminListAllTeams' }
+    )
+    if (response?.success) return response.data
+    return { teams: [] }
+  }
+
+  /**
+   * Add the calling owner / co-owner to a confidential team as
+   * team-maintainer — break-glass for audit situations where the admin
+   * isn't a member. Audit-logged on the server. 400s if the team is not
+   * `isolation === 'confidential'`.
+   * @param {string} orgId
+   * @param {string} teamId
+   */
+  async adminOverrideTeam (orgId, teamId) {
+    this._requireReady('adminOverrideTeam')
+    if (!orgId || !teamId) throw new Error('orgId and teamId are required')
+    const response = await this._request(
+      `/organizations/${orgId}/teams/${teamId}/admin-override`,
+      { method: 'POST', methodName: 'adminOverrideTeam' }
+    )
+    if (response?.success) return response.data
+    throw new Error(response?.message || 'Failed to admin-override team')
+  }
+
+  /**
+   * Idempotently bootstrap the org's unified Enterprise Stripe customer.
+   * Global-admin-only on the server. Used by ops during Enterprise
+   * provisioning; self-service Enterprise upgrades land in a later phase.
+   * @param {string} orgId
+   * @returns {Promise<{orgId: string, stripeCustomerId: string, created: boolean}>}
+   */
+  async ensureOrgStripeCustomer (orgId) {
+    this._requireReady('ensureOrgStripeCustomer')
+    if (!orgId) throw new Error('orgId is required')
+    const response = await this._request(
+      `/organizations/${orgId}/stripe/customer`,
+      { method: 'POST', methodName: 'ensureOrgStripeCustomer' }
+    )
+    if (response?.success) return response.data
+    throw new Error(response?.message || 'Failed to ensure Stripe customer')
   }
 }
