@@ -1,27 +1,5 @@
 import { BaseService } from './BaseService.js'
-
-/**
- * Normalize a project-key input to a URL path segment for the
- * `/screenshots/projects/:...` routes.
- *
- * Post-§45 identity is `(owner, key)` — pass `{owner, key}` for the
- * collision-safe 2-seg route (`/projects/:owner/:projectSlug/...`).
- * A bare string falls through to the legacy 1-seg route and may 404
- * when the bare key collides across owners.
- *
- * @param {string | { owner?: string, key: string }} input
- * @returns {string} URL path suffix
- */
-function screenshotKeyPath (input) {
-  if (input && typeof input === 'object') {
-    const { owner, key } = input
-    if (!key) throw new Error('projectKey is required')
-    if (owner) return `${encodeURIComponent(owner)}/${encodeURIComponent(key)}`
-    return encodeURIComponent(key)
-  }
-  if (!input) throw new Error('projectKey is required')
-  return encodeURIComponent(String(input))
-}
+import { projectKeyPath as screenshotKeyPath } from '../utils/projectKeyPath.js'
 
 export class ScreenshotService extends BaseService {
   constructor (config) {

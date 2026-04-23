@@ -3,29 +3,7 @@ import { computeOrdersForTuples } from '../utils/ordering.js'
 import { preprocessChanges } from '../utils/changePreprocessor.js'
 import { deepStringifyFunctions } from '@symbo.ls/utils'
 import { PROJECT_SOURCE_ACCESS } from '../constants/roles.js'
-
-/**
- * Normalize a project-key lookup input to a URL path segment.
- *
- * Post-§45 the canonical project identity is `(owner, key)` where `key` is a
- * bare slug. Two owners can legitimately share the same bare key, so the
- * 1-seg `/projects/key/:key` endpoint can return HTTP 409 `ambiguous_key`
- * when a bare key matches multiple projects. Callers that know the owner
- * should pass `{ owner, key }` to hit the collision-safe 2-seg route.
- *
- * @param {string | { owner?: string, key: string }} input
- * @returns {string} URL path suffix like `owner/key` or `key`
- */
-function keyPath (input) {
-  if (input && typeof input === 'object') {
-    const { owner, key } = input
-    if (!key) throw new Error('Project key is required')
-    if (owner) return `${encodeURIComponent(owner)}/${encodeURIComponent(key)}`
-    return encodeURIComponent(key)
-  }
-  if (!input) throw new Error('Project key is required')
-  return encodeURIComponent(String(input))
-}
+import { projectKeyPath as keyPath } from '../utils/projectKeyPath.js'
 
 export class ProjectService extends BaseService {
   // ==================== PROJECT METHODS ====================
