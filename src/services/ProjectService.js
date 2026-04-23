@@ -30,6 +30,25 @@ function keyPath (input) {
 export class ProjectService extends BaseService {
   // ==================== PROJECT METHODS ====================
 
+  /**
+   * Create a user-owned project (owner = authenticated user).
+   *
+   * For org-owned projects use `organizationService.createOrgProject(orgId, data)`
+   * which hits `POST /organizations/:orgId/projects` and scopes ownership
+   * to the org.
+   *
+   * `projectData.key` / `projectData.slug` is optional — server mints a
+   * bare slug via allocateUniqueProjectKey when omitted. Accepted shapes:
+   *   - bare slug (canonical): `{ name, projectType, slug: 'my-app' }`
+   *   - legacy compound: `{ name, slug: 'owner--my-app' }` — server strips
+   *     the owner segment via parseOwnerProjectKey
+   *   - legacy suffix: `{ name, slug: 'my-app.symbo.ls' }` — stripped
+   *
+   * Post-§45 identity is `(ownerOrganization|ownerUser FK, key)`; two
+   * different owners can legitimately reuse the same bare slug.
+   *
+   * @param {object} projectData - { name, projectType, slug?, workspaceId?, ...content }
+   */
   async createProject (projectData) {
     this._requireReady('createProject')
     try {
