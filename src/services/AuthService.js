@@ -363,14 +363,18 @@ export class AuthService extends BaseService {
     this._requireReady('getMe')
     try {
       const session = this._resolvePluginSession(options.session)
-      const endpoint = session
-        ? `/auth/me?session=${encodeURIComponent(session)}`
-        : '/auth/me'
-
-      const response = await this._request(endpoint, {
-        method: 'GET',
-        methodName: 'getMe'
-      })
+      // Literals inlined at each _request call site so the drift analyzer
+      // can match them against the server route (it can't see through a
+      // variable-typed `endpoint`).
+      const response = session
+        ? await this._request(`/auth/me?session=${encodeURIComponent(session)}`, {
+          method: 'GET',
+          methodName: 'getMe'
+        })
+        : await this._request('/auth/me', {
+          method: 'GET',
+          methodName: 'getMe'
+        })
       if (response.success) {
         return response.data
       }
@@ -1168,5 +1172,55 @@ export class AuthService extends BaseService {
     })
     if (response?.success) return response.data
     return { slots: [] }
+  }
+
+  /**
+   * List every project the authenticated user has any role on, across
+   * every org they're a member of. Combines owner + collaborator
+   * projects into one flat list. Server paginates by default.
+   *
+   * @returns {Promise<{projects: Array<object>, total?: number}>}
+   */
+  async getMyProjects () {
+    this._requireReady('getMyProjects')
+    const response = await this._request('/auth/me/projects', {
+      method: 'GET',
+      methodName: 'getMyProjects'
+    })
+    if (response?.success) return response.data
+    return { projects: [] }
+  }
+
+  /**
+   * List every team the authenticated user belongs to, grouped by org.
+   * Mirrors the `teams[]` claim surfaced via sessionClaims — but a
+   * direct fetch avoids stale free-tier claims.
+   *
+   * @returns {Promise<{teams: Array<{id: string, name: string, organization: string, type: string, role: string}>}>}
+   */
+  async getMyTeams () {
+    this._requireReady('getMyTeams')
+    const response = await this._request('/auth/me/teams', {
+      method: 'GET',
+      methodName: 'getMyTeams'
+    })
+    if (response?.success) return response.data
+    return { teams: [] }
+  }
+
+  /**
+   * List every org the authenticated user is a member of, with role +
+   * ownership flags. Source for workspace-switcher UIs.
+   *
+   * @returns {Promise<{memberships: Array<{orgId: string, role: string, isOwner: boolean, workspaces?: Array<object>}>}>}
+   */
+  async getMyOrgMemberships () {
+    this._requireReady('getMyOrgMemberships')
+    const response = await this._request('/auth/me/org-memberships', {
+      method: 'GET',
+      methodName: 'getMyOrgMemberships'
+    })
+    if (response?.success) return response.data
+    return { memberships: [] }
   }
 }
