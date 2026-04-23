@@ -135,4 +135,107 @@ export class WorkspaceService extends BaseService {
       body: controls,
     })
   }
+
+  // ==================== PERMISSIONS ====================
+
+  /**
+   * Return the caller's resolved workspace permissions — source-of-truth
+   * for UI gating (edit/invite/billing/etc.). Open to any workspace
+   * member.
+   * @param {string} workspaceId
+   */
+  async getWorkspacePermissions (workspaceId) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    return this._call(
+      'getWorkspacePermissions',
+      `/workspaces/${workspaceId}/permissions`
+    )
+  }
+
+  // ==================== WORKSPACE-SCOPED PROJECTS ====================
+
+  /**
+   * Create a project scoped to a workspace. Server aliases this to
+   * `POST /projects` with the workspace FK pre-populated — owner is the
+   * calling user, workspace is the path param.
+   * @param {string} workspaceId
+   * @param {object} projectData - same shape as `projectService.createProject`
+   */
+  async createWorkspaceProject (workspaceId, projectData) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    return this._call('createWorkspaceProject', `/workspaces/${workspaceId}/projects`, {
+      method: 'POST',
+      body: projectData,
+    })
+  }
+
+  // ==================== INVITATIONS ====================
+  //
+  // Email-based invites scoped to a workspace. Owner/admin-gated for
+  // create + revoke; listing returns only the caller's pending invites
+  // for non-admin members. Accept is public (authenticated) — the token
+  // carries the workspaceId + inviteId.
+
+  /**
+   * List pending workspace invitations. Owner/admin see all; regular
+   * members see only their own.
+   * @param {string} workspaceId
+   */
+  async listWorkspaceInvitations (workspaceId) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    return this._call(
+      'listWorkspaceInvitations',
+      `/workspaces/${workspaceId}/invitations`
+    )
+  }
+
+  /**
+   * Send a workspace invitation by email.
+   * @param {string} workspaceId
+   * @param {{email: string, role?: string, recipientName?: string}} args - role defaults to 'editor'
+   */
+  async createWorkspaceInvitation (workspaceId, { email, role = 'editor', recipientName } = {}) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!email) throw new Error('email is required')
+    return this._call(
+      'createWorkspaceInvitation',
+      `/workspaces/${workspaceId}/invitations`,
+      {
+        method: 'POST',
+        body: { email, role, ...(recipientName ? { recipientName } : {}) },
+      }
+    )
+  }
+
+  /**
+   * Revoke a pending workspace invitation. 404 if already accepted or
+   * revoked.
+   * @param {string} workspaceId
+   * @param {string} inviteId
+   */
+  async revokeWorkspaceInvitation (workspaceId, inviteId) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!inviteId) throw new Error('inviteId is required')
+    return this._call(
+      'revokeWorkspaceInvitation',
+      `/workspaces/${workspaceId}/invitations/${inviteId}/revoke`,
+      { method: 'POST' }
+    )
+  }
+
+  /**
+   * Accept a workspace invitation. The signed token carries
+   * workspaceId + inviteId + invited email — no path params. Idempotent:
+   * double-click on the same invite returns 200 without creating
+   * duplicate memberships.
+   * @param {{token: string}} args
+   */
+  async acceptWorkspaceInvitation ({ token } = {}) {
+    if (!token) throw new Error('token is required')
+    return this._call(
+      'acceptWorkspaceInvitation',
+      '/workspaces/accept-invitation',
+      { method: 'POST', body: { token } }
+    )
+  }
 }
