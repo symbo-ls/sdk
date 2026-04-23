@@ -100,12 +100,18 @@ export class ProjectService extends BaseService {
       })
 
       const queryString = queryParams.toString()
-      const url = `/projects/public${queryString ? `?${queryString}` : ''}`
 
-      const response = await this._request(url, {
-        method: 'GET',
-        methodName: 'listPublicProjects'
-      })
+      // Literals inlined at both branches so the drift analyzer can
+      // match /projects/public (it can't see through `_request(url, …)`).
+      const response = queryString
+        ? await this._request(`/projects/public?${queryString}`, {
+          method: 'GET',
+          methodName: 'listPublicProjects'
+        })
+        : await this._request('/projects/public', {
+          method: 'GET',
+          methodName: 'listPublicProjects'
+        })
       if (response.success) {
         return response.data
       }
@@ -1571,5 +1577,83 @@ export class ProjectService extends BaseService {
     )
     if (response?.success) return response
     return { items: [] }
+  }
+
+  // ==================== OWNERSHIP (admin-only) ====================
+  //
+  // Global-admin-only endpoints for auditing + fixing project ownership.
+  // Surfaced on the SDK so internal admin UIs and ops scripts can hit
+  // them without hand-rolling fetches. All three reject with 403 for
+  // non-admins on the server side.
+
+  /**
+   * List projects with their ownership status. Admin-only on the server.
+   * Useful for finding orphaned projects (no owner) or auditing a specific
+   * owner's footprint.
+   *
+   * @param {{ hasOwner?: 'true' | 'false', search?: string, page?: number, limit?: number }} [params]
+   * @returns {Promise<{success: boolean, data: {items: Array<object>, total: number, page: number, limit: number}}>}
+   */
+  async listProjectOwnership (params = {}) {
+    this._requireReady('listProjectOwnership')
+    const qs = new URLSearchParams()
+    Object.keys(params).forEach((k) => {
+      if (params[k] != null) qs.append(k, String(params[k]))
+    })
+    const queryString = qs.toString()
+    const response = queryString
+      ? await this._request(`/projects/ownership?${queryString}`, {
+        method: 'GET',
+        methodName: 'listProjectOwnership'
+      })
+      : await this._request('/projects/ownership', {
+        method: 'GET',
+        methodName: 'listProjectOwnership'
+      })
+    if (response?.success) return response
+    return { success: false, data: { items: [], total: 0 } }
+  }
+
+  /**
+   * Assign a specific user as project owner. Admin-only on the server.
+   * If another owner exists they are downgraded to admin. Identifies the
+   * target project by id OR key, and the target user by id OR email.
+   *
+   * @param {{ projectId?: string, projectKey?: string, userId?: string, email?: string }} args
+   * @returns {Promise<object>} - server response envelope
+   */
+  async assignProjectOwner (args = {}) {
+    this._requireReady('assignProjectOwner')
+    if (!args.projectId && !args.projectKey) {
+      throw new Error('projectId or projectKey is required')
+    }
+    if (!args.userId && !args.email) {
+      throw new Error('userId or email is required')
+    }
+    const response = await this._request('/projects/ownership/assign', {
+      method: 'POST',
+      body: JSON.stringify(args),
+      methodName: 'assignProjectOwner'
+    })
+    if (response?.success) return response
+    throw new Error(response?.message || 'Failed to assign project owner')
+  }
+
+  /**
+   * Bulk-promote the earliest-joined admin of each ownerless project to
+   * owner. Admin-only. Returns counts + per-project error list.
+   *
+   * @param {{ limit?: number, skipProjectIds?: Array<string> }} [args]
+   * @returns {Promise<{success: boolean, data: {processed: number, updated: number, skipped: number, errors: Array<object>}}>}
+   */
+  async autoAssignProjectOwners (args = {}) {
+    this._requireReady('autoAssignProjectOwners')
+    const response = await this._request('/projects/ownership/auto-assign', {
+      method: 'POST',
+      body: JSON.stringify(args),
+      methodName: 'autoAssignProjectOwners'
+    })
+    if (response?.success) return response
+    throw new Error(response?.message || 'Failed to auto-assign project owners')
   }
 }
