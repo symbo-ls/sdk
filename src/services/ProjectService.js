@@ -57,12 +57,18 @@ export class ProjectService extends BaseService {
       })
 
       const queryString = queryParams.toString()
-      const url = `/projects${queryString ? `?${queryString}` : ''}`
 
-      const response = await this._request(url, {
-        method: 'GET',
-        methodName: 'getProjects'
-      })
+      // Inline both branches as literals so the drift analyzer can match
+      // them against GET /projects (it can't see through `_request(url, …)`).
+      const response = queryString
+        ? await this._request(`/projects?${queryString}`, {
+          method: 'GET',
+          methodName: 'getProjects'
+        })
+        : await this._request('/projects', {
+          method: 'GET',
+          methodName: 'getProjects'
+        })
       if (response.success) {
         return response
       }
@@ -1451,5 +1457,119 @@ export class ProjectService extends BaseService {
     } catch (error) {
       throw new Error(`Failed to get recent projects: ${error.message}`, { cause: error })
     }
+  }
+
+  // ==================== RESOURCE ENUMERATION ====================
+  //
+  // Read-only resource listings (components / functions / pages) for a
+  // given project. Two addressing modes — by numeric/ObjectId id, or by
+  // bare project key. The key-based routes are 1-seg on the server
+  // today; see 🤝 REQUEST → SERVER in NEEDED_FOR_SDK.md for the 2-seg
+  // follow-up (post-§45 collision safety).
+  //
+  // Response envelope follows the server convention:
+  //   { success: true, data: [ { id, name, ... } ], total? }
+  // Fails-soft to `{ items: [] }` on non-success so UIs don't crash when
+  // the server is briefly unreachable.
+
+  /**
+   * List all component resources for a project by id.
+   * @param {string} projectId
+   * @returns {Promise<{items: Array<object>, total?: number}>}
+   */
+  async getProjectComponents (projectId) {
+    this._requireReady('getProjectComponents')
+    if (!projectId) throw new Error('projectId is required')
+    const response = await this._request(
+      `/projects/${encodeURIComponent(projectId)}/resources/components`,
+      { method: 'GET', methodName: 'getProjectComponents' }
+    )
+    if (response?.success) return response
+    return { items: [] }
+  }
+
+  /**
+   * List all function resources for a project by id.
+   * @param {string} projectId
+   * @returns {Promise<{items: Array<object>, total?: number}>}
+   */
+  async getProjectFunctions (projectId) {
+    this._requireReady('getProjectFunctions')
+    if (!projectId) throw new Error('projectId is required')
+    const response = await this._request(
+      `/projects/${encodeURIComponent(projectId)}/resources/functions`,
+      { method: 'GET', methodName: 'getProjectFunctions' }
+    )
+    if (response?.success) return response
+    return { items: [] }
+  }
+
+  /**
+   * List all page resources for a project by id.
+   * @param {string} projectId
+   * @returns {Promise<{items: Array<object>, total?: number}>}
+   */
+  async getProjectPages (projectId) {
+    this._requireReady('getProjectPages')
+    if (!projectId) throw new Error('projectId is required')
+    const response = await this._request(
+      `/projects/${encodeURIComponent(projectId)}/resources/pages`,
+      { method: 'GET', methodName: 'getProjectPages' }
+    )
+    if (response?.success) return response
+    return { items: [] }
+  }
+
+  /**
+   * List all component resources for a project by key. Today the server
+   * only exposes the 1-seg variant; pass a bare key (string) or
+   * `{ key }` object. `{ owner, key }` is accepted for forward-compat
+   * but currently hits the 1-seg route (owner segment is a no-op).
+   * @param {string | { owner?: string, key: string }} projectKey
+   * @returns {Promise<{items: Array<object>, total?: number}>}
+   */
+  async getProjectComponentsByKey (projectKey) {
+    this._requireReady('getProjectComponentsByKey')
+    if (!projectKey) throw new Error('projectKey is required')
+    const response = await this._request(
+      `/projects/key/${keyPath(projectKey)}/resources/components`,
+      { method: 'GET', methodName: 'getProjectComponentsByKey' }
+    )
+    if (response?.success) return response
+    return { items: [] }
+  }
+
+  /**
+   * List all function resources for a project by key. See
+   * `getProjectComponentsByKey` for the key-shape contract.
+   * @param {string | { owner?: string, key: string }} projectKey
+   * @returns {Promise<{items: Array<object>, total?: number}>}
+   */
+  async getProjectFunctionsByKey (projectKey) {
+    this._requireReady('getProjectFunctionsByKey')
+    if (!projectKey) throw new Error('projectKey is required')
+    const response = await this._request(
+      `/projects/key/${keyPath(projectKey)}/resources/functions`,
+      { method: 'GET', methodName: 'getProjectFunctionsByKey' }
+    )
+    if (response?.success) return response
+    return { items: [] }
+  }
+
+  /**
+   * List all page resources for a project by key. See
+   * `getProjectComponentsByKey` for the key-shape contract.
+   * @param {string | { owner?: string, key: string }} projectKey
+   * @returns {Promise<{items: Array<object>, total?: number}>}
+   */
+  async getProjectPagesByKey (projectKey) {
+    this._requireReady('getProjectPagesByKey')
+    if (!projectKey) throw new Error('projectKey is required')
+    const response = await this._request(
+      `/projects/key/${keyPath(projectKey)}/resources/pages`,
+      { method: 'GET', methodName: 'getProjectPagesByKey' }
+    )
+    if (response?.success) return response
+    return { items: [] }
   }
 }
