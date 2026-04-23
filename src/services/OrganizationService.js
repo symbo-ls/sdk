@@ -479,6 +479,143 @@ export class OrganizationService extends BaseService {
 
   // ==================== ADMIN ====================
 
+  // ==================== CUSTOM ROLES (Phase C/D) ====================
+  //
+  // Per-org custom roles layered on top of the built-in tier (owner /
+  // co-owner / admin / member). Each custom role declares a `baseTier`
+  // (the fallback authority) + an optional `additionalPermissions`
+  // list from the enum in constants/orgPermissions.js. Mutations are
+  // gated to owner / co-owner / admin on the server.
+  //
+  // `effective-role` resolves any member to their final `{ role,
+  // baseTier, permissions, isBuiltin, source }` — factoring in custom
+  // role assignments. Listing is open to any org member.
+
+  /**
+   * List every role defined for an org — builtin tiers plus org-specific
+   * custom roles. Open to any org member.
+   * @param {string} orgId
+   * @returns {Promise<object>} - server response envelope
+   */
+  async listOrgRoles (orgId) {
+    this._requireReady('listOrgRoles')
+    if (!orgId) throw new Error('orgId is required')
+    const response = await this._request(`/organizations/${orgId}/roles`, {
+      method: 'GET',
+      methodName: 'listOrgRoles'
+    })
+    if (response?.success) return response.data
+    throw new Error(response?.message || 'Failed to list org roles')
+  }
+
+  /**
+   * Create a custom role on an org. Server slugifies `key` and 409s on
+   * collision with an existing role. `additionalPermissions` is optional.
+   * @param {string} orgId
+   * @param {{key: string, name: string, baseTier: string, description?: string, additionalPermissions?: Array<string>}} role
+   */
+  async createOrgRole (orgId, role = {}) {
+    this._requireReady('createOrgRole')
+    if (!orgId) throw new Error('orgId is required')
+    if (!role.key) throw new Error('role.key is required')
+    if (!role.name) throw new Error('role.name is required')
+    if (!role.baseTier) throw new Error('role.baseTier is required')
+    const response = await this._request(`/organizations/${orgId}/roles`, {
+      method: 'POST',
+      body: JSON.stringify(role),
+      methodName: 'createOrgRole'
+    })
+    if (response?.success) return response.data
+    throw new Error(response?.message || 'Failed to create org role')
+  }
+
+  /**
+   * Patch an existing custom role. Pass only the fields that should change.
+   * @param {string} orgId
+   * @param {string} roleKey
+   * @param {{name?: string, description?: string, baseTier?: string, additionalPermissions?: Array<string>}} updates
+   */
+  async updateOrgRole (orgId, roleKey, updates = {}) {
+    this._requireReady('updateOrgRole')
+    if (!orgId) throw new Error('orgId is required')
+    if (!roleKey) throw new Error('roleKey is required')
+    const hasUpdates = Object.keys(updates).length > 0
+    if (!hasUpdates) throw new Error('updates cannot be empty')
+    const response = await this._request(
+      `/organizations/${orgId}/roles/${encodeURIComponent(roleKey)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(updates),
+        methodName: 'updateOrgRole'
+      }
+    )
+    if (response?.success) return response.data
+    throw new Error(response?.message || 'Failed to update org role')
+  }
+
+  /**
+   * Delete a custom role. Every member currently holding it is
+   * auto-reassigned to the role's `baseTier` on the server side.
+   * Audit-logged.
+   * @param {string} orgId
+   * @param {string} roleKey
+   */
+  async deleteOrgRole (orgId, roleKey) {
+    this._requireReady('deleteOrgRole')
+    if (!orgId) throw new Error('orgId is required')
+    if (!roleKey) throw new Error('roleKey is required')
+    const response = await this._request(
+      `/organizations/${orgId}/roles/${encodeURIComponent(roleKey)}`,
+      {
+        method: 'DELETE',
+        methodName: 'deleteOrgRole'
+      }
+    )
+    if (response?.success) return response.data
+    throw new Error(response?.message || 'Failed to delete org role')
+  }
+
+  /**
+   * Resolve a member's effective authority — baseTier + permissions after
+   * folding in any custom role they hold. Read-only; open to any org
+   * member for auditing.
+   * @param {string} orgId
+   * @param {string} memberId
+   * @returns {Promise<{role: string, baseTier: string, permissions: Array<string>, isBuiltin: boolean, source: string}>}
+   */
+  async getMemberEffectiveRole (orgId, memberId) {
+    this._requireReady('getMemberEffectiveRole')
+    if (!orgId) throw new Error('orgId is required')
+    if (!memberId) throw new Error('memberId is required')
+    const response = await this._request(
+      `/organizations/${orgId}/members/${memberId}/effective-role`,
+      {
+        method: 'GET',
+        methodName: 'getMemberEffectiveRole'
+      }
+    )
+    if (response?.success) return response.data
+    throw new Error(response?.message || 'Failed to get effective role')
+  }
+
+  /**
+   * List org-level Payment rows (Enterprise consolidated billing).
+   * Server-side gate: owner / co-owner (BILLING_EXCLUSIVE tier);
+   * admins do NOT see financial history by default.
+   * @param {string} orgId
+   * @returns {Promise<{payments: Array<object>, total?: number}>}
+   */
+  async listOrgPayments (orgId) {
+    this._requireReady('listOrgPayments')
+    if (!orgId) throw new Error('orgId is required')
+    const response = await this._request(`/organizations/${orgId}/payments`, {
+      method: 'GET',
+      methodName: 'listOrgPayments'
+    })
+    if (response?.success) return response.data
+    return { payments: [] }
+  }
+
   async adminListOrganizations (params = {}) {
     this._requireReady('adminListOrganizations')
 
