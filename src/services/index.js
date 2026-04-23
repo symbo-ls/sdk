@@ -20,6 +20,7 @@ import { WorkspaceService } from './WorkspaceService.js'
 import { KvService } from './KvService.js'
 import { AllocationRuleService } from './AllocationRuleService.js'
 import { SharedAssetService } from './SharedAssetService.js'
+import { CreditsService } from './CreditsService.js'
 
 const createService = (ServiceClass, config) => new ServiceClass(config)
 
@@ -91,6 +92,9 @@ export const createAllocationRuleService = config =>
 export const createSharedAssetService = config =>
   createService(SharedAssetService, config)
 
+export const createCreditsService = config =>
+  createService(CreditsService, config)
+
 export {
   AuthService,
   CollabService,
@@ -113,5 +117,6 @@ export {
   WorkspaceService,
   KvService,
   AllocationRuleService,
-  SharedAssetService
+  SharedAssetService,
+  CreditsService
 }

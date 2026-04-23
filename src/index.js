@@ -20,7 +20,8 @@ import {
   createWorkspaceService,
   createKvService,
   createAllocationRuleService,
-  createSharedAssetService
+  createSharedAssetService,
+  createCreditsService
 } from './services/index.js'
 
 import { SERVICE_METHODS } from './utils/services.js'
@@ -226,6 +227,13 @@ export class SDK {
           context: this._context,
           options: this._options
         })
+      ),
+      this._initService(
+        'credits',
+        createCreditsService({
+          context: this._context,
+          options: this._options
+        })
       )
     ])
 
@@ -401,7 +409,8 @@ export {
   createWorkspaceService,
   createKvService,
   createAllocationRuleService,
-  createSharedAssetService
+  createSharedAssetService,
+  createCreditsService
 } from './services/index.js'
 
 // Export environment configuration
