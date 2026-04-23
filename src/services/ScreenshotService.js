@@ -1,5 +1,28 @@
 import { BaseService } from './BaseService.js'
 
+/**
+ * Normalize a project-key input to a URL path segment for the
+ * `/screenshots/projects/:...` routes.
+ *
+ * Post-§45 identity is `(owner, key)` — pass `{owner, key}` for the
+ * collision-safe 2-seg route (`/projects/:owner/:projectSlug/...`).
+ * A bare string falls through to the legacy 1-seg route and may 404
+ * when the bare key collides across owners.
+ *
+ * @param {string | { owner?: string, key: string }} input
+ * @returns {string} URL path suffix
+ */
+function screenshotKeyPath (input) {
+  if (input && typeof input === 'object') {
+    const { owner, key } = input
+    if (!key) throw new Error('projectKey is required')
+    if (owner) return `${encodeURIComponent(owner)}/${encodeURIComponent(key)}`
+    return encodeURIComponent(key)
+  }
+  if (!input) throw new Error('projectKey is required')
+  return encodeURIComponent(String(input))
+}
+
 export class ScreenshotService extends BaseService {
   constructor (config) {
     super(config)
@@ -35,7 +58,7 @@ export class ScreenshotService extends BaseService {
     if (offset != null) {qs.set('offset', String(offset))}
     try {
       const response = await this._request(
-        `/screenshots/projects/${encodeURIComponent(projectKey)}${qs.toString() ? `?${qs.toString()}` : ''}`,
+        `/screenshots/projects/${screenshotKeyPath(projectKey)}${qs.toString() ? `?${qs.toString()}` : ''}`,
         { method: 'GET', methodName: 'getProjectScreenshots' }
       )
       if (response.success) {return response}
@@ -50,7 +73,7 @@ export class ScreenshotService extends BaseService {
     if (!projectKey) {throw new Error('projectKey is required')}
     try {
       const response = await this._request(
-        `/screenshots/projects/${encodeURIComponent(projectKey)}/reprocess`,
+        `/screenshots/projects/${screenshotKeyPath(projectKey)}/reprocess`,
         { method: 'POST', body: JSON.stringify(body), methodName: 'reprocessProjectScreenshots' }
       )
       if (response.success) {return response}
@@ -85,7 +108,7 @@ export class ScreenshotService extends BaseService {
     if (!projectKey) {throw new Error('projectKey is required')}
     try {
       const response = await this._request(
-        `/screenshots/projects/${encodeURIComponent(projectKey)}/recreate`,
+        `/screenshots/projects/${screenshotKeyPath(projectKey)}/recreate`,
         { method: 'POST', body: JSON.stringify(body), methodName: 'recreateProjectScreenshots' }
       )
       if (response.success) {return response}
@@ -112,7 +135,7 @@ export class ScreenshotService extends BaseService {
     if (!projectKey) {throw new Error('projectKey is required')}
     try {
       const response = await this._request(
-        `/screenshots/projects/${encodeURIComponent(projectKey)}`,
+        `/screenshots/projects/${screenshotKeyPath(projectKey)}`,
         { method: 'DELETE', methodName: 'deleteProjectScreenshots' }
       )
       if (response.success) {return response}
@@ -132,7 +155,7 @@ export class ScreenshotService extends BaseService {
     if (includeData) {qs.set('include_data', 'true')}
     try {
       const response = await this._request(
-        `/screenshots/projects/${encodeURIComponent(projectKey)}/thumbnail/candidate${qs.toString() ? `?${qs.toString()}` : ''}`,
+        `/screenshots/projects/${screenshotKeyPath(projectKey)}/thumbnail/candidate${qs.toString() ? `?${qs.toString()}` : ''}`,
         { method: 'GET', methodName: 'getThumbnailCandidate' }
       )
       if (response.success) {return response}
@@ -147,7 +170,7 @@ export class ScreenshotService extends BaseService {
     if (!projectKey) {throw new Error('projectKey is required')}
     try {
       const response = await this._request(
-        `/screenshots/projects/${encodeURIComponent(projectKey)}/thumbnail`,
+        `/screenshots/projects/${screenshotKeyPath(projectKey)}/thumbnail`,
         { method: 'POST', body: JSON.stringify(body), methodName: 'updateProjectThumbnail' }
       )
       if (response.success) {return response}
@@ -201,7 +224,7 @@ export class ScreenshotService extends BaseService {
     const sub = type === 'component' ? 'components' : 'pages'
     try {
       return await this._request(
-        `/screenshots/projects/${encodeURIComponent(projectKey)}/${sub}/${encodeURIComponent(key)}${qs.toString() ? `?${qs.toString()}` : ''}`,
+        `/screenshots/projects/${screenshotKeyPath(projectKey)}/${sub}/${encodeURIComponent(key)}${qs.toString() ? `?${qs.toString()}` : ''}`,
         { method: 'GET', methodName: 'getScreenshotByKey' }
       )
     } catch (error) {
@@ -249,8 +272,16 @@ export class ScreenshotService extends BaseService {
       }
     } = options
 
+    // Debounce key: stringify `{owner, key}` so two callers targeting the
+    // same project (regardless of spec shape) share the debounce/inflight
+    // entry. Bare-string keys stringify to themselves.
+    const debounceKey =
+      projectKey && typeof projectKey === 'object'
+        ? `${projectKey.owner || ''}/${projectKey.key || ''}`
+        : String(projectKey)
+
     // Clear existing debounce timer if present
-    const existingTimer = this._debounceTimers.get(projectKey)
+    const existingTimer = this._debounceTimers.get(debounceKey)
     if (existingTimer) {
       clearTimeout(existingTimer)
     }
@@ -272,15 +303,15 @@ export class ScreenshotService extends BaseService {
           // Resolve with error object but do not throw to avoid unhandled rejections
           resolve({ success: false, error: e?.message || String(e) })
         } finally {
-          this._debounceTimers.delete(projectKey)
-          this._inflightRefreshes.delete(projectKey)
+          this._debounceTimers.delete(debounceKey)
+          this._inflightRefreshes.delete(debounceKey)
         }
       }, debounceMs)
 
-      this._debounceTimers.set(projectKey, timer)
+      this._debounceTimers.set(debounceKey, timer)
     })
 
-    this._inflightRefreshes.set(projectKey, executionPromise)
+    this._inflightRefreshes.set(debounceKey, executionPromise)
     return executionPromise
   }
 }
