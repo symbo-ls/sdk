@@ -1243,4 +1243,27 @@ export class AuthService extends BaseService {
     if (!token) throw new Error('token is required')
     return this._call('verifyEmail', `/auth/verify-email/${encodeURIComponent(token)}`)
   }
+
+  /**
+   * Role-enrichment feed for the People page. Returns every OrgMember
+   * row in `orgId` with the user's email attached, so consumers can
+   * match by email (common join key in legacy views) and read the raw
+   * role key (builtin or custom). Caller must be an org member.
+   *
+   * Replaces legacy `public.people` + `public.user_roles` view reliance
+   * per NEEDED_FOR_INTRANET §90.
+   *
+   * @param {string} orgId
+   * @returns {Promise<{members: Array<{email: string, role: string}>}>}
+   */
+  async getOrgMemberRoles (orgId) {
+    this._requireReady('getOrgMemberRoles')
+    if (!orgId) throw new Error('orgId is required')
+    const response = await this._request(`/auth/org/${encodeURIComponent(orgId)}/member-roles`, {
+      method: 'GET',
+      methodName: 'getOrgMemberRoles'
+    })
+    if (response?.success) return response.data
+    return { members: [] }
+  }
 }

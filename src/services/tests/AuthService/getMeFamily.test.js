@@ -170,6 +170,56 @@ test('verifyEmail throws without token', async t => {
   t.end()
 })
 
+// getOrgMemberRoles ---------------------------------------------------------
+
+test('getOrgMemberRoles hits /auth/org/:orgId/member-roles with GET', async t => {
+  t.plan(3)
+  const svc = makeService()
+  const payload = { members: [{ email: 'a@b.co', role: 'owner' }, { email: 'c@d.co', role: 'editor' }] }
+  const requestStub = sandbox.stub(svc, '_request').resolves({ success: true, data: payload })
+  const result = await svc.getOrgMemberRoles('o1')
+  const [endpoint, opts] = requestStub.firstCall.args
+  t.equal(endpoint, '/auth/org/o1/member-roles', 'URL matches')
+  t.equal(opts.method, 'GET', 'method GET')
+  t.deepEqual(result, payload, 'returns members envelope')
+  sandbox.restore()
+  t.end()
+})
+
+test('getOrgMemberRoles url-encodes orgId', async t => {
+  t.plan(1)
+  const svc = makeService()
+  const requestStub = sandbox.stub(svc, '_request').resolves({ success: true, data: { members: [] } })
+  await svc.getOrgMemberRoles('org with spaces')
+  t.equal(
+    requestStub.firstCall.args[0],
+    '/auth/org/org%20with%20spaces/member-roles',
+    'orgId percent-encoded'
+  )
+  sandbox.restore()
+  t.end()
+})
+
+test('getOrgMemberRoles fails-soft to { members: [] } on non-success', async t => {
+  t.plan(1)
+  const svc = makeService()
+  sandbox.stub(svc, '_request').resolves({ success: false })
+  const result = await svc.getOrgMemberRoles('o1')
+  t.deepEqual(result, { members: [] }, 'fails-soft envelope')
+  sandbox.restore()
+  t.end()
+})
+
+test('getOrgMemberRoles throws without orgId', async t => {
+  t.plan(1)
+  const svc = makeService()
+  try { await svc.getOrgMemberRoles('') } catch (err) {
+    t.equal(err.message, 'orgId is required', 'validation')
+  }
+  sandbox.restore()
+  t.end()
+})
+
 test('teardown', t => {
   sandbox.restore()
   t.end()
