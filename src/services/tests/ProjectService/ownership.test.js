@@ -136,15 +136,13 @@ test('assignProjectOwner throws on failed server response', async t => {
 test('autoAssignProjectOwners POSTs to /projects/ownership/auto-assign', async t => {
   t.plan(3)
   const svc = makeService()
-  const requestStub = sandbox.stub(svc, '_request').resolves({
-    success: true,
-    data: { processed: 5, updated: 3, skipped: 2, errors: [] }
-  })
+  const counts = { processed: 5, updated: 3, skipped: 2, errors: [] }
+  const requestStub = sandbox.stub(svc, '_request').resolves({ success: true, data: counts })
   const result = await svc.autoAssignProjectOwners({ limit: 50 })
   const [endpoint, opts] = requestStub.firstCall.args
   t.equal(endpoint, '/projects/ownership/auto-assign', 'URL matches')
   t.equal(opts.method, 'POST', 'method POST')
-  t.deepEqual(result.data, { processed: 5, updated: 3, skipped: 2, errors: [] }, 'returns counts envelope')
+  t.deepEqual(result, counts, 'returns unwrapped data (counts)')
   sandbox.restore()
   t.end()
 })

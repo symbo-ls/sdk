@@ -1629,20 +1629,16 @@ export class ProjectService extends BaseService {
    * @returns {Promise<object>} - server response envelope
    */
   async assignProjectOwner (args = {}) {
-    this._requireReady('assignProjectOwner')
     if (!args.projectId && !args.projectKey) {
       throw new Error('projectId or projectKey is required')
     }
     if (!args.userId && !args.email) {
       throw new Error('userId or email is required')
     }
-    const response = await this._request('/projects/ownership/assign', {
+    return this._call('assignProjectOwner', '/projects/ownership/assign', {
       method: 'POST',
-      body: JSON.stringify(args),
-      methodName: 'assignProjectOwner'
+      body: args
     })
-    if (response?.success) return response
-    throw new Error(response?.message || 'Failed to assign project owner')
   }
 
   /**
@@ -1653,13 +1649,9 @@ export class ProjectService extends BaseService {
    * @returns {Promise<{success: boolean, data: {processed: number, updated: number, skipped: number, errors: Array<object>}}>}
    */
   async autoAssignProjectOwners (args = {}) {
-    this._requireReady('autoAssignProjectOwners')
-    const response = await this._request('/projects/ownership/auto-assign', {
+    return this._call('autoAssignProjectOwners', '/projects/ownership/auto-assign', {
       method: 'POST',
-      body: JSON.stringify(args),
-      methodName: 'autoAssignProjectOwners'
+      body: args
     })
-    if (response?.success) return response
-    throw new Error(response?.message || 'Failed to auto-assign project owners')
   }
 }

@@ -55,14 +55,8 @@ export class MetricsService extends BaseService {
    * @returns {Promise<object>} - { creditsUsed, creditsLimit, period, breakdown? }
    */
   async getProjectUsage (projectId) {
-    this._requireReady('getProjectUsage')
     if (!projectId) throw new Error('projectId is required')
-    const response = await this._request(`/usage/project/${projectId}`, {
-      method: 'GET',
-      methodName: 'getProjectUsage'
-    })
-    if (response?.success) return response.data
-    throw new Error(response?.message || 'Failed to get project usage')
+    return this._call('getProjectUsage', `/usage/project/${projectId}`)
   }
 }
 

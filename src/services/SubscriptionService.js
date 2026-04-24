@@ -447,14 +447,11 @@ export class SubscriptionService extends BaseService {
    * @returns {Promise<{plans: Array<object>, currentPlan?: object}>}
    */
   async getPricingOptions (subscriptionId) {
-    this._requireReady('getPricingOptions')
     if (!subscriptionId) throw new Error('subscriptionId is required')
-    const response = await this._request(
-      `/subscriptions/${subscriptionId}/pricing-options`,
-      { method: 'GET', methodName: 'getPricingOptions' }
+    return this._call(
+      'getPricingOptions',
+      `/subscriptions/${subscriptionId}/pricing-options`
     )
-    if (response?.success) return response.data
-    throw new Error(response?.message || 'Failed to get pricing options')
   }
 
   /**
@@ -485,15 +482,13 @@ export class SubscriptionService extends BaseService {
    * @returns {Promise<object>}
    */
   async grantProjectFeature (projectId, featureKey) {
-    this._requireReady('grantProjectFeature')
     if (!projectId) throw new Error('projectId is required')
     if (!featureKey) throw new Error('featureKey is required')
-    const response = await this._request(
+    return this._call(
+      'grantProjectFeature',
       `/subscriptions/project/${projectId}/features/${encodeURIComponent(featureKey)}/grant`,
-      { method: 'POST', methodName: 'grantProjectFeature' }
+      { method: 'POST' }
     )
-    if (response?.success) return response.data
-    throw new Error(response?.message || 'Failed to grant project feature')
   }
 
   /**
@@ -504,14 +499,12 @@ export class SubscriptionService extends BaseService {
    * @returns {Promise<object>}
    */
   async revokeProjectFeature (projectId, featureKey) {
-    this._requireReady('revokeProjectFeature')
     if (!projectId) throw new Error('projectId is required')
     if (!featureKey) throw new Error('featureKey is required')
-    const response = await this._request(
+    return this._call(
+      'revokeProjectFeature',
       `/subscriptions/project/${projectId}/features/${encodeURIComponent(featureKey)}/revoke`,
-      { method: 'POST', methodName: 'revokeProjectFeature' }
+      { method: 'POST' }
     )
-    if (response?.success) return response.data
-    throw new Error(response?.message || 'Failed to revoke project feature')
   }
 }

@@ -498,14 +498,8 @@ export class OrganizationService extends BaseService {
    * @returns {Promise<object>} - server response envelope
    */
   async listOrgRoles (orgId) {
-    this._requireReady('listOrgRoles')
     if (!orgId) throw new Error('orgId is required')
-    const response = await this._request(`/organizations/${orgId}/roles`, {
-      method: 'GET',
-      methodName: 'listOrgRoles'
-    })
-    if (response?.success) return response.data
-    throw new Error(response?.message || 'Failed to list org roles')
+    return this._call('listOrgRoles', `/organizations/${orgId}/roles`)
   }
 
   /**
@@ -515,18 +509,14 @@ export class OrganizationService extends BaseService {
    * @param {{key: string, name: string, baseTier: string, description?: string, additionalPermissions?: Array<string>}} role
    */
   async createOrgRole (orgId, role = {}) {
-    this._requireReady('createOrgRole')
     if (!orgId) throw new Error('orgId is required')
     if (!role.key) throw new Error('role.key is required')
     if (!role.name) throw new Error('role.name is required')
     if (!role.baseTier) throw new Error('role.baseTier is required')
-    const response = await this._request(`/organizations/${orgId}/roles`, {
+    return this._call('createOrgRole', `/organizations/${orgId}/roles`, {
       method: 'POST',
-      body: JSON.stringify(role),
-      methodName: 'createOrgRole'
+      body: role
     })
-    if (response?.success) return response.data
-    throw new Error(response?.message || 'Failed to create org role')
   }
 
   /**
@@ -536,21 +526,14 @@ export class OrganizationService extends BaseService {
    * @param {{name?: string, description?: string, baseTier?: string, additionalPermissions?: Array<string>}} updates
    */
   async updateOrgRole (orgId, roleKey, updates = {}) {
-    this._requireReady('updateOrgRole')
     if (!orgId) throw new Error('orgId is required')
     if (!roleKey) throw new Error('roleKey is required')
-    const hasUpdates = Object.keys(updates).length > 0
-    if (!hasUpdates) throw new Error('updates cannot be empty')
-    const response = await this._request(
+    if (Object.keys(updates).length === 0) throw new Error('updates cannot be empty')
+    return this._call(
+      'updateOrgRole',
       `/organizations/${orgId}/roles/${encodeURIComponent(roleKey)}`,
-      {
-        method: 'PATCH',
-        body: JSON.stringify(updates),
-        methodName: 'updateOrgRole'
-      }
+      { method: 'PATCH', body: updates }
     )
-    if (response?.success) return response.data
-    throw new Error(response?.message || 'Failed to update org role')
   }
 
   /**
@@ -561,18 +544,13 @@ export class OrganizationService extends BaseService {
    * @param {string} roleKey
    */
   async deleteOrgRole (orgId, roleKey) {
-    this._requireReady('deleteOrgRole')
     if (!orgId) throw new Error('orgId is required')
     if (!roleKey) throw new Error('roleKey is required')
-    const response = await this._request(
+    return this._call(
+      'deleteOrgRole',
       `/organizations/${orgId}/roles/${encodeURIComponent(roleKey)}`,
-      {
-        method: 'DELETE',
-        methodName: 'deleteOrgRole'
-      }
+      { method: 'DELETE' }
     )
-    if (response?.success) return response.data
-    throw new Error(response?.message || 'Failed to delete org role')
   }
 
   /**
@@ -584,18 +562,12 @@ export class OrganizationService extends BaseService {
    * @returns {Promise<{role: string, baseTier: string, permissions: Array<string>, isBuiltin: boolean, source: string}>}
    */
   async getMemberEffectiveRole (orgId, memberId) {
-    this._requireReady('getMemberEffectiveRole')
     if (!orgId) throw new Error('orgId is required')
     if (!memberId) throw new Error('memberId is required')
-    const response = await this._request(
-      `/organizations/${orgId}/members/${memberId}/effective-role`,
-      {
-        method: 'GET',
-        methodName: 'getMemberEffectiveRole'
-      }
+    return this._call(
+      'getMemberEffectiveRole',
+      `/organizations/${orgId}/members/${memberId}/effective-role`
     )
-    if (response?.success) return response.data
-    throw new Error(response?.message || 'Failed to get effective role')
   }
 
   /**
@@ -648,19 +620,13 @@ export class OrganizationService extends BaseService {
    * @param {{email: string, recipientName?: string}} args
    */
   async createTeamInvitation (orgId, teamId, { email, recipientName } = {}) {
-    this._requireReady('createTeamInvitation')
     if (!orgId || !teamId) throw new Error('orgId and teamId are required')
     if (!email) throw new Error('email is required')
-    const response = await this._request(
+    return this._call(
+      'createTeamInvitation',
       `/organizations/${orgId}/teams/${teamId}/invitations`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ email, ...(recipientName ? { recipientName } : {}) }),
-        methodName: 'createTeamInvitation'
-      }
+      { method: 'POST', body: { email, ...(recipientName ? { recipientName } : {}) } }
     )
-    if (response?.success) return response.data
-    throw new Error(response?.message || 'Failed to create team invitation')
   }
 
   /**
@@ -670,15 +636,13 @@ export class OrganizationService extends BaseService {
    * @param {string} inviteId
    */
   async revokeTeamInvitation (orgId, teamId, inviteId) {
-    this._requireReady('revokeTeamInvitation')
     if (!orgId || !teamId) throw new Error('orgId and teamId are required')
     if (!inviteId) throw new Error('inviteId is required')
-    const response = await this._request(
+    return this._call(
+      'revokeTeamInvitation',
       `/organizations/${orgId}/teams/${teamId}/invitations/${inviteId}/revoke`,
-      { method: 'POST', methodName: 'revokeTeamInvitation' }
+      { method: 'POST' }
     )
-    if (response?.success) return response.data
-    throw new Error(response?.message || 'Failed to revoke team invitation')
   }
 
   /**
@@ -687,15 +651,11 @@ export class OrganizationService extends BaseService {
    * @param {{token: string}} args
    */
   async acceptTeamInvitation ({ token } = {}) {
-    this._requireReady('acceptTeamInvitation')
     if (!token) throw new Error('token is required')
-    const response = await this._request('/organizations/accept-team-invitation', {
+    return this._call('acceptTeamInvitation', '/organizations/accept-team-invitation', {
       method: 'POST',
-      body: JSON.stringify({ token }),
-      methodName: 'acceptTeamInvitation'
+      body: { token }
     })
-    if (response?.success) return response.data
-    throw new Error(response?.message || 'Failed to accept team invitation')
   }
 
   // ==================== TEAM WORKSPACE ACCESS ====================
@@ -730,19 +690,13 @@ export class OrganizationService extends BaseService {
    * @param {{workspaceId: string, role?: string}} args - role defaults to 'guest'
    */
   async grantTeamWorkspaceAccess (orgId, teamId, { workspaceId, role = 'guest' } = {}) {
-    this._requireReady('grantTeamWorkspaceAccess')
     if (!orgId || !teamId) throw new Error('orgId and teamId are required')
     if (!workspaceId) throw new Error('workspaceId is required')
-    const response = await this._request(
+    return this._call(
+      'grantTeamWorkspaceAccess',
       `/organizations/${orgId}/teams/${teamId}/workspace-access`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ workspaceId, role }),
-        methodName: 'grantTeamWorkspaceAccess'
-      }
+      { method: 'POST', body: { workspaceId, role } }
     )
-    if (response?.success) return response.data
-    throw new Error(response?.message || 'Failed to grant team workspace access')
   }
 
   /**
@@ -753,21 +707,15 @@ export class OrganizationService extends BaseService {
    * @param {{role: string}} updates
    */
   async updateTeamWorkspaceAccess (orgId, teamId, accessId, { role } = {}) {
-    this._requireReady('updateTeamWorkspaceAccess')
     if (!orgId || !teamId || !accessId) {
       throw new Error('orgId, teamId and accessId are required')
     }
     if (!role) throw new Error('role is required')
-    const response = await this._request(
+    return this._call(
+      'updateTeamWorkspaceAccess',
       `/organizations/${orgId}/teams/${teamId}/workspace-access/${accessId}`,
-      {
-        method: 'PATCH',
-        body: JSON.stringify({ role }),
-        methodName: 'updateTeamWorkspaceAccess'
-      }
+      { method: 'PATCH', body: { role } }
     )
-    if (response?.success) return response.data
-    throw new Error(response?.message || 'Failed to update team workspace access')
   }
 
   /**
@@ -777,16 +725,14 @@ export class OrganizationService extends BaseService {
    * @param {string} accessId
    */
   async revokeTeamWorkspaceAccess (orgId, teamId, accessId) {
-    this._requireReady('revokeTeamWorkspaceAccess')
     if (!orgId || !teamId || !accessId) {
       throw new Error('orgId, teamId and accessId are required')
     }
-    const response = await this._request(
+    return this._call(
+      'revokeTeamWorkspaceAccess',
       `/organizations/${orgId}/teams/${teamId}/workspace-access/${accessId}`,
-      { method: 'DELETE', methodName: 'revokeTeamWorkspaceAccess' }
+      { method: 'DELETE' }
     )
-    if (response?.success) return response.data
-    throw new Error(response?.message || 'Failed to revoke team workspace access')
   }
 
   async adminListOrganizations (params = {}) {
@@ -843,14 +789,12 @@ export class OrganizationService extends BaseService {
    * @param {string} teamId
    */
   async adminOverrideTeam (orgId, teamId) {
-    this._requireReady('adminOverrideTeam')
     if (!orgId || !teamId) throw new Error('orgId and teamId are required')
-    const response = await this._request(
+    return this._call(
+      'adminOverrideTeam',
       `/organizations/${orgId}/teams/${teamId}/admin-override`,
-      { method: 'POST', methodName: 'adminOverrideTeam' }
+      { method: 'POST' }
     )
-    if (response?.success) return response.data
-    throw new Error(response?.message || 'Failed to admin-override team')
   }
 
   /**
@@ -861,13 +805,11 @@ export class OrganizationService extends BaseService {
    * @returns {Promise<{orgId: string, stripeCustomerId: string, created: boolean}>}
    */
   async ensureOrgStripeCustomer (orgId) {
-    this._requireReady('ensureOrgStripeCustomer')
     if (!orgId) throw new Error('orgId is required')
-    const response = await this._request(
+    return this._call(
+      'ensureOrgStripeCustomer',
       `/organizations/${orgId}/stripe/customer`,
-      { method: 'POST', methodName: 'ensureOrgStripeCustomer' }
+      { method: 'POST' }
     )
-    if (response?.success) return response.data
-    throw new Error(response?.message || 'Failed to ensure Stripe customer')
   }
 }

@@ -15,13 +15,7 @@ export class CreditsService extends BaseService {
    * @returns {Promise<object>}
    */
   async getRates () {
-    this._requireReady('getRates')
-    const response = await this._request('/credits/rates', {
-      method: 'GET',
-      methodName: 'getRates'
-    })
-    if (response?.success) return response.data
-    throw new Error(response?.message || 'Failed to get credit rates')
+    return this._call('getRates', '/credits/rates')
   }
 
   /**
@@ -32,14 +26,8 @@ export class CreditsService extends BaseService {
    * @returns {Promise<{available: number, reserved?: number, tier: string, ...}>}
    */
   async getProjectBalance (projectId) {
-    this._requireReady('getProjectBalance')
     if (!projectId) throw new Error('projectId is required')
-    const response = await this._request(
-      `/projects/${projectId}/credits/balance`,
-      { method: 'GET', methodName: 'getProjectBalance' }
-    )
-    if (response?.success) return response.data
-    throw new Error(response?.message || 'Failed to get credit balance')
+    return this._call('getProjectBalance', `/projects/${projectId}/credits/balance`)
   }
 
   /**
@@ -78,14 +66,8 @@ export class CreditsService extends BaseService {
    * @returns {Promise<object | null>}
    */
   async getProjectSpendControls (projectId) {
-    this._requireReady('getProjectSpendControls')
     if (!projectId) throw new Error('projectId is required')
-    const response = await this._request(
-      `/projects/${projectId}/credits/controls`,
-      { method: 'GET', methodName: 'getProjectSpendControls' }
-    )
-    if (response?.success) return response.data
-    throw new Error(response?.message || 'Failed to get spend controls')
+    return this._call('getProjectSpendControls', `/projects/${projectId}/credits/controls`)
   }
 
   /**
@@ -97,18 +79,12 @@ export class CreditsService extends BaseService {
    * @returns {Promise<object>}
    */
   async updateProjectSpendControls (projectId, controls = {}) {
-    this._requireReady('updateProjectSpendControls')
     if (!projectId) throw new Error('projectId is required')
-    const response = await this._request(
+    return this._call(
+      'updateProjectSpendControls',
       `/projects/${projectId}/credits/controls`,
-      {
-        method: 'PUT',
-        body: JSON.stringify(controls),
-        methodName: 'updateProjectSpendControls'
-      }
+      { method: 'PUT', body: controls }
     )
-    if (response?.success) return response.data
-    throw new Error(response?.message || 'Failed to update spend controls')
   }
 
   /**
@@ -120,17 +96,11 @@ export class CreditsService extends BaseService {
    * @returns {Promise<{checkoutUrl: string, sessionId: string}>}
    */
   async topupProjectCredits (projectId, { packs = 1, returnUrl } = {}) {
-    this._requireReady('topupProjectCredits')
     if (!projectId) throw new Error('projectId is required')
-    const response = await this._request(
+    return this._call(
+      'topupProjectCredits',
       `/projects/${projectId}/credits/topup`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ packs, ...(returnUrl ? { returnUrl } : {}) }),
-        methodName: 'topupProjectCredits'
-      }
+      { method: 'POST', body: { packs, ...(returnUrl ? { returnUrl } : {}) } }
     )
-    if (response?.success) return response.data
-    throw new Error(response?.message || 'Failed to create topup session')
   }
 }
