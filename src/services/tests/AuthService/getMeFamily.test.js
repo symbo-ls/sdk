@@ -132,6 +132,44 @@ test('getMyOrgMemberships fails-soft to { memberships: [] }', async t => {
   t.end()
 })
 
+// resendVerification + verifyEmail ------------------------------------------
+
+test('resendVerification POSTs to /auth/resend-verification', async t => {
+  t.plan(2)
+  const svc = makeService()
+  const requestStub = sandbox.stub(svc, '_request').resolves({ success: true, data: { queued: true } })
+  await svc.resendVerification()
+  const [endpoint, opts] = requestStub.firstCall.args
+  t.equal(endpoint, '/auth/resend-verification', 'URL matches')
+  t.equal(opts.method, 'POST', 'method POST')
+  sandbox.restore()
+  t.end()
+})
+
+test('verifyEmail GETs /auth/verify-email/:token (url-encoded)', async t => {
+  t.plan(1)
+  const svc = makeService()
+  const requestStub = sandbox.stub(svc, '_request').resolves({ success: true, data: { verified: true } })
+  await svc.verifyEmail('abc/def 123')
+  t.equal(
+    requestStub.firstCall.args[0],
+    '/auth/verify-email/abc%2Fdef%20123',
+    'token percent-encoded'
+  )
+  sandbox.restore()
+  t.end()
+})
+
+test('verifyEmail throws without token', async t => {
+  t.plan(1)
+  const svc = makeService()
+  try { await svc.verifyEmail('') } catch (err) {
+    t.equal(err.message, 'token is required', 'validation')
+  }
+  sandbox.restore()
+  t.end()
+})
+
 test('teardown', t => {
   sandbox.restore()
   t.end()

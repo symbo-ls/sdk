@@ -303,6 +303,57 @@ export class FileService extends BaseService {
 
     return results
   }
+
+  // ==================== FILE CRUD ====================
+
+  /**
+   * Fetch file metadata by id (no content). Access control scoped to
+   * owner + shared-project members on the server.
+   * @param {string} fileId
+   * @returns {Promise<object>}
+   */
+  async getFile (fileId) {
+    if (!fileId) throw new Error('fileId is required')
+    return this._call('getFile', `/files/${fileId}`)
+  }
+
+  /**
+   * Patch file metadata (tags, visibility, metadata). Not for binary
+   * content — replace by re-uploading.
+   * @param {string} fileId
+   * @param {{tags?: Array<string>, visibility?: string, metadata?: object}} updates
+   */
+  async updateFile (fileId, updates = {}) {
+    if (!fileId) throw new Error('fileId is required')
+    return this._call('updateFile', `/files/${fileId}`, {
+      method: 'PUT',
+      body: updates
+    })
+  }
+
+  /**
+   * Delete a file. Owner-only on the server. Also removes from R2.
+   * @param {string} fileId
+   */
+  async deleteFile (fileId) {
+    if (!fileId) throw new Error('fileId is required')
+    return this._call('deleteFile', `/files/${fileId}`, { method: 'DELETE' })
+  }
+
+  /**
+   * List the authenticated user's own uploads. Paginated.
+   * @param {{page?: number, limit?: number, sortBy?: string, sortOrder?: 'asc' | 'desc'}} [options]
+   */
+  async listMyUploads ({ page = 1, limit = 20, sortBy, sortOrder } = {}) {
+    const qs = new URLSearchParams({ page: String(page), limit: String(limit) })
+    if (sortBy) qs.append('sortBy', sortBy)
+    if (sortOrder) qs.append('sortOrder', sortOrder)
+    const queryString = qs.toString()
+    // Inlined both branches so the drift analyzer sees /files/my-uploads.
+    return queryString
+      ? this._call('listMyUploads', `/files/my-uploads?${queryString}`)
+      : this._call('listMyUploads', '/files/my-uploads')
+  }
 }
 
 function _extractFormat (fileKey, uploadData) {

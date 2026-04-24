@@ -1223,4 +1223,24 @@ export class AuthService extends BaseService {
     if (response?.success) return response.data
     return { memberships: [] }
   }
+
+  /**
+   * Resend the email verification link for the authenticated user.
+   * Requires auth (the server takes `req.user` as the resend target).
+   * No-op idempotent on the client — server rate-limits resends.
+   */
+  async resendVerification () {
+    return this._call('resendVerification', '/auth/resend-verification', { method: 'POST' })
+  }
+
+  /**
+   * Confirm email verification using a token. The token is the one
+   * emailed to the user — no auth required; verification completes the
+   * sign-up flow for the user the token identifies.
+   * @param {string} token
+   */
+  async verifyEmail (token) {
+    if (!token) throw new Error('token is required')
+    return this._call('verifyEmail', `/auth/verify-email/${encodeURIComponent(token)}`)
+  }
 }
