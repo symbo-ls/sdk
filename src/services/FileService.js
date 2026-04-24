@@ -348,11 +348,9 @@ export class FileService extends BaseService {
     const qs = new URLSearchParams({ page: String(page), limit: String(limit) })
     if (sortBy) qs.append('sortBy', sortBy)
     if (sortOrder) qs.append('sortOrder', sortOrder)
-    const queryString = qs.toString()
-    // Inlined both branches so the drift analyzer sees /files/my-uploads.
-    return queryString
-      ? this._call('listMyUploads', `/files/my-uploads?${queryString}`)
-      : this._call('listMyUploads', '/files/my-uploads')
+    // page/limit always populated via defaults, so the query string is
+    // always non-empty — no need for a literal-fallback branch.
+    return this._call('listMyUploads', `/files/my-uploads?${qs.toString()}`)
   }
 }
 
