@@ -51,13 +51,18 @@ export class IntegrationService extends BaseService {
     if (projectId != null) { queryParams.append('projectId', String(projectId)) }
 
     const queryString = queryParams.toString()
-    const url = `/integrations${queryString ? `?${queryString}` : ''}`
 
     try {
-      const response = await this._request(url, {
-        method: 'GET',
-        methodName: 'listIntegrations'
-      })
+      // Inline both branches so the analyzer matches /integrations.
+      const response = queryString
+        ? await this._request(`/integrations?${queryString}`, {
+          method: 'GET',
+          methodName: 'listIntegrations'
+        })
+        : await this._request('/integrations', {
+          method: 'GET',
+          methodName: 'listIntegrations'
+        })
       if (response.success) {
         return response.data
       }
@@ -363,13 +368,19 @@ export class IntegrationService extends BaseService {
     if (includePayload != null) { queryParams.append('includePayload', String(includePayload)) }
 
     const queryString = queryParams.toString()
-    const url = `/integrations/${integrationId}/webhooks/${webhookId}/deliveries${queryString ? `?${queryString}` : ''}`
 
     try {
-      const response = await this._request(url, {
-        method: 'GET',
-        methodName: 'listIntegrationWebhookDeliveries'
-      })
+      // Inline both branches so the analyzer matches
+      // /integrations/:id/webhooks/:id/deliveries.
+      const response = queryString
+        ? await this._request(
+          `/integrations/${integrationId}/webhooks/${webhookId}/deliveries?${queryString}`,
+          { method: 'GET', methodName: 'listIntegrationWebhookDeliveries' }
+        )
+        : await this._request(
+          `/integrations/${integrationId}/webhooks/${webhookId}/deliveries`,
+          { method: 'GET', methodName: 'listIntegrationWebhookDeliveries' }
+        )
       if (response.success) {
         return response.data
       }

@@ -32,12 +32,17 @@ export class SharedAssetService extends BaseService {
       if (v !== undefined && v !== null && v !== '') queryParams.append(k, String(v))
     }
     const queryString = queryParams.toString()
-    const url = `/shared-assets${queryString ? `?${queryString}` : ''}`
 
-    const response = await this._request(url, {
-      method: 'GET',
-      methodName: 'listAssets'
-    })
+    // Inline both branches so the analyzer matches /shared-assets.
+    const response = queryString
+      ? await this._request(`/shared-assets?${queryString}`, {
+        method: 'GET',
+        methodName: 'listAssets'
+      })
+      : await this._request('/shared-assets', {
+        method: 'GET',
+        methodName: 'listAssets'
+      })
     if (response.success) return response.data
     throw new Error(response.message)
   }

@@ -51,13 +51,18 @@ export class AdminService extends BaseService {
     }
 
     const queryString = queryParams.toString()
-    const url = `/users/admin/users${queryString ? `?${queryString}` : ''}`
 
     try {
-      const response = await this._request(url, {
-        method: 'GET',
-        methodName: 'getAdminUsers'
-      })
+      // Inline both branches so the analyzer matches /users/admin/users.
+      const response = queryString
+        ? await this._request(`/users/admin/users?${queryString}`, {
+          method: 'GET',
+          methodName: 'getAdminUsers'
+        })
+        : await this._request('/users/admin/users', {
+          method: 'GET',
+          methodName: 'getAdminUsers'
+        })
       if (response.success) {
         return response.data
       }

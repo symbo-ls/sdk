@@ -1436,14 +1436,20 @@ export class ProjectService extends BaseService {
     const queryString = new URLSearchParams({
       limit: limit.toString()
     }).toString()
-    const url = `/users/projects/recent${queryString ? `?${queryString}` : ''}`
 
     try {
-      const response = await this._request(url, {
-        method: 'GET',
-        ...(headers ? { headers } : {}),
-        methodName: 'getRecentProjects'
-      })
+      // Inline both branches so the analyzer matches /users/projects/recent.
+      const response = queryString
+        ? await this._request(`/users/projects/recent?${queryString}`, {
+          method: 'GET',
+          ...(headers ? { headers } : {}),
+          methodName: 'getRecentProjects'
+        })
+        : await this._request('/users/projects/recent', {
+          method: 'GET',
+          ...(headers ? { headers } : {}),
+          methodName: 'getRecentProjects'
+        })
 
       if (response.success) {
         // Map icon src similar to other project lists

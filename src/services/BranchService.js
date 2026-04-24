@@ -151,15 +151,19 @@ export class BranchService extends BaseService {
     }
 
     const queryString = queryParams.toString()
-    const url = `/projects/${projectId}/branches/${encodeURIComponent(
-      branchName
-    )}/changes${queryString ? `?${queryString}` : ''}`
 
     try {
-      const response = await this._request(url, {
-        method: 'GET',
-        methodName: 'getBranchChanges'
-      })
+      // Inline both branches so the analyzer matches
+      // /projects/:id/branches/:id/changes.
+      const response = queryString
+        ? await this._request(
+          `/projects/${projectId}/branches/${encodeURIComponent(branchName)}/changes?${queryString}`,
+          { method: 'GET', methodName: 'getBranchChanges' }
+        )
+        : await this._request(
+          `/projects/${projectId}/branches/${encodeURIComponent(branchName)}/changes`,
+          { method: 'GET', methodName: 'getBranchChanges' }
+        )
       if (response.success) {
         return response.data
       }
