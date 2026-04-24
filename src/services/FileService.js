@@ -352,6 +352,36 @@ export class FileService extends BaseService {
     // always non-empty — no need for a literal-fallback branch.
     return this._call('listMyUploads', `/files/my-uploads?${qs.toString()}`)
   }
+
+  /**
+   * Upload a marketplace thumbnail. Admin-gated on the server (temporary
+   * until the marketplace schema carries a seller FK). Multipart — R2 +
+   * CDN-worker pipeline owned by the SCREENSHOTS agent, routed by SERVER.
+   *
+   * @param {File | Blob} thumbnailFile - image bytes
+   * @param {{itemId: string, kind: string}} args - itemId: slug
+   *   (alphanumerics + dashes, ≤64 chars); kind: one of the server's
+   *   KIND_WHITELIST (e.g. 'template', 'component', 'page').
+   * @returns {Promise<object>} - server response {thumbnailUrl, …}
+   */
+  async uploadMarketplaceThumbnail (thumbnailFile, { itemId, kind } = {}) {
+    this._requireReady('uploadMarketplaceThumbnail')
+    if (!thumbnailFile) throw new Error('thumbnailFile is required')
+    if (!itemId) throw new Error('itemId is required')
+    if (!kind) throw new Error('kind is required')
+    const formData = new FormData()
+    formData.append('file', thumbnailFile)
+    formData.append('itemId', itemId)
+    formData.append('kind', kind)
+    const response = await this._request('/marketplace/thumbnail', {
+      method: 'POST',
+      body: formData,
+      headers: {}, // let browser set Content-Type for FormData
+      methodName: 'uploadMarketplaceThumbnail'
+    })
+    if (response?.success) return response.data
+    throw new Error(response?.message || 'Failed to upload marketplace thumbnail')
+  }
 }
 
 function _extractFormat (fileKey, uploadData) {

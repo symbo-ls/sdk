@@ -94,6 +94,61 @@ test('listMyUploads — full options append to URL', async t => {
   t.end()
 })
 
+// uploadMarketplaceThumbnail -----------------------------------------------
+
+test('uploadMarketplaceThumbnail POSTs multipart to /marketplace/thumbnail', async t => {
+  t.plan(4)
+  const svc = makeService()
+  const requestStub = sandbox.stub(svc, '_request').resolves({ success: true, data: { thumbnailUrl: 'https://…' } })
+  const file = new Blob(['png-bytes'], { type: 'image/png' })
+  await svc.uploadMarketplaceThumbnail(file, { itemId: 'cool-template', kind: 'template' })
+  const [endpoint, opts] = requestStub.firstCall.args
+  t.equal(endpoint, '/marketplace/thumbnail', 'URL matches')
+  t.equal(opts.method, 'POST', 'method POST')
+  t.ok(opts.body instanceof FormData, 'body is FormData')
+  t.deepEqual(opts.headers, {}, 'empty headers — browser sets multipart boundary')
+  sandbox.restore()
+  t.end()
+})
+
+test('uploadMarketplaceThumbnail throws without file', async t => {
+  t.plan(1)
+  const svc = makeService()
+  try {
+    await svc.uploadMarketplaceThumbnail(null, { itemId: 'x', kind: 'template' })
+  } catch (err) {
+    t.equal(err.message, 'thumbnailFile is required', 'validation')
+  }
+  sandbox.restore()
+  t.end()
+})
+
+test('uploadMarketplaceThumbnail throws without itemId', async t => {
+  t.plan(1)
+  const svc = makeService()
+  const file = new Blob(['x'], { type: 'image/png' })
+  try {
+    await svc.uploadMarketplaceThumbnail(file, { kind: 'template' })
+  } catch (err) {
+    t.equal(err.message, 'itemId is required', 'validation')
+  }
+  sandbox.restore()
+  t.end()
+})
+
+test('uploadMarketplaceThumbnail throws without kind', async t => {
+  t.plan(1)
+  const svc = makeService()
+  const file = new Blob(['x'], { type: 'image/png' })
+  try {
+    await svc.uploadMarketplaceThumbnail(file, { itemId: 'x' })
+  } catch (err) {
+    t.equal(err.message, 'kind is required', 'validation')
+  }
+  sandbox.restore()
+  t.end()
+})
+
 test('teardown', t => {
   sandbox.restore()
   t.end()
