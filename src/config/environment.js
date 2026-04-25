@@ -61,8 +61,13 @@ const CONFIG = {
     typesenseProtocol: 'https'
   },
   testing: {
-    socketUrl: 'https://api.test.symbols.app',
-    apiUrl: 'https://api.test.symbols.app',
+    // `api.test.symbols.app` was never DNS-registered. Point at next.api for
+    // now — it's a separate Cloud Run service that routes to prod Mongo, but
+    // the integration suite uses a dedicated `allen+testaccount@symbols.app`
+    // account + random-UUID project keys, so the blast radius stays inside
+    // that account.
+    socketUrl: 'https://next.api.symbols.app',
+    apiUrl: 'https://next.api.symbols.app',
     basedEnv: 'testing',
     basedProject: 'platform-v2-sm',
     basedOrg: 'symbols',
