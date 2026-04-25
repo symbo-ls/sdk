@@ -17,6 +17,7 @@ import { IntegrationService } from './IntegrationService.js'
 import { FeatureFlagService } from './FeatureFlagService.js'
 import { OrganizationService } from './OrganizationService.js'
 import { WorkspaceService } from './WorkspaceService.js'
+import { WorkspaceDataService } from './WorkspaceDataService.js'
 import { KvService } from './KvService.js'
 import { AllocationRuleService } from './AllocationRuleService.js'
 import { SharedAssetService } from './SharedAssetService.js'
@@ -83,6 +84,12 @@ export const createOrganizationService = config =>
 export const createWorkspaceService = config =>
   createService(WorkspaceService, config)
 
+// Workspace DATA service — typed surface against next.api.symbols.app/workspace/*
+// (the @symbo.ls/server-workspace wrapper). Distinct from WorkspaceService
+// (workspace-org CRUD via /core/workspaces).
+export const createWorkspaceDataService = config =>
+  createService(WorkspaceDataService, config)
+
 export const createKvService = config =>
   createService(KvService, config)
 
@@ -115,6 +122,7 @@ export {
   FeatureFlagService,
   OrganizationService,
   WorkspaceService,
+  WorkspaceDataService,
   KvService,
   AllocationRuleService,
   SharedAssetService,

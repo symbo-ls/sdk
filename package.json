@@ -21,6 +21,10 @@
       "import": "./dist/config/environment.js",
       "require": "./dist/config/environment.cjs"
     },
+    "./federation": {
+      "import": "./src/federation/index.js",
+      "default": "./src/federation/index.js"
+    },
     "./utils/services": {
       "node": "./dist/node/utils/services.js",
       "import": "./dist/esm/utils/services.js",

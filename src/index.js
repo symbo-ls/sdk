@@ -18,6 +18,7 @@ import {
   createFeatureFlagService,
   createOrganizationService,
   createWorkspaceService,
+  createWorkspaceDataService,
   createKvService,
   createAllocationRuleService,
   createSharedAssetService,
@@ -203,6 +204,13 @@ export class SDK {
       this._initService(
         'workspace',
         createWorkspaceService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      this._initService(
+        'workspaceData',
+        createWorkspaceDataService({
           context: this._context,
           options: this._options
         })
@@ -407,6 +415,7 @@ export {
   createFeatureFlagService,
   createOrganizationService,
   createWorkspaceService,
+  createWorkspaceDataService,
   createKvService,
   createAllocationRuleService,
   createSharedAssetService,
