@@ -61,13 +61,12 @@ const CONFIG = {
     typesenseProtocol: 'https'
   },
   testing: {
-    // `api.test.symbols.app` was never DNS-registered. Point at next.api for
-    // now — it's a separate Cloud Run service that routes to prod Mongo, but
-    // the integration suite uses a dedicated `allen+testaccount@symbols.app`
-    // account + random-UUID project keys, so the blast radius stays inside
-    // that account.
-    socketUrl: 'https://next.api.symbols.app',
-    apiUrl: 'https://next.api.symbols.app',
+    // The deployed test API is `test.api.symbols.app` (Cloud Run service
+    // `smbls-api-test`, separate `mongouri_testing` Mongo, separate
+    // `smbls-api-test-*` buckets). Many places in the codebase historically
+    // wrote `api.test.symbols.app` — that hostname was never DNS-registered.
+    socketUrl: 'https://test.api.symbols.app',
+    apiUrl: 'https://test.api.symbols.app',
     basedEnv: 'testing',
     basedProject: 'platform-v2-sm',
     basedOrg: 'symbols',
