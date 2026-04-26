@@ -1,0 +1,84 @@
+name: Scheduled SDK Tests
+# Replaces the 13 per-suite scheduled-test-*.yaml files.
+#
+# Branch: always checks out `next` (the active development branch).
+# Env:    always runs against `testing` → test.api.symbols.app.
+#         NEVER point this at next.api or production — the test account
+#         mutates state with random-UUID project keys and would pollute
+#         live data.
+#
+# Cron is intentionally disabled while integration tests stabilize on
+# `next` — re-enable by uncommenting the `schedule:` block below.
+# Until then, run manually from the Actions tab via "Run workflow"
+# (workflow_dispatch) or remotely via repository_dispatch.
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: 'Suite to run (or `all` for the matrix)'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - smoke
+          - auth
+          - branch
+          - collab
+          - dataset
+          - external
+          - favorite-project
+          - get-project
+          - member
+          - password
+          - project
+          - update-project
+          - user
+  repository_dispatch:
+    types: [run_sdk_tests]
+  # schedule:
+  #   - cron: '0 6 * * *'   # daily 06:00 UTC — re-enable once green
+
+# Drop superseded runs to keep the Actions tab clean.
+concurrency:
+  group: scheduled-tests-${{ github.ref }}-${{ github.event.inputs.suite || 'all' }}
+  cancel-in-progress: true
+
+jobs:
+  # Matrix path — runs every suite in parallel. Triggered by cron,
+  # repository_dispatch, or workflow_dispatch with suite=all.
+  matrix-tests:
+    if: github.event_name != 'workflow_dispatch' || github.event.inputs.suite == 'all'
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - smoke
+          - auth
+          - branch
+          - collab
+          - dataset
+          - external
+          - favorite-project
+          - get-project
+          - member
+          - password
+          - project
+          - update-project
+          - user
+    uses: ./.github/workflows/test-workflow.yaml
+    with:
+      node_env: 'testing'
+      suite: ${{ matrix.suite }}
+      ref: 'next'
+    secrets: inherit
+
+  # Single-suite path — for ad-hoc manual runs of one suite only.
+  single-suite:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.suite != 'all'
+    uses: ./.github/workflows/test-workflow.yaml
+    with:
+      node_env: 'testing'
+      suite: ${{ github.event.inputs.suite }}
+      ref: 'next'
+    secrets: inherit

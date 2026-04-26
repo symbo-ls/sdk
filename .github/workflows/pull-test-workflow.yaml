@@ -1,15 +1,23 @@
 name: Pull Request Tests Workflow
+# Smoke-tests on PRs targeting `next` (active branch).
+# Runs against the test API (`testing` env → test.api.symbols.app) so it
+# never mutates next.api or production data.
 on:
   workflow_dispatch:
   repository_dispatch:
     types: [run_smoke_tests]
   pull_request:
     branches:
-     - next
+      - next
     paths:
-    - 'src/**'
-    - 'integration-tests/**'
-    - 'package.json'
+      - 'src/**'
+      - 'integration-tests/**'
+      - 'package.json'
+
+# Cancel superseded runs when a PR is force-pushed.
+concurrency:
+  group: pr-tests-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   smoke-tests:
@@ -17,4 +25,5 @@ jobs:
     with:
       node_env: 'testing'
       suite: 'smoke'
+      # ref left empty — checkout uses the PR head (correct for pull_request).
     secrets: inherit
