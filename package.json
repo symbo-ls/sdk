@@ -33,9 +33,9 @@
     }
   },
   "scripts": {
-    "build:esm": "cross-env NODE_ENV=$NODE_ENV esbuild ./src/*.js ./src/**/*.js --target=es2019 --format=esm --bundle --external:@symbo.ls/utils --external:@symbo.ls/router --external:@symbo.ls/sync --outdir=dist/esm --define:process.env.NODE_ENV=process.env.NODE_ENV",
-    "build:cjs": "cross-env NODE_ENV=$NODE_ENV esbuild ./src/*.js ./src/**/*.js --target=node16 --format=cjs --out-extension:.js=.cjs --outdir=dist/cjs --define:process.env.NODE_ENV=process.env.NODE_ENV",
-    "build:node": "cross-env NODE_ENV=$NODE_ENV esbuild ./src/*.js ./src/**/*.js --target=node16 --format=esm --platform=node --outdir=dist/node --define:process.env.NODE_ENV=process.env.NODE_ENV",
+    "build:esm": "cross-env NODE_ENV=$NODE_ENV esbuild $(find src -name '*.js' ! -name '*.test.js') --target=es2019 --format=esm --bundle --external:@symbo.ls/utils --external:@symbo.ls/router --external:@symbo.ls/sync --outdir=dist/esm --define:process.env.NODE_ENV=process.env.NODE_ENV",
+    "build:cjs": "cross-env NODE_ENV=$NODE_ENV esbuild $(find src -name '*.js' ! -name '*.test.js') --target=node16 --format=cjs --out-extension:.js=.cjs --outdir=dist/cjs --define:process.env.NODE_ENV=process.env.NODE_ENV",
+    "build:node": "cross-env NODE_ENV=$NODE_ENV esbuild $(find src -name '*.js' ! -name '*.test.js') --target=node16 --format=esm --platform=node --outdir=dist/node --define:process.env.NODE_ENV=process.env.NODE_ENV",
     "build": "rimraf dist && npm run build:esm && npm run build:cjs && npm run build:node",
     "prepublishOnly": "npm run build",
     "test:all": "cross-env NODE_ENV=$NODE_ENV tape integration-tests/index.js integration-tests/*.test.js | tap-spec",
