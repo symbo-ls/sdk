@@ -1,102 +1,40 @@
-# Symstory Client
+# Symstory Client — DEPRECATED
 
-The Symstory Client provides methods to interact with the Symstory service. Below is a description of all available methods.
+`@symbo.ls/symstory-utils` and the standalone Symstory client are no longer
+part of `@symbo.ls/sdk`. Project data versioning, branching, and version
+restoration now live on `ProjectService` and `BranchService`.
 
-## Initialization
+## Mapping from old Symstory API
 
-To initialize the Symstory Client, use the `init` method:
+| Symstory v3 | v4 location |
+| --- | --- |
+| `Symstory.init(appKey, { apiUrl })` | `new SDK({ apiUrl })` then `sdk.initialize({ authToken, appKey })` |
+| `client.get(query, branch, version)` | `sdk.getProjectData(projectId, { branch, version })` (or `sdk.getProjectItemByPath`) |
+| `client.set(path, value)` | `sdk.setProjectValue(projectId, path, value, options)` |
+| `client.update(changes, opts)` | `sdk.applyProjectChanges(projectId, changes, opts)` |
+| `client.getBranches()` | `sdk.listBranches(projectId)` |
+| `client.createBranch(name, opts)` | `sdk.createBranch(projectId, { name, source, message, version })` |
+| `client.mergeBranch(target, opts)` | `sdk.mergeBranch(projectId, branchName, mergeData)` |
+| `client.restoreVersion(version, opts)` | `sdk.restoreProjectVersion(projectId, version, options)` |
 
-```javascript
-import Symstory from '@symbo.ls/symstory-utils';
+## Migration example
 
-const client = Symstory.init('your-app-key', { apiUrl: 'https://your-custom-url' });
+```js
+// v3 — Symstory standalone
+import Symstory from '@symbo.ls/symstory-utils'
+const client = Symstory.init('your-app-key', { apiUrl: 'https://...' })
+await client.update([['update', 'path.to.value', 'updatedValue']])
+await client.createBranch('feature-x', { message: 'feature start' })
+
+// v4 — SDK
+import { SDK } from '@symbo.ls/sdk'
+const sdk = new SDK({ apiUrl: 'https://...' })
+await sdk.initialize({ authToken })
+await sdk.applyProjectChanges(projectId, [
+  ['update', ['path', 'to', 'value'], 'updatedValue']
+], { message: 'change', type: 'patch' })
+await sdk.createBranch(projectId, { name: 'feature-x', message: 'feature start' })
 ```
 
-## Methods
-
-### `get(query, branch = null, version = null)`
-
-Fetch project data based on the provided query, branch, and version.
-
-- `query`: The query object to filter data.
-- `branch`: The branch name (optional).
-- `version`: The version number (optional).
-
-### `set(path, value)`
-
-Set a value at the specified path.
-
-- `path`: The path where the value should be set.
-- `value`: The value to set.
-
-### `update(changes, { type = 'patch', message = '', branch = 'main' } = {})`
-
-Update project data with the provided changes.
-
-- `changes`: The changes to apply.
-- `type`: The type of update (default: 'patch').
-- `message`: A message describing the update (optional).
-- `branch`: The branch name (default: 'main').
-
-### `getBranches()`
-
-Retrieve all branches of the project.
-
-### `createBranch(branch, { message, source = 'main', version } = {})`
-
-Create a new branch.
-
-- `branch`: The name of the new branch.
-- `message`: A message describing the branch creation (optional).
-- `source`: The source branch (default: 'main').
-- `version`: The version number (optional).
-
-### `mergeBranch(target, { message, source = 'main', type = 'patch', version, commit = 'false', changes } = {})`
-
-Merge a branch into the target branch.
-
-- `target`: The target branch.
-- `message`: A message describing the merge (optional).
-- `source`: The source branch (default: 'main').
-- `type`: The type of merge (default: 'patch').
-- `version`: The version number (optional).
-- `commit`: Whether to commit the merge (default: 'false').
-- `changes`: The changes to apply during the merge (optional).
-
-### `restoreVersion(version, { branch = 'main', type = 'patch', message } = {})`
-
-Restore an older version of the project.
-
-- `version`: The version number to restore.
-- `branch`: The branch name (default: 'main').
-- `type`: The type of restore (default: 'patch').
-- `message`: A message describing the restore (optional).
-
-## Example Usage
-
-```javascript
-(async () => {
-  const client = Symstory.init('your-app-key');
-
-  // Fetch data
-  const data = await client.get({ key: 'value' });
-
-  // Set data
-  await client.set('path.to.value', 'newValue');
-
-  // Update data
-  await client.update([['update', 'path.to.value', 'updatedValue']]);
-
-  // Get branches
-  const branches = await client.getBranches();
-
-  // Create a new branch
-  await client.createBranch('new-branch', { message: 'Creating new branch' });
-
-  // Merge branches
-  await client.mergeBranch('target-branch', { source: 'new-branch', message: 'Merging branches' });
-
-  // Restore a version
-  await client.restoreVersion('1.0.0', { message: 'Restoring version 1.0.0' });
-})();
-```
+For the full v4 API, see [`README.md`](../../README.md) and
+[`SDK_FOR_MCP.md`](../../SDK_FOR_MCP.md).

@@ -1,5 +1,13 @@
 import { isDevelopment } from '@symbo.ls/utils'
+import { apiUrl as channelApiUrl, socketUrl as channelSocketUrl } from '@symbo.ls/channels'
 import { logger } from '../utils/logger.js'
+
+// URL fields (apiUrl/socketUrl) come from `@symbo.ls/channels` — single source
+// of truth across sdk, smbls, server, editor, workspace, platform. The
+// per-env blocks below carry only the *non-channel* fields (githubClientId,
+// kvUrl, dnsWorkerUrl, grafanaUrl, typesense*, features). Adding a new
+// channel = edit server/packages/channels/channels.json. Adding a new SDK
+// aux field = edit the per-env block below.
 
 // Base configuration with defaults and environment-specific overrides
 const CONFIG = {
@@ -17,17 +25,12 @@ const CONFIG = {
     }
   },
 
-  // Environment-specific configurations
+  // Environment-specific configurations.
+  // socketUrl/apiUrl are NOT set here — they come from @symbo.ls/channels.
 
   local: {
-    // local
-    socketUrl: 'http://localhost:8080', // For socket api
-    apiUrl: 'http://localhost:8080', // For server api
     kvUrl: 'https://smbls-kv-dev.nika-980.workers.dev',
     dnsWorkerUrl: 'https://dns.symbo.ls',
-    basedEnv: 'development', // For based api
-    basedProject: 'platform-v2-sm', // For based api
-    basedOrg: 'symbols', // For based api
     githubClientId: 'Ov23liAFrsR0StbAO6PO', // For github api
     grafanaUrl: '', // For grafana tracing
     grafanaAppName: 'Symbols Localhost',
@@ -47,8 +50,6 @@ const CONFIG = {
     typesenseProtocol: 'http'
   },
   development: {
-    socketUrl: 'https://api.dev.symbols.app',
-    apiUrl: 'https://api.dev.symbols.app',
     kvUrl: 'https://smbls-kv-dev.nika-980.workers.dev',
     dnsWorkerUrl: 'https://dns.symbo.ls',
     githubClientId: 'Ov23liHxyWFBxS8f1gnF',
@@ -60,16 +61,11 @@ const CONFIG = {
     typesensePort: '443',
     typesenseProtocol: 'https'
   },
-  testing: {
-    // The deployed test API is `test.api.symbols.app` (Cloud Run service
-    // `smbls-api-test`, separate `mongouri_testing` Mongo, separate
-    // `smbls-api-test-*` buckets). Many places in the codebase historically
-    // wrote `api.test.symbols.app` — that hostname was never DNS-registered.
-    socketUrl: 'https://test.api.symbols.app',
-    apiUrl: 'https://test.api.symbols.app',
-    basedEnv: 'testing',
-    basedProject: 'platform-v2-sm',
-    basedOrg: 'symbols',
+  // Channel `test` (Cloud Run `smbls-api-test`, isolated `mongouri_testing`
+  // Mongo, separate `smbls-api-test-*` buckets). Historically keyed `testing`
+  // — kept as an alias below so existing SYMBOLS_APP_ENV=testing still
+  // resolves. URL comes from @symbo.ls/channels.
+  test: {
     githubClientId: 'Ov23liHxyWFBxS8f1gnF',
     grafanaUrl: '', // For grafana tracing
     grafanaAppName: 'Symbols Test',
@@ -80,8 +76,6 @@ const CONFIG = {
     typesenseProtocol: 'https'
   },
   upcoming: {
-    socketUrl: 'https://api.upcoming.symbols.app',
-    apiUrl: 'https://api.upcoming.symbols.app',
     githubClientId: 'Ov23liWF7NvdZ056RV5J',
     grafanaUrl: '', // For grafana tracing
     grafanaAppName: 'Symbols Upcoming',
@@ -92,12 +86,7 @@ const CONFIG = {
     typesenseProtocol: 'https'
   },
   staging: {
-    socketUrl: 'https://api.staging.symbols.app',
-    apiUrl: 'https://api.staging.symbols.app',
     kvUrl: 'https://smbls-kv-staging.nika-980.workers.dev',
-    basedEnv: 'staging',
-    basedProject: 'platform-v2-sm',
-    basedOrg: 'symbols',
     githubClientId: 'Ov23ligwZDQVD0VfuWNa',
     grafanaUrl: '', // For grafana tracing
     grafanaAppName: 'Symbols Staging',
@@ -108,12 +97,7 @@ const CONFIG = {
     typesenseProtocol: 'https'
   },
   preview: {
-    socketUrl: 'https://api.symbols.app',
-    apiUrl: 'https://api.symbols.app',
     dnsWorkerUrl: 'https://dns.symbo.ls',
-    basedEnv: 'production',
-    basedProject: 'platform-v2-sm',
-    basedOrg: 'symbols',
     githubClientId: 'Ov23liFAlOEIXtX3dBtR',
     grafanaUrl:
       'https://faro-collector-prod-us-east-0.grafana.net/collect/5c1089f3c3eea4ec5658e05c3f53baae', // For grafana tracing
@@ -125,13 +109,8 @@ const CONFIG = {
     typesenseProtocol: 'https'
   },
   production: {
-    socketUrl: 'https://api.symbols.app',
-    apiUrl: 'https://api.symbols.app',
     kvUrl: 'https://smbls-kv.nika-980.workers.dev',
     dnsWorkerUrl: 'https://dns.symbo.ls',
-    basedEnv: 'production',
-    basedProject: 'platform-v2-sm',
-    basedOrg: 'symbols',
     githubClientId: 'Ov23liFAlOEIXtX3dBtR',
     grafanaUrl:
       'https://faro-collector-prod-us-east-0.grafana.net/collect/5c1089f3c3eea4ec5658e05c3f53baae', // For grafana tracing
@@ -143,6 +122,11 @@ const CONFIG = {
     typesenseProtocol: 'https'
   }
 }
+
+// Back-compat alias: the historical `testing` env key now maps to the `test`
+// channel. Existing SYMBOLS_APP_ENV=testing keeps working; new code should
+// use `test`.
+CONFIG.testing = CONFIG.test
 
 // Determine environment with error handling
 const getEnvironment = () => {
@@ -163,6 +147,10 @@ export const getConfig = () => {
     const env = getEnvironment()
     const envConfig = { ...CONFIG.common, ...CONFIG[env] }
 
+    // Channel name maps from env. The historical `testing` env name resolves
+    // to the canonical `test` channel.
+    const channelName = env === 'testing' ? 'test' : env
+
     // Create the final config with environment variable overrides
     const finalConfig = {
       ...envConfig,
@@ -171,12 +159,11 @@ export const getConfig = () => {
         ...(CONFIG.common.features || {}),
         ...((CONFIG[env] && CONFIG[env].features) || {})
       },
-      socketUrl: process.env.SYMBOLS_APP_SOCKET_URL || envConfig.socketUrl,
-      apiUrl: process.env.SYMBOLS_APP_API_URL || envConfig.apiUrl,
-      basedEnv: process.env.SYMBOLS_APP_BASED_ENV || envConfig.basedEnv,
-      basedProject:
-        process.env.SYMBOLS_APP_BASED_PROJECT || envConfig.basedProject,
-      basedOrg: process.env.SYMBOLS_APP_BASED_ORG || envConfig.basedOrg,
+      // URLs come from @symbo.ls/channels (single source of truth across
+      // sdk, smbls, server, editor, workspace, platform). SYMBOLS_API_URL /
+      // SYMBOLS_SOCKET_URL env-var overrides honored inside the helpers.
+      socketUrl: process.env.SYMBOLS_APP_SOCKET_URL || channelSocketUrl(channelName),
+      apiUrl: process.env.SYMBOLS_APP_API_URL || channelApiUrl(channelName),
       githubClientId:
         process.env.SYMBOLS_APP_GITHUB_CLIENT_ID || envConfig.githubClientId,
       grafanaUrl: process.env.SYMBOLS_APP_GRAFANA_URL || envConfig.grafanaUrl,
@@ -192,12 +179,12 @@ export const getConfig = () => {
       typesensePort: process.env.TYPESENSE_PORT || envConfig.typesensePort,
       typesenseProtocol:
         process.env.TYPESENSE_PROTOCOL || envConfig.typesenseProtocol,
+      channel: channelName,
       isDevelopment: isDevelopment(env),
-      isTesting: env === 'testing',
+      isTest: env === 'test' || env === 'testing',
       isStaging: env === 'staging',
       isPreview: env === 'preview',
       isProduction: env === 'production'
-      // Store all environment variables for potential future use
     }
 
     // Validate critical configuration values
