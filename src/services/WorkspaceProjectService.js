@@ -1,30 +1,39 @@
 import { BaseService } from './BaseService.js'
 
-// Calls the workspace wrapper at next.api.symbols.app/workspace/* (or
-// ${apiUrl}/workspace/* in dev/staging). Built on top of @symbo.ls/server-workspace.
+// Calls the workspace-project wrapper at next.api.symbols.app/workspace/* (or
+// ${apiUrl}/workspace/* in dev/staging). Built on top of
+// @symbo.ls/server-workspace (server package will rename to
+// server/packages/workspace-project as part of the runner-shell refactor —
+// route prefix /workspace/* retained as alias during transition).
 //
-// Distinct from WorkspaceService — that one CRUDs workspace org records
-// via /core/workspaces. This one is the typed data surface for the
-// workspace app (editor/packages/workspace) and any other in-workspace consumer.
+// "Workspace Project" is the activity tracker — tickets, chats, calendar,
+// inbox, epics — owned by an Org and target-coupled to one or more Workspaces
+// (build environments). See RUNNER_ARCHITECTURE.md for the full entity model.
+//
+// Distinct from WorkspaceService (that CRUDs workspace records — the build
+// environment / pricing tier — via /core/workspaces).
+//
+// Renamed from WorkspaceDataService 2026-04. Backward-compat alias
+// `WorkspaceDataService` is exported alongside in services/index.js.
 //
 // Auth: every request carries a JWT in `Authorization: Bearer ...`. The
 // JWT must include `sub` (user id) + `workspace_id` (or
-// `app_metadata.workspace_id`) claims — the workspace wrapper extracts
-// them server-side and constructs an RLS-scoped client. Consumers never
-// see the wrapper's Supabase service-role key.
+// `app_metadata.workspace_id`) claims — the wrapper extracts them
+// server-side and constructs an RLS-scoped client. Consumers never see
+// the wrapper's Supabase service-role key.
 //
 // Token source resolution (first non-null wins):
-//   1. context.workspaceTokenProvider() — caller-supplied async fn
-//      returning { token } | string | null. Use this in the workspace
-//      app to forward the user's Supabase access token (which carries
-//      the right claims via custom_access_token_hook).
+//   1. context.workspaceProjectTokenProvider() — caller-supplied async fn
+//      returning { token } | string | null. (Falls back to legacy
+//      context.workspaceTokenProvider for consumers mid-migration.)
 //   2. this._tokenManager.getAuthHeader() — Mongo SDK fallback for
 //      contexts that don't run their own JWT issuer.
-export class WorkspaceDataService extends BaseService {
+export class WorkspaceProjectService extends BaseService {
   init({ context }) {
     super.init({ context })
-    this._workspacePrefix = (context?.workspaceApiUrl || this._apiUrl) + '/workspace'
-    this._tokenProvider = context?.workspaceTokenProvider || null
+    const apiUrl = context?.workspaceProjectApiUrl || context?.workspaceApiUrl || this._apiUrl
+    this._workspaceProjectPrefix = apiUrl + '/workspace'
+    this._tokenProvider = context?.workspaceProjectTokenProvider || context?.workspaceTokenProvider || null
   }
 
   async _resolveAuthHeader() {
@@ -48,7 +57,7 @@ export class WorkspaceDataService extends BaseService {
 
   async _ws(methodName, endpoint, { method = 'GET', body, headers } = {}) {
     this._requireReady(methodName)
-    const url = `${this._workspacePrefix}${endpoint}`
+    const url = `${this._workspaceProjectPrefix}${endpoint}`
     const init = { method, headers: { ...(headers || {}) } }
     if (body !== undefined) {
       init.body = JSON.stringify(body)

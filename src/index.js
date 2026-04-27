@@ -18,7 +18,8 @@ import {
   createFeatureFlagService,
   createOrganizationService,
   createWorkspaceService,
-  createWorkspaceDataService,
+  createWorkspaceProjectService,
+  createWorkspaceDataService,   // deprecated alias for backward compat
   createKvService,
   createAllocationRuleService,
   createSharedAssetService,
@@ -29,6 +30,7 @@ import { SERVICE_METHODS } from './utils/services.js'
 import environment from './config/environment.js'
 import { rootBus } from './state/rootEventBus.js'
 import { logger, setDebug } from './utils/logger.js'
+import { createEntityDispatcher, registerEntity } from './services/EntityDispatcher.js'
 
 const isBrowserEnvironment = () => typeof window !== 'undefined'
 
@@ -62,6 +64,11 @@ export class SDK {
 
     // Create proxy methods for direct service access
     this._createServiceProxies()
+
+    // Single dispatcher entry point for the fetch plugin's 'sdk' adapter.
+    // Maps dotted entity paths (e.g. 'workspaceProject.tickets') to existing
+    // service methods. See services/EntityDispatcher.js.
+    this.execute = createEntityDispatcher(this)
   }
 
   // Initialize SDK with context
@@ -209,12 +216,25 @@ export class SDK {
         })
       ),
       this._initService(
-        'workspaceData',
-        createWorkspaceDataService({
+        'workspaceProject',
+        createWorkspaceProjectService({
           context: this._context,
           options: this._options
         })
-      ),
+      ).then(() => {
+        // Backward-compat: 'workspaceData' alias for the renamed
+        // WorkspaceProjectService. External consumers using
+        // sdk.getService('workspaceData') keep working through one
+        // deprecation cycle.
+        const wp = this._services.get('workspaceProject')
+        if (wp) {
+          this._services.set('workspaceData', wp)
+          this._context.services = {
+            ...this._context.services,
+            workspaceData: wp,
+          }
+        }
+      }),
       this._initService(
         'kv',
         createKvService({
@@ -325,6 +345,56 @@ export class SDK {
     }
   }
 
+  // Switch the active organization. Resets internal SDK state that's scoped
+  // to an org so the next call uses the new org's claims/clients/caches.
+  //
+  // Caller is responsible for telling each service ABOUT the new orgId via
+  // updateContext({ activeOrgId }) — that's already part of this method. Any
+  // org-scoped fetch caches in consumers (e.g. queryClient in the fetch
+  // plugin) should be invalidated by the caller separately.
+  //
+  // What this method clears internally:
+  //   - TokenManager: any cached claims that include the old orgId (the next
+  //     refresh will mint with the new claim).
+  //   - CollabService active subscriptions tied to projects in the old org.
+  //   - WorkspaceProjectService cached prefix (recomputed lazily on next call).
+  //   - Per-service cached state via service.switchOrg(newOrgId) when the
+  //     service implements that hook (additive — services without the hook
+  //     are skipped).
+  async switchOrg (newOrgId) {
+    if (!newOrgId) throw new Error('[sdk.switchOrg] newOrgId is required')
+    const previousOrgId = this._context.activeOrgId
+    if (previousOrgId === newOrgId) return { changed: false, orgId: newOrgId }
+
+    // Update context so every service sees the new org on next access.
+    this.updateContext({ activeOrgId: newOrgId })
+
+    // Token manager — clear cached claims so next request re-mints
+    if (this._tokenManager?.invalidateClaims) {
+      try { this._tokenManager.invalidateClaims() } catch {}
+    }
+
+    // Walk services; if a service exposes its own switchOrg hook, call it.
+    // Services that don't implement it are silently skipped (additive surface).
+    const switchPromises = []
+    for (const [name, service] of this._services.entries()) {
+      if (typeof service.switchOrg === 'function') {
+        switchPromises.push(
+          Promise.resolve(service.switchOrg(newOrgId, previousOrgId)).catch((err) => {
+            logger.error(`[sdk.switchOrg] Service '${name}' switchOrg failed:`, err)
+          })
+        )
+      }
+    }
+    await Promise.all(switchPromises)
+
+    // Emit on root bus so external consumers (fetch plugin's queryClient,
+    // shell state managers, etc.) can react and clear their own caches.
+    this.rootBus?.emit?.('sdk.orgSwitched', { previousOrgId, newOrgId })
+
+    return { changed: true, previousOrgId, newOrgId }
+  }
+
   // Check if SDK is ready
   isReady () {
     const sdkServices = Array.from(this._services.values())
@@ -415,12 +485,17 @@ export {
   createFeatureFlagService,
   createOrganizationService,
   createWorkspaceService,
-  createWorkspaceDataService,
+  createWorkspaceProjectService,
+  createWorkspaceDataService,   // deprecated alias for backward compat
   createKvService,
   createAllocationRuleService,
   createSharedAssetService,
   createCreditsService
 } from './services/index.js'
+
+// Re-export entity dispatcher helpers so external packages (e.g. plugins
+// extending the fetch adapter) can add their own routes at boot.
+export { registerEntity, createEntityDispatcher } from './services/EntityDispatcher.js'
 
 // Export environment configuration
 export { default as environment } from './config/environment.js'
