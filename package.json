@@ -1,6 +1,6 @@
 {
   "name": "@symbo.ls/sdk",
-  "version": "4.0.0",
+  "version": "3.14.0",
   "type": "module",
   "main": "dist/esm/index.js",
   "module": "dist/esm/index.js",
@@ -55,8 +55,8 @@
     "test:unit-all": "cross-env NODE_ENV=$NODE_ENV tape src/services/tests/**/*.test.js | tap-spec"
   },
   "dependencies": {
-    "@symbo.ls/channels": "4.0.0",
-    "@symbo.ls/utils": "4.0.0",
+    "@symbo.ls/channels": "3.14.0",
+    "@symbo.ls/utils": "3.14.0",
     "@grafana/faro-web-sdk": "^1.19.0",
     "@grafana/faro-web-tracing": "^1.19.0",
     "acorn": "^8.14.0",
