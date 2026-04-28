@@ -17,9 +17,7 @@ import { IntegrationService } from './IntegrationService.js'
 import { FeatureFlagService } from './FeatureFlagService.js'
 import { OrganizationService } from './OrganizationService.js'
 import { WorkspaceService } from './WorkspaceService.js'
-import { WorkspaceProjectService } from './WorkspaceProjectService.js'
-// Backward-compat alias for the WorkspaceDataService → WorkspaceProjectService rename (2026-04).
-const WorkspaceDataService = WorkspaceProjectService
+import { WorkspaceDataService } from './WorkspaceDataService.js'
 import { KvService } from './KvService.js'
 import { AllocationRuleService } from './AllocationRuleService.js'
 import { SharedAssetService } from './SharedAssetService.js'
@@ -86,15 +84,11 @@ export const createOrganizationService = config =>
 export const createWorkspaceService = config =>
   createService(WorkspaceService, config)
 
-// Workspace Project service — typed surface against
-// next.api.symbols.app/workspace/* (the @symbo.ls/server-workspace wrapper).
-// Distinct from WorkspaceService (workspace-org CRUD via /core/workspaces).
-//
-// Renamed from WorkspaceDataService 2026-04. Both factory names exported for
-// backward compatibility — `createWorkspaceDataService` is a deprecated alias.
-export const createWorkspaceProjectService = config =>
-  createService(WorkspaceProjectService, config)
-export const createWorkspaceDataService = createWorkspaceProjectService
+// Workspace DATA service — typed surface against next.api.symbols.app/workspace/*
+// (the @symbo.ls/server-workspace-project wrapper). Distinct from WorkspaceService
+// (workspace-org CRUD via /core/workspaces).
+export const createWorkspaceDataService = config =>
+  createService(WorkspaceDataService, config)
 
 export const createKvService = config =>
   createService(KvService, config)
@@ -128,7 +122,6 @@ export {
   FeatureFlagService,
   OrganizationService,
   WorkspaceService,
-  WorkspaceProjectService,
   WorkspaceDataService,
   KvService,
   AllocationRuleService,
