@@ -256,9 +256,11 @@ export class WorkspaceDataService extends BaseService {
       }),
 
     listMessages: (channelId, options) =>
-      this._ws('chat.listMessages', `/chat/channels/${encodeURIComponent(channelId)}/messages`, {
-        ...(options ? { method: 'POST', body: { options } } : {}),
-      }),
+      channelId
+        ? this._ws('chat.listMessages', `/chat/channels/${encodeURIComponent(channelId)}/messages`, {
+            ...(options ? { method: 'POST', body: { options } } : {}),
+          })
+        : this._ws('chat.listAllMessages', '/chat/messages'),
     sendMessage: (channelId, payload) =>
       this._ws('chat.sendMessage', `/chat/channels/${encodeURIComponent(channelId)}/messages`, {
         method: 'POST',
@@ -280,7 +282,9 @@ export class WorkspaceDataService extends BaseService {
       }),
 
     listMembers: (channelId) =>
-      this._ws('chat.listMembers', `/chat/channels/${encodeURIComponent(channelId)}/members`),
+      channelId
+        ? this._ws('chat.listMembers', `/chat/channels/${encodeURIComponent(channelId)}/members`)
+        : this._ws('chat.listAllMembers', '/chat/members'),
     addMember: (channelId, payload) =>
       this._ws('chat.addMember', `/chat/channels/${encodeURIComponent(channelId)}/members`, {
         method: 'POST',

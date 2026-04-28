@@ -169,33 +169,10 @@ const ENTITY_ROUTES = {
       remove: argMaps.id,
     },
   },
-  'workspaceProject.chat.messages': {
-    service: 'workspaceProject',
-    methods: {
-      list: 'chat.listMessages',
-      create: 'chat.sendMessage',
-      update: 'chat.updateMessage',
-      remove: 'chat.removeMessage',
-      react: 'chat.toggleReaction',
-    },
-    argMap: {
-      // listMessages(channelId, options?) — pull channelId from filter or top-level.
-      list: (a) => [a?.channelId ?? a?.filter?.channelId ?? a?.params?.channelId, {
-        limit: a?.limit, offset: a?.offset, order: a?.order, ...(a?.options || {})
-      }],
-      // sendMessage(channelId, payload)
-      create: (a) => [a?.channelId ?? a?.filter?.channelId, a?.payload ?? a?.data ?? (() => {
-        const { channelId, filter, options, ...rest } = a || {}; return rest
-      })()],
-      // updateMessage(messageId, payload)
-      update: (a) => [a?.id ?? a?.messageId, a?.payload ?? a?.data ?? a],
-      remove: (a) => [a?.id ?? a?.messageId ?? a],
-      react: (a) => [a?.id ?? a?.messageId, a?.emoji, a?.userId],
-    },
-  },
   'workspaceProject.chat.members': {
     service: 'workspaceProject',
     methods: {
+      // listMembers(channelId?) — undefined channelId routes to bulk GET /chat/members
       list: 'chat.listMembers',
       create: 'chat.addMember',
       update: 'chat.updateMember',
@@ -204,12 +181,37 @@ const ENTITY_ROUTES = {
       mute: 'chat.muteChannel',
     },
     argMap: {
-      list: (a) => [a?.channelId ?? a?.filter?.channelId ?? a],
+      // Pass channelId (possibly undefined) — service routes to bulk or per-channel
+      list: (a) => [a?.channelId ?? a?.filter?.channelId],
       create: (a) => [a?.channelId, a?.payload ?? { user_id: a?.userId, role: a?.role }],
       update: (a) => [a?.channelId, a?.userId, a?.payload ?? a?.data ?? a],
       remove: (a) => [a?.channelId, a?.userId],
       markRead: (a) => [a?.channelId, a?.userId, a?.lastReadAt ?? new Date().toISOString()],
       mute: (a) => [a?.channelId, a?.userId, a?.muted],
+    },
+  },
+  'workspaceProject.chat.messages': {
+    service: 'workspaceProject',
+    methods: {
+      // listMessages(channelId?, options?) — undefined channelId routes to bulk GET /chat/messages
+      list: 'chat.listMessages',
+      create: 'chat.sendMessage',
+      update: 'chat.updateMessage',
+      remove: 'chat.removeMessage',
+      react: 'chat.toggleReaction',
+    },
+    argMap: {
+      // Pass channelId (possibly undefined) — service routes to bulk or per-channel
+      list: (a) => [
+        a?.channelId ?? a?.filter?.channelId ?? a?.params?.channelId,
+        { single: a?.single, limit: a?.limit, offset: a?.offset, order: a?.order, ...(a?.options || {}) }
+      ],
+      create: (a) => [a?.channelId ?? a?.filter?.channelId, a?.payload ?? a?.data ?? (() => {
+        const { channelId, filter, options, ...rest } = a || {}; return rest
+      })()],
+      update: (a) => [a?.messageId ?? a?.id, a?.payload ?? a?.data ?? a],
+      remove: (a) => [a?.messageId ?? a?.id],
+      react: (a) => [a?.messageId ?? a?.id, a?.emoji, a?.userId],
     },
   },
   'workspaceProject.chat.mentions': {
