@@ -37,11 +37,25 @@ export const SERVICE_METHODS = {
   requestPasswordChange: 'auth',
   confirmPasswordChange: 'auth',
   getMe: 'auth',
+  updateMe: 'auth',
+  getPermissions: 'auth',
+  getSession: 'auth',
+  onAuthStateChange: 'auth',
   getTokenDebugInfo: 'auth',
 
   getMyProjectRoleByKey: 'auth',
   getProjectRoleWithFallback: 'auth',
   getProjectRoleByKeyWithFallback: 'auth',
+
+  // Cross-org notifications + projects + memberships (NEEDED_FOR_INTRANET §I8/§I9/§I10)
+  getMyOrgNotifications: 'auth',
+  getMyFreebusy: 'auth',
+  getMyProjects: 'auth',
+  getMyTeams: 'auth',
+  getMyOrgMemberships: 'auth',
+  getOrgMemberRoles: 'auth',
+  resendVerification: 'auth',
+  verifyEmail: 'auth',
 
   // User methods
   getUserProfile: 'auth',
@@ -335,6 +349,7 @@ export const SERVICE_METHODS = {
   // Organization methods
   createOrganization: 'organization',
   listOrganizations: 'organization',
+  checkOrganizationSlug: 'organization',
   getOrganization: 'organization',
   updateOrganization: 'organization',
   transferOrgOwnership: 'organization',
@@ -355,6 +370,13 @@ export const SERVICE_METHODS = {
   listOrgInvitations: 'organization',
   revokeOrgInvitation: 'organization',
   acceptOrgInvitation: 'organization',
+  // Team-scoped invitations (Phase B). `inviteToTeam` aliases
+  // `createTeamInvitation` so DOMQL call sites read clearly.
+  listTeamInvitations: 'organization',
+  createTeamInvitation: 'organization',
+  inviteToTeam: 'organization',
+  revokeTeamInvitation: 'organization',
+  acceptTeamInvitation: 'organization',
   getOrgProjectPermissions: 'organization',
   updateOrgProjectPermissions: 'organization',
   listTeamAccess: 'organization',

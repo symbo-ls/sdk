@@ -17,7 +17,15 @@ import { IntegrationService } from './IntegrationService.js'
 import { FeatureFlagService } from './FeatureFlagService.js'
 import { OrganizationService } from './OrganizationService.js'
 import { WorkspaceService } from './WorkspaceService.js'
-import { WorkspaceDataService } from './WorkspaceDataService.js'
+import {
+  WorkspaceDataService,
+  workspaceProjectBaseUrl,
+} from './WorkspaceProjectService.js'
+import {
+  createSupabasePassthroughConfig,
+  workspaceProjectEdgeFunctionUrl,
+  governanceSessionAccessToken,
+} from './supabasePassthrough.js'
 import { KvService } from './KvService.js'
 import { AllocationRuleService } from './AllocationRuleService.js'
 import { SharedAssetService } from './SharedAssetService.js'
@@ -84,10 +92,11 @@ export const createOrganizationService = config =>
 export const createWorkspaceService = config =>
   createService(WorkspaceService, config)
 
-// Workspace DATA service — typed surface against next.api.symbols.app/workspace/*
-// (the @symbo.ls/server-workspace-project wrapper). Distinct from WorkspaceService
-// (workspace-org CRUD via /core/workspaces).
-export const createWorkspaceDataService = config =>
+// Workspace-project service — typed surface against
+// next.api.symbols.app/workspace-project/* (the
+// @symbo.ls/server-workspace-project wrapper). Distinct from
+// WorkspaceService (workspace-org CRUD via /core/workspaces).
+export const createWorkspaceProjectService = config =>
   createService(WorkspaceDataService, config)
 
 export const createKvService = config =>
@@ -123,6 +132,10 @@ export {
   OrganizationService,
   WorkspaceService,
   WorkspaceDataService,
+  workspaceProjectBaseUrl,
+  createSupabasePassthroughConfig,
+  workspaceProjectEdgeFunctionUrl,
+  governanceSessionAccessToken,
   KvService,
   AllocationRuleService,
   SharedAssetService,

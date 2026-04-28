@@ -22,6 +22,12 @@ export class AuthService extends BaseService {
     this._projectRoleCache = new Map() // Cache for project roles
     this._roleCacheExpiry = 5 * 60 * 1000 // 5 minutes cache expiry
     this._pluginSession = null
+    // Listener registry for SDK-side auth state subscriptions. Replaces
+    // Supabase's `auth.onAuthStateChange` for consumers migrating off
+    // direct supabase-js usage. Listeners receive the latest session
+    // snapshot (or null on sign-out). Storage events from other tabs +
+    // explicit login/logout/refresh paths emit through `_emitAuth`.
+    this._authListeners = new Set()
 
     this._resolvePluginSession(
       config?.session ||
@@ -99,6 +105,10 @@ export class AuthService extends BaseService {
         if (this._tokenManager) {
           this._tokenManager.setTokens(tokenData)
         }
+        // Cache the user record so getSession() returns a complete session
+        // without needing a follow-up getMe() round-trip.
+        this._currentUser = response.data?.user || null
+        this._emitAuth?.('SIGNED_IN')
       }
 
       if (response.success) {
@@ -126,11 +136,15 @@ export class AuthService extends BaseService {
       if (this._tokenManager) {
         this._tokenManager.clearTokens()
       }
+      this._currentUser = null
+      this._emitAuth?.('SIGNED_OUT')
     } catch (error) {
       // Even if the API call fails, clear local tokens
       if (this._tokenManager) {
         this._tokenManager.clearTokens()
       }
+      this._currentUser = null
+      this._emitAuth?.('SIGNED_OUT')
 
       throw new Error(`Logout failed: ${error.message}`, { cause: error })
     }
@@ -376,6 +390,11 @@ export class AuthService extends BaseService {
           methodName: 'getMe'
         })
       if (response.success) {
+        // Cache the user record so getSession() can return it without an
+        // additional /auth/me round-trip, and emit USER_UPDATED so live
+        // subscribers (sdk.onAuthStateChange) re-render.
+        this._currentUser = response.data?.user || response.data || null
+        this._emitAuth?.('USER_UPDATED')
         return response.data
       }
       throw new Error(response.message)
@@ -384,11 +403,116 @@ export class AuthService extends BaseService {
     }
   }
 
+  /**
+   * Update the current user's profile / preferences.
+   * Replaces the (now-removed) `sdk.auth.updateMe(...)` call sites that
+   * existed before SERVICE_METHODS flattened auth methods. Body shape is
+   * forwarded to /auth/me PATCH; server decides what columns are mutable.
+   */
+  async updateMe(payload) {
+    this._requireReady('updateMe')
+    try {
+      const response = await this._request('/auth/me', {
+        method: 'PATCH',
+        body: JSON.stringify(payload || {}),
+        methodName: 'updateMe'
+      })
+      if (response.success) {
+        this._currentUser = response.data?.user || response.data || this._currentUser
+        this._emitAuth?.('USER_UPDATED')
+        return response.data
+      }
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Failed to update user profile: ${error.message}`, { cause: error })
+    }
+  }
+
+  /**
+   * Fetch the caller's permission set, optionally scoped to an org.
+   * Replaces sb()-side workspace_role lookups + the legacy
+   * sdk.auth.getPermissions() call sites in the workspace switchers.
+   */
+  async getPermissions(orgId) {
+    this._requireReady('getPermissions')
+    try {
+      const url = orgId
+        ? `/auth/permissions?org=${encodeURIComponent(orgId)}`
+        : '/auth/permissions'
+      const response = await this._request(url, { method: 'GET', methodName: 'getPermissions' })
+      if (response.success) return response.data
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Failed to fetch permissions: ${error.message}`, { cause: error })
+    }
+  }
+
   getAuthToken() {
     if (!this._tokenManager) {
       return null
     }
     return this._tokenManager.getAccessToken()
+  }
+
+  // ==================== SESSION + STATE-CHANGE ====================
+  //
+  // SDK-side equivalents of Supabase auth.getSession() / auth.onAuthStateChange().
+  // These let frontend consumers migrate off direct supabase-js usage without
+  // losing their auth-state observation pattern. The shape mimics Supabase's
+  // session object so call sites only need a one-line shim during migration.
+
+  /**
+   * Returns the currently-active session, or null when there are no tokens.
+   * Shape:
+   *   { access_token, refresh_token, expires_at, token_type: 'bearer', user }
+   */
+  getSession() {
+    const tm = this._tokenManager
+    if (!tm || !tm.hasTokens?.()) return null
+    const access_token = tm.getAccessToken?.()
+    const refresh_token = tm.getRefreshToken?.()
+    if (!access_token) return null
+    return {
+      access_token,
+      refresh_token,
+      expires_at: tm.tokens?.expiresAt || null,
+      token_type: 'bearer',
+      // _currentUser is hydrated by getMe()/login()/refresh paths; leave
+      // null if the consumer hasn't asked for the profile yet — they can
+      // call sdk.getMe() to populate it.
+      user: this._currentUser || null,
+    }
+  }
+
+  /**
+   * Subscribe to auth state transitions (login, logout, token refresh).
+   * Returns an unsubscribe function. Mirrors Supabase's
+   * `onAuthStateChange((event, session) => {...})` callback shape so
+   * migrating call sites only need to swap the import.
+   *
+   * Events:
+   *   'INITIAL_SESSION'  — fires once on subscribe, current session (or null)
+   *   'SIGNED_IN'        — login / register success
+   *   'SIGNED_OUT'       — logout / token clear
+   *   'TOKEN_REFRESHED'  — refresh path completed
+   *   'USER_UPDATED'     — getMe / updateMe refreshed _currentUser
+   */
+  onAuthStateChange(callback) {
+    if (typeof callback !== 'function') return () => {}
+    this._authListeners.add(callback)
+    // Fire INITIAL_SESSION immediately so callers can hydrate without
+    // waiting for the next state transition.
+    try { callback('INITIAL_SESSION', this.getSession()) } catch (_) {}
+    return () => { this._authListeners.delete(callback) }
+  }
+
+  // Internal: emit an auth event to all subscribers. Login/logout/refresh
+  // call this on completion so consumers stay in sync without polling.
+  _emitAuth(event) {
+    const session = this.getSession()
+    for (const listener of this._authListeners) {
+      try { listener(event, session) } catch (_) { /* listener errors don't propagate */ }
+    }
   }
 
   /**

@@ -34,6 +34,38 @@ export class OrganizationService extends BaseService {
     throw new Error(response.message)
   }
 
+  /**
+   * Check whether a slug is available (not taken by a non-deleted org).
+   * Server returns 404 when free, 200 with the org row when taken.
+   * Returns: true = available, false = taken, null = check failed.
+   *
+   * Used by the NoOrgOverlay slug picker to debounce-check live as the
+   * user types. Replaces a raw `fetch('/organizations?slug=X&_check=1')`
+   * call site that bypassed the SDK auth header.
+   */
+  async checkOrganizationSlug (slug) {
+    this._requireReady('checkOrganizationSlug')
+    if (!slug) return null
+    try {
+      const response = await this._request(
+        `/organizations?slug=${encodeURIComponent(slug)}&_check=1`,
+        { method: 'GET', methodName: 'checkOrganizationSlug' }
+      )
+      // 200 success → either array (empty = free, non-empty = taken),
+      // or single object (always taken).
+      if (response?.success === false) return null
+      const data = response?.data ?? response
+      if (Array.isArray(data)) return data.length === 0
+      if (data && (data.id || data.slug)) return false
+      return true
+    } catch (err) {
+      // 404 → slug is free; everything else → check failed.
+      const msg = err?.message || ''
+      if (/404|not.?found/iu.test(msg)) return true
+      return null
+    }
+  }
+
   async getOrganization (orgId) {
     this._requireReady('getOrganization')
     if (!orgId) throw new Error('orgId is required')
@@ -627,6 +659,16 @@ export class OrganizationService extends BaseService {
       `/organizations/${orgId}/teams/${teamId}/invitations`,
       { method: 'POST', body: { email, ...(recipientName ? { recipientName } : {}) } }
     )
+  }
+
+  /**
+   * Alias for createTeamInvitation — read-friendly name for DOMQL call
+   * sites that say "invite this email to this team" rather than spelling
+   * out the create-invitation operation. Surfaced via SERVICE_METHODS so
+   * `getSDK().inviteToTeam(orgId, teamId, payload)` works flat.
+   */
+  async inviteToTeam (orgId, teamId, payload) {
+    return this.createTeamInvitation(orgId, teamId, payload)
   }
 
   /**

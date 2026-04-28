@@ -19,7 +19,6 @@ import {
   createOrganizationService,
   createWorkspaceService,
   createWorkspaceProjectService,
-  createWorkspaceDataService,   // deprecated alias for backward compat
   createKvService,
   createAllocationRuleService,
   createSharedAssetService,
@@ -395,6 +394,66 @@ export class SDK {
     return { changed: true, previousOrgId, newOrgId }
   }
 
+  // Switch the active workspace within the current org. The federation
+  // layer (governance Supabase + symbols-auth-bridge edge fn) is what
+  // actually re-mints the JWT with the new `active_workspace_id` claim;
+  // this method orchestrates that via the optional
+  // `context.federationSwitchWorkspace` callback registered at init time.
+  //
+  // Frontend contract:
+  //   await sdk.switchWorkspace(workspaceId)
+  // — single entry point. Federation, state cleanup, event emission, and
+  // localStorage persistence are all SDK-internal.
+  //
+  // Returns the federation result so the caller can decide on UI feedback
+  // (e.g. dismiss a transition overlay only on { ok: true }).
+  async switchWorkspace (newWorkspaceId) {
+    if (!newWorkspaceId) throw new Error('[sdk.switchWorkspace] workspaceId is required')
+    const previousWorkspaceId = this._context.activeWorkspaceId
+    if (previousWorkspaceId === newWorkspaceId) {
+      return { ok: true, changed: false, workspaceId: newWorkspaceId }
+    }
+
+    // Run federation refresh first — if the bridge rejects (forbidden,
+    // network error), bail BEFORE clearing local state so the UI stays
+    // pointed at the still-valid old workspace.
+    let federationResult = { ok: true }
+    const federationFn = this._context.federationSwitchWorkspace
+    if (typeof federationFn === 'function') {
+      federationResult = await federationFn(newWorkspaceId)
+      if (!federationResult?.ok) {
+        return { ok: false, error: federationResult?.error, federation: federationResult }
+      }
+    }
+
+    this.updateContext({ activeWorkspaceId: newWorkspaceId })
+
+    if (this._tokenManager?.invalidateClaims) {
+      try { this._tokenManager.invalidateClaims() } catch {}
+    }
+
+    // Walk services; per-service switchWorkspace hooks get notified.
+    const switchPromises = []
+    for (const [name, service] of this._services.entries()) {
+      if (typeof service.switchWorkspace === 'function') {
+        switchPromises.push(
+          Promise.resolve(service.switchWorkspace(newWorkspaceId, previousWorkspaceId)).catch((err) => {
+            logger.error(`[sdk.switchWorkspace] Service '${name}' switchWorkspace failed:`, err)
+          })
+        )
+      }
+    }
+    await Promise.all(switchPromises)
+
+    if (typeof globalThis !== 'undefined' && globalThis.localStorage) {
+      try { globalThis.localStorage.setItem('activeWorkspace', newWorkspaceId) } catch {}
+    }
+
+    this.rootBus?.emit?.('sdk.workspaceSwitched', { previousWorkspaceId, newWorkspaceId })
+
+    return { ok: true, changed: true, previousWorkspaceId, newWorkspaceId, federation: federationResult }
+  }
+
   // Check if SDK is ready
   isReady () {
     const sdkServices = Array.from(this._services.values())
@@ -486,11 +545,14 @@ export {
   createOrganizationService,
   createWorkspaceService,
   createWorkspaceProjectService,
-  createWorkspaceDataService,   // deprecated alias for backward compat
   createKvService,
   createAllocationRuleService,
   createSharedAssetService,
-  createCreditsService
+  createCreditsService,
+  workspaceProjectBaseUrl,
+  createSupabasePassthroughConfig,
+  workspaceProjectEdgeFunctionUrl,
+  governanceSessionAccessToken
 } from './services/index.js'
 
 // Re-export entity dispatcher helpers so external packages (e.g. plugins
