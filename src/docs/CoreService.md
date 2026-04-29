@@ -3,7 +3,7 @@
 `CoreService` and `createCoreService` were the v3 monolith. They no longer
 exist. Functionality has been split into focused services:
 
-| v3 method | v4 service | v4 method |
+| v3 method | v3.14 service | v3.14 method |
 | --- | --- | --- |
 | `coreService.register(...)` | `auth` | `register(...)` |
 | `coreService.login(...)` | `auth` | `login(...)` |
@@ -53,7 +53,7 @@ await core.init({ context: { authToken } })
 await core.login(email, password)
 const project = await core.getProject(id)
 
-// v4
+// v3.14
 import { SDK } from '@symbo.ls/sdk'
 const sdk = new SDK()
 await sdk.initialize({ authToken })
@@ -61,7 +61,7 @@ await sdk.login(email, password)
 const project = await sdk.getProject(id)
 ```
 
-For the full v4 API, see [`README.md`](../../README.md) and
+For the full v3.14 API, see [`README.md`](../../README.md) and
 [`SDK_FOR_MCP.md`](../../SDK_FOR_MCP.md).
 
 ## Notes on signature changes
@@ -77,7 +77,7 @@ For the full v4 API, see [`README.md`](../../README.md) and
 
 ## Rate limits
 
-Rate limits are enforced server-side. As of v4:
+Rate limits are enforced server-side. As of v3.14:
 - **Default**: 300 requests / 15 minutes
 - **Auth**: 15 requests / 15 minutes
 - **API**: 150 requests / 5 minutes

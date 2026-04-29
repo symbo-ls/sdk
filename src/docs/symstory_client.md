@@ -6,7 +6,7 @@ restoration now live on `ProjectService` and `BranchService`.
 
 ## Mapping from old Symstory API
 
-| Symstory v3 | v4 location |
+| Symstory v3 | v3.14 location |
 | --- | --- |
 | `Symstory.init(appKey, { apiUrl })` | `new SDK({ apiUrl })` then `sdk.initialize({ authToken, appKey })` |
 | `client.get(query, branch, version)` | `sdk.getProjectData(projectId, { branch, version })` (or `sdk.getProjectItemByPath`) |
@@ -26,7 +26,7 @@ const client = Symstory.init('your-app-key', { apiUrl: 'https://...' })
 await client.update([['update', 'path.to.value', 'updatedValue']])
 await client.createBranch('feature-x', { message: 'feature start' })
 
-// v4 — SDK
+// v3.14 — SDK
 import { SDK } from '@symbo.ls/sdk'
 const sdk = new SDK({ apiUrl: 'https://...' })
 await sdk.initialize({ authToken })
@@ -36,5 +36,5 @@ await sdk.applyProjectChanges(projectId, [
 await sdk.createBranch(projectId, { name: 'feature-x', message: 'feature start' })
 ```
 
-For the full v4 API, see [`README.md`](../../README.md) and
+For the full v3.14 API, see [`README.md`](../../README.md) and
 [`SDK_FOR_MCP.md`](../../SDK_FOR_MCP.md).
