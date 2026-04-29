@@ -57,6 +57,11 @@ const CONFIG = {
     grafanaAppName: 'Symbols Test',
     typesenseCollectionName: 'docs'
   },
+  next: {
+    githubClientId: 'Ov23liHxyWFBxS8f1gnF',
+    grafanaAppName: 'Symbols Next',
+    typesenseCollectionName: 'docs'
+  },
   upcoming: {
     githubClientId: 'Ov23liWF7NvdZ056RV5J',
     grafanaAppName: 'Symbols Upcoming',
