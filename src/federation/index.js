@@ -1,15 +1,19 @@
-// SDK federation — abstract multi-Supabase client + registry primitive.
+// Back-compat layer. The federation primitives now live in dedicated
+// packages so consumers that only need the bridge don't have to install
+// the full SDK:
 //
-// Extracted from governance/packages/sdk-bridge as part of the
-// 2026-04-25 workspace refactor. This module knows nothing about
-// governance or financials; it accepts a project registry at boot and
-// exposes the same getClient/forEachClient surface that the legacy
-// sdk-bridge had.
+//   @symbo.ls/sdk-bridge          — abstract registry + cookie/storage
+//   @symbo.ls/sdk-supabase-bridge — Supabase impl (createSupabaseClient,
+//                                   createAuthBridge, createCrossAppAuth)
 //
-// Project-specific concerns (shouldActivate predicates for governance +
-// financials, integrations subsystem, MCP connectors, claim refresh)
-// stay in @symbo.ls/sdk-bridge — that package now imports the abstract
-// core from here and layers its domain logic on top.
+// `createFederation` is preserved as a thin convenience that pre-wires
+// `createRegistry` with `createSupabaseClient` so existing
+// `@symbo.ls/sdk/federation` callers don't have to change.
 
-export { createFederation } from './federation.js'
-export { createSupabaseClient } from './client.js'
+import { createRegistry } from '@symbo.ls/sdk-bridge'
+import { createSupabaseClient } from '@symbo.ls/sdk-supabase-bridge'
+
+export const createFederation = ({ projects = {}, defaultKey } = {}) =>
+  createRegistry({ projects, defaultKey, buildClient: createSupabaseClient })
+
+export { createSupabaseClient }

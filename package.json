@@ -79,10 +79,18 @@
     "yjs": "^13.6.27"
   },
   "peerDependencies": {
-    "@supabase/supabase-js": "^2.0.0"
+    "@supabase/supabase-js": "^2.0.0",
+    "@symbo.ls/sdk-bridge": "^3.14.0",
+    "@symbo.ls/sdk-supabase-bridge": "^3.14.0"
   },
   "peerDependenciesMeta": {
     "@supabase/supabase-js": {
+      "optional": true
+    },
+    "@symbo.ls/sdk-bridge": {
+      "optional": true
+    },
+    "@symbo.ls/sdk-supabase-bridge": {
       "optional": true
     }
   },
