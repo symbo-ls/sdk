@@ -6,6 +6,9 @@
   "module": "dist/esm/index.js",
   "files": [
     "src/**/*.js",
+    "!src/**/*.test.js",
+    "!src/**/tests/**",
+    "!src/docs/**",
     "dist/**/*.js",
     "dist/**/*.cjs",
     "README.md"
