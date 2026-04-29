@@ -1,0 +1,25 @@
+{
+  "name": "@symbo.ls/sdk-bridge",
+  "version": "3.14.0",
+  "type": "module",
+  "description": "Abstract federation primitive — multi-project registry, client cache, and storage helpers. Framework-agnostic; build your own backend layer (Supabase, Firebase, custom) on top via @symbo.ls/sdk-supabase-bridge or your own implementation.",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./registry": "./src/registry.js",
+    "./cookies": "./src/cookies.js",
+    "./storage": "./src/storage.js"
+  },
+  "files": [
+    "src/**/*.js",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "echo \"no tests\""
+  },
+  "license": "CC-BY-NC-4.0",
+  "repository": "https://github.com/symbo-ls/sdk",
+  "publishConfig": {
+    "access": "public"
+  }
+}
