@@ -46,6 +46,20 @@ const CONFIG = {
     },
     typesenseCollectionName: 'docs'
   },
+  // Shell on localhost, API on next.api.symbols.app — see channels.json.
+  // Public client IDs match `next` since the OAuth redirect lands on the
+  // next-channel API; non-credential dev features mirror `local`.
+  localNext: {
+    dnsWorkerUrl: 'https://dns.symbo.ls',
+    githubClientId: 'Ov23liHxyWFBxS8f1gnF',
+    grafanaAppName: 'Symbols Local Next',
+    features: {
+      trackingEnabled: false,
+      betaFeatures: true,
+      newUserOnboarding: true
+    },
+    typesenseCollectionName: 'docs'
+  },
   development: {
     dnsWorkerUrl: 'https://dns.symbo.ls',
     githubClientId: 'Ov23liHxyWFBxS8f1gnF',
@@ -121,12 +135,13 @@ const parseSearchEndpoint = (apiUrl) => {
   }
 }
 
-// Determine environment with error handling
+// Determine environment with error handling. Default matches
+// @symbo.ls/channels' `defaultChannel` so SDK config + channel
+// resolution land on the same env when nothing is explicitly set.
 const getEnvironment = () => {
   // @preserve-env
-  const env = process.env.SYMBOLS_APP_ENV || process.env.NODE_ENV || 'development'
+  const env = process.env.SYMBOLS_APP_ENV || process.env.NODE_ENV || 'next'
 
-  // Validate that the environment exists in our config
   if (!CONFIG[env]) {
     throw new Error(`Unknown environment "${env}"`)
   }
