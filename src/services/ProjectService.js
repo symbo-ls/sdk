@@ -5,6 +5,18 @@ import { deepStringifyFunctions } from '@symbo.ls/utils'
 import { PROJECT_SOURCE_ACCESS } from '../constants/roles.js'
 import { projectKeyPath as keyPath } from '../utils/projectKeyPath.js'
 
+// BaseService wraps every error as `new Error(`Request failed: …`,
+// { cause: <inner Error> })` and the inner error has `cause = <body>`.
+// Public-preview controllers route by body.error, so this helper unwraps
+// at most two levels and returns the JSON body (or {}).
+function _readErrorBody (err) {
+  const candidate = err?.cause?.cause ?? err?.cause ?? null
+  if (candidate && typeof candidate === 'object' && !(candidate instanceof Error)) {
+    return candidate
+  }
+  return {}
+}
+
 export class ProjectService extends BaseService {
   // ==================== PROJECT METHODS ====================
 
@@ -256,6 +268,10 @@ export class ProjectService extends BaseService {
    * 403/404 so callers can fall back to the authed route. Pass `{owner, key}`
    * to use the collision-safe 2-seg route.
    *
+   * Throws an error with `code: 'password_required'` (status 401) when the
+   * project is password-protected — preview surfaces use this to short-
+   * circuit the env-fallback chain and prompt for a password.
+   *
    * @param {string | { owner?: string, key: string }} keyOrSpec
    * @param {{ envKey: string }} opts
    */
@@ -270,10 +286,98 @@ export class ProjectService extends BaseService {
       if (response?.success) return response.data
       return null
     } catch (error) {
-      const status = error?.cause?.status || error?.status
-      if (status === 403 || status === 404) return null
+      // BaseService wraps once (`Request failed: ...`) and attaches the
+      // inner Error as `cause`. The inner Error has `cause` = the JSON
+      // body (e.g. `{error: 'not_public', visibility: 'private'}`). HTTP
+      // status isn't attached anywhere — so we route by body.error.
+      const body = _readErrorBody(error)
+      const errCode = body?.error
+      if (errCode === 'password_required') {
+        const e = new Error(body.message || 'Project is password-protected')
+        e.code = 'password_required'
+        e.visibility = body.visibility || 'password-protected'
+        e.status = 401
+        throw e
+      }
+      // Visibility-bearing 403 (private) and the 404s (project_not_found,
+      // env_not_found) all mean "no public data here" — return null so
+      // the preview's env-fallback chain advances to the next env.
+      if (errCode === 'not_public' || errCode === 'project_not_found' || errCode === 'env_not_found') {
+        return null
+      }
       throw new Error(
         `Failed to get public project data by key: ${error.message}`,
+        { cause: error }
+      )
+    }
+  }
+
+  /**
+   * Anonymous probe of a project's effective visibility — `public`,
+   * `private`, or `password-protected`. Used by preview surfaces to
+   * decide between cross-domain login redirect (private) and an inline
+   * password card (password-protected) AFTER all env data fetches have
+   * failed. Returns null on 404 / network error so callers can degrade
+   * gracefully to the legacy "not published" message.
+   *
+   * @param {string | { owner?: string, key: string }} keyOrSpec
+   * @returns {Promise<'public' | 'private' | 'password-protected' | null>}
+   */
+  async getPublicProjectVisibility (keyOrSpec) {
+    const path = keyPath(keyOrSpec)
+    try {
+      const response = await this._request(
+        `/projects/key/${path}/public/visibility`,
+        { method: 'GET', methodName: 'getPublicProjectVisibility' }
+      )
+      return response?.data?.visibility || null
+    } catch {
+      // Probe-only — degrade to null so callers fall back to the
+      // legacy "not published" message rather than blowing up.
+      return null
+    }
+  }
+
+  /**
+   * Anonymous unlock of a `password-protected` project's data for a
+   * given env. `password` is the SHA-256 hex digest of the user-typed
+   * value (matching how project-account.js stores it server-side).
+   * Returns null on invalid password / not-password-protected so the
+   * caller can re-prompt; throws on infrastructure errors only.
+   *
+   * @param {string | { owner?: string, key: string }} keyOrSpec
+   * @param {{ envKey: string, password: string }} opts
+   */
+  async unlockPublicProjectDataByKey (keyOrSpec, { envKey, password } = {}) {
+    if (!envKey) throw new Error('Environment key is required')
+    if (!password) throw new Error('Password is required')
+    const path = keyPath(keyOrSpec)
+    try {
+      const response = await this._request(
+        `/projects/key/${path}/public/${encodeURIComponent(envKey)}/unlock`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ password }),
+          methodName: 'unlockPublicProjectDataByKey'
+        }
+      )
+      if (response?.success) return response.data
+      return null
+    } catch (error) {
+      // Server reports `invalid_password` (403), `invalid_params` (400),
+      // and `not_password_protected` (400) for the user-recoverable
+      // states. Anything else is infrastructure — re-throw.
+      const body = _readErrorBody(error)
+      const errCode = body?.error
+      if (
+        errCode === 'invalid_password' ||
+        errCode === 'invalid_params' ||
+        errCode === 'not_password_protected'
+      ) {
+        return null
+      }
+      throw new Error(
+        `Failed to unlock public project data by key: ${error.message}`,
         { cause: error }
       )
     }

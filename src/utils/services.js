@@ -71,6 +71,8 @@ export const SERVICE_METHODS = {
   getProjectByKey: 'project',
   getProjectDataByKey: 'project',
   getPublicProjectDataByKey: 'project',
+  getPublicProjectVisibility: 'project',
+  unlockPublicProjectDataByKey: 'project',
   getPublicProject: 'project',
   listPublicProjects: 'project',
   listProjects: 'project',
