@@ -1,7 +1,10 @@
 name: Pull Request Tests Workflow
-# Smoke-tests on PRs targeting `next`, `upcoming`, or `main`.
-# Runs against the test API (`testing` env → test.api.symbols.app) so it
-# never mutates next.api or production data.
+# Smoke-tests on PRs. NODE_ENV is selected from the PR's target branch via
+# server channels (server/packages/channels/channels.json):
+#   next     → next.api.symbols.app
+#   upcoming → upcoming.api.symbols.app
+#   main     → staging.api.symbols.app  (closest channel to prod that's safe to mutate)
+# The legacy `testing` env (→ test.api) is retired.
 on:
   workflow_dispatch:
   repository_dispatch:
@@ -25,7 +28,7 @@ jobs:
   smoke-tests:
     uses: ./.github/workflows/test-workflow.yaml
     with:
-      node_env: 'testing'
+      node_env: ${{ github.base_ref == 'main' && 'staging' || github.base_ref }}
       suite: 'smoke'
       # ref left empty — checkout uses the PR head (correct for pull_request).
     secrets: inherit

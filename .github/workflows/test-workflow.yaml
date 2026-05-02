@@ -5,8 +5,8 @@ on:
       node_env:
         required: false
         type: string
-        default: 'testing'
-        description: 'NODE_ENV passed to tests. `testing` → test.api.symbols.app (isolated test API). Do NOT change to `next` or `production` — tests would mutate live data.'
+        default: 'upcoming'
+        description: 'NODE_ENV passed to tests. Must match a server channel (server/packages/channels/channels.json): next, upcoming, staging, etc. Legacy `testing` is retired.'
       suite:
         required: false
         type: string
