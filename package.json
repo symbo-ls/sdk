@@ -41,8 +41,8 @@
   },
   "scripts": {
     "build:esm": "esbuild $(find src -name '*.js' ! -name '*.test.js') --target=es2019 --format=esm --bundle --external:@symbo.ls/utils --external:@symbo.ls/router --external:@symbo.ls/sync --external:@symbo.ls/sdk-bridge --external:@symbo.ls/sdk-supabase-bridge --external:@supabase/supabase-js --outdir=dist/esm --define:process.env.NODE_ENV=process.env.NODE_ENV",
-    "build:cjs": "esbuild $(find src -name '*.js' ! -name '*.test.js') --target=node16 --format=cjs --out-extension:.js=.cjs --external:@symbo.ls/sdk-bridge --external:@symbo.ls/sdk-supabase-bridge --external:@supabase/supabase-js --outdir=dist/cjs --define:process.env.NODE_ENV=process.env.NODE_ENV",
-    "build:node": "esbuild $(find src -name '*.js' ! -name '*.test.js') --target=node16 --format=esm --platform=node --external:@symbo.ls/sdk-bridge --external:@symbo.ls/sdk-supabase-bridge --external:@supabase/supabase-js --outdir=dist/node --define:process.env.NODE_ENV=process.env.NODE_ENV",
+    "build:cjs": "esbuild $(find src -name '*.js' ! -name '*.test.js') --target=node16 --format=cjs --out-extension:.js=.cjs --outdir=dist/cjs --define:process.env.NODE_ENV=process.env.NODE_ENV",
+    "build:node": "esbuild $(find src -name '*.js' ! -name '*.test.js') --target=node16 --format=esm --platform=node --outdir=dist/node --define:process.env.NODE_ENV=process.env.NODE_ENV",
     "build": "rimraf dist && bun run build:esm && bun run build:cjs && bun run build:node",
     "prepublishOnly": "bun run build",
     "test:all": "tape integration-tests/index.js integration-tests/*.test.js | tap-spec",
