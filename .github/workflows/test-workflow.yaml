@@ -36,19 +36,18 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: '20'
-          registry-url: 'https://registry.npmjs.org'
+          bun-version: latest
 
-      - name: Npm install
+      - name: Install dependencies
         run: |
           echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
-          npm install --verbose
+          bun install
 
       - name: Build
-        run: npm run build
+        run: bun run build
         env:
           NODE_ENV: ${{ inputs.node_env }}
 
@@ -59,7 +58,7 @@ jobs:
         run: |
           set -o pipefail
           echo $MESSAGE
-          npm run test:${{ inputs.suite }} 2>&1 | tee test-output.log
+          bun run test:${{ inputs.suite }} 2>&1 | tee test-output.log
 
       - name: Extract Failure Summary
         if: failure()
