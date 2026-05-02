@@ -3,8 +3,7 @@ name: Pull Request Tests Workflow
 # server channels (server/packages/channels/channels.json):
 #   next     → next.api.symbols.app
 #   upcoming → upcoming.api.symbols.app
-#   main     → staging.api.symbols.app  (closest channel to prod that's safe to mutate)
-# The legacy `testing` env (→ test.api) is retired.
+#   main     → test.api.symbols.app   (isolated test API — never mutates prod)
 on:
   workflow_dispatch:
   repository_dispatch:
@@ -28,7 +27,7 @@ jobs:
   smoke-tests:
     uses: ./.github/workflows/test-workflow.yaml
     with:
-      node_env: ${{ github.base_ref == 'main' && 'staging' || github.base_ref }}
+      node_env: ${{ github.base_ref == 'main' && 'test' || github.base_ref }}
       suite: 'smoke'
       # ref left empty — checkout uses the PR head (correct for pull_request).
     secrets: inherit
