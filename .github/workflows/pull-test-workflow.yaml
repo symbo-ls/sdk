@@ -1,5 +1,5 @@
 name: Pull Request Tests Workflow
-# Smoke-tests on PRs targeting `next` (active branch).
+# Smoke-tests on PRs targeting `next`, `upcoming`, or `main`.
 # Runs against the test API (`testing` env → test.api.symbols.app) so it
 # never mutates next.api or production data.
 on:
@@ -9,6 +9,8 @@ on:
   pull_request:
     branches:
       - next
+      - upcoming
+      - main
     paths:
       - 'src/**'
       - 'integration-tests/**'
