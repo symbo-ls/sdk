@@ -92,7 +92,8 @@ async function createDefaultProject () {
 
   try {
     const createResponse = await global.globalSdk.createProject({
-      key: `${faker.string.uuid()}.symbo.ls`.toLowerCase(),
+      // Project key validation: lowercase letters, numbers, and hyphens only.
+      key: `${faker.string.uuid()}-symbo-ls`.toLowerCase(),
       name: faker.company.name(),
       designTool: 'figma',
       access: 'public',

@@ -10,7 +10,8 @@ async function createAndGetProject (
   // faker.seed(0)
   try {
     const response = await sdkInstance.createProject({
-      key: `${faker.string.uuid() + Date.now()}.symbo.ls`.toLowerCase(),
+      // Project key validation: lowercase letters, numbers, and hyphens only.
+      key: `${faker.string.uuid()}-${Date.now()}-symbo-ls`.toLowerCase(),
       name: faker.company.name(),
       designTool: 'figma',
       access: 'public',
