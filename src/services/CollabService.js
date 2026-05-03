@@ -463,7 +463,9 @@ export class CollabService extends BaseService {
         orders,
         options
       })
-      return
+      // Op was accepted (queued) — callers (addItem/deleteItem/etc.) treat
+      // the returned envelope's `.success` as a yes/no on acceptance.
+      return { success: true, queued: true }
     }
 
     // When connected, send the operations to the backend.
