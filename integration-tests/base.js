@@ -10,10 +10,10 @@ async function createAndGetProject (
   // faker.seed(0)
   try {
     const response = await sdkInstance.createProject({
-      // Post-§45 createProject takes `slug` (bare, [a-z0-9-]). `key` is
-      // ignored and the server falls through to auto-allocate, which fails
-      // the new validator. faker uuid + Date.now() are already in-range.
-      slug: `${faker.string.uuid()}-${Date.now()}`,
+      // Server-side validator (validateExplicitProjectKey) requires the
+      // explicit `key` to match [a-z0-9-]+ only — no dots, no underscores,
+      // no uppercase. faker uuid + Date.now() are already in-range.
+      key: `${faker.string.uuid()}-${Date.now()}`,
       name: faker.company.name(),
       designTool: 'figma',
       access: 'public',

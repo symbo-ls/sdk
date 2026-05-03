@@ -92,10 +92,10 @@ async function createDefaultProject () {
 
   try {
     const createResponse = await global.globalSdk.createProject({
-      // Post-§45 createProject takes `slug` (bare, [a-z0-9-]). `key` is
-      // ignored and the server falls through to auto-allocate, which fails
-      // the new validator. faker uuid is already lowercase hex+dashes.
-      slug: faker.string.uuid(),
+      // Server-side validator (validateExplicitProjectKey) requires the
+      // explicit `key` to match [a-z0-9-]+ only — no dots, no underscores,
+      // no uppercase. faker uuid is already lowercase hex+dashes.
+      key: faker.string.uuid(),
       name: faker.company.name(),
       designTool: 'figma',
       access: 'public',

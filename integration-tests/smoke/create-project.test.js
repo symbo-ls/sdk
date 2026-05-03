@@ -11,14 +11,15 @@ function createProjectTestPositive () {
 }
 
 function createProjectTestNegative (dataSet) {
-  test(`createProject ${dataSet.title}`, async tape => {
+  test(`createProject rejects: ${dataSet.title}`, async tape => {
     try {
       await global.globalSdk.createProject(dataSet.data)
+      tape.fail(`expected createProject to reject for: ${dataSet.title}`)
     } catch (error) {
-      tape.equal(
-        error.message,
-        dataSet.error,
-        `createProject failed: ${dataSet.title}`
+      tape.ok(
+        typeof error.message === 'string' &&
+          error.message.includes(dataSet.errorContains),
+        `error message contains "${dataSet.errorContains}" — got: ${error.message}`
       )
     }
   })

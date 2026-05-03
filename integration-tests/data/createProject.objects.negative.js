@@ -1,64 +1,50 @@
 import { faker } from '@faker-js/faker'
 
+// Negative-test cases for createProject. Each entry asserts that the
+// server REJECTS the request and the surfaced error contains a key
+// phrase. Substring matching (not exact-equal) so harmless wording
+// tweaks on the server don't break the suite.
+//
+// Cases removed (server contract changed on upcoming):
+//   - keyRequired:   key is no longer required; server auto-allocates.
+//   - mustBeSymbols: `.symbo.ls` suffix requirement was dropped — bare
+//                    `[a-z0-9-]+` slugs are now valid.
+//   - designTool / access "incorrect payload": server silently drops
+//                    invalid enum values instead of rejecting.
+
 export const dataSets = {
-  keyRequired: {
-    data: {
-      projectType: 'website',
-      name: 'Integration Test Project'
-    },
-    title: 'Failed to create project: Project key is required',
-    error:
-      'Failed to create project: Function call failed: [projects:create] Project key and name are required.'
-  },
   projectTypeRequired: {
     data: {
-      key: `${faker.string.uuid()}.symbo.ls`,
-      name: 'Project Name'
+      key: faker.string.uuid(),
+      name: 'Integration Test Project'
     },
-    title: 'Failed to create project: Project type is required',
-    error:
-      'Failed to create project: Request failed: Project type is required'
+    title: 'Project type is required',
+    errorContains: 'Project type is required'
   },
   nameRequired: {
     data: {
-      key: `${faker.string.uuid()}.symbo.ls`,
+      key: faker.string.uuid(),
       projectType: 'website'
     },
-    title: 'Failed to create project: Project name is required',
-    error:
-      'Failed to create project: Request failed: Name is required'
+    title: 'Project name is required',
+    errorContains: 'Name is required'
   },
-  mustBeSymbols: {
+  invalidProjectType: {
     data: {
-      key: `${faker.string.uuid()}`,
-      projectType: 'website',
-      name: 'Integration Test Project'
-    },
-    title: 'Failed to create project: Project key must end with .symbo.ls',
-    error:
-      'Failed to create project: Function call failed: [projects:create] Project key must end with .symbo.ls.'
-  },
-  designToolIncorrectPayload: {
-    data: {
-      key: `${faker.string.uuid()}.symbo.ls`,
-      projectType: 'website',
-      name: 'Integration Test Project'
-    },
-    title:
-      'Failed to create project: Incorrect payload for designTool of type string: undefined',
-    error:
-      'Failed to create project: Function call failed: [projects:create] Incorrect payload for designTool of type string: undefined.'
-  },
-  accessIncorrectPayload: {
-    data: {
-      key: `${faker.string.uuid()}.symbo.ls`,
+      key: faker.string.uuid(),
       name: 'Integration Test Project',
-      projectType: 'website',
-      designTool: 'figma'
+      projectType: 'not-a-real-type'
     },
-    title:
-      'Failed to create project: Incorrect payload for access of type string: undefined',
-    error:
-      'Failed to create project: Function call failed: [projects:create] Incorrect payload for access of type string: undefined.'
+    title: 'Invalid project type rejected',
+    errorContains: 'projectType must be one of'
+  },
+  invalidProjectKey: {
+    data: {
+      key: 'NOT a valid key — has spaces and uppercase!',
+      name: 'Integration Test Project',
+      projectType: 'website'
+    },
+    title: 'Invalid project key rejected (spaces/uppercase/punctuation)',
+    errorContains: 'lowercase letters, numbers, and hyphens'
   }
 }
