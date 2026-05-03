@@ -46,20 +46,6 @@ const CONFIG = {
     },
     typesenseCollectionName: 'docs'
   },
-  // Shell on localhost, API on next.api.symbols.app — see channels.json.
-  // Public client IDs match `next` since the OAuth redirect lands on the
-  // next-channel API; non-credential dev features mirror `local`.
-  localNext: {
-    dnsWorkerUrl: 'https://dns.symbo.ls',
-    githubClientId: 'Ov23liHxyWFBxS8f1gnF',
-    grafanaAppName: 'Symbols Local Next',
-    features: {
-      trackingEnabled: false,
-      betaFeatures: true,
-      newUserOnboarding: true
-    },
-    typesenseCollectionName: 'docs'
-  },
   development: {
     dnsWorkerUrl: 'https://dns.symbo.ls',
     githubClientId: 'Ov23liHxyWFBxS8f1gnF',

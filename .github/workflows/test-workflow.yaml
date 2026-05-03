@@ -79,14 +79,12 @@ jobs:
         run: |
           set -o pipefail
           echo $MESSAGE
-          # Pull GUEST_PASSWORD, LOCAL_EMAIL etc. from Infisical via the machine
-          # identity token (replaces ${{ secrets.* }} repo-secrets pattern).
-          infisical run \
-            --domain="$INFISICAL_DOMAIN" \
-            --projectId="$INFISICAL_PROJECT_ID" \
-            --env="${{ inputs.node_env }}" \
-            --token="$INFISICAL_TOKEN" \
-            -- bun run test:${{ inputs.suite }} 2>&1 | tee test-output.log
+          # The npm `test:*` scripts do their own `infisical run --` wrap (so
+          # local devs can `npm run test:smoke` after `infisical login` without
+          # remembering the prefix). The wrap reads INFISICAL_TOKEN from env to
+          # auth — exported by the previous step. NODE_ENV picks the Infisical
+          # env (defaults to upcoming).
+          bun run test:${{ inputs.suite }} 2>&1 | tee test-output.log
 
       - name: Extract Failure Summary
         if: failure()

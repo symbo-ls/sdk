@@ -90,7 +90,7 @@ const _createAdapterClient = ({ url, anonKey, rawSupabaseUrl, getRealtimeClient 
 
 // Public — produces a smbls fetch-adapter spec the workspace shell
 // registers at boot. Pass `apiBase` as a function when you want runtime
-// channel flips (`localStorage.symbols_api_channel = 'localNext'`) to
+// channel flips (`localStorage.symbols_api_channel = 'next'`) to
 // take effect on subsequent createClient calls; pass a string for the
 // common eager case.
 export const createSupabasePassthroughConfig = ({
