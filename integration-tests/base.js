@@ -10,10 +10,11 @@ async function createAndGetProject (
   // faker.seed(0)
   try {
     const response = await sdkInstance.createProject({
-      // Server-side validator (validateExplicitProjectKey) requires the
-      // explicit `key` to match [a-z0-9-]+ only — no dots, no underscores,
-      // no uppercase. faker uuid + Date.now() are already in-range.
-      key: `${faker.string.uuid()}-${Date.now()}`,
+      // Server-side validator (normalizeProjectSlug) truncates to 48
+      // chars and rejects input that isn't equal to the truncated form.
+      // Plain faker uuid is 36 chars + [a-z0-9-] only — well within the
+      // budget and collision-free across runs.
+      key: faker.string.uuid(),
       name: faker.company.name(),
       designTool: 'figma',
       access: 'public',
