@@ -15,7 +15,7 @@ async function createAndGetProject (
       designTool: 'figma',
       access: 'public',
       isSharedLibrary,
-      projectType: 'web'
+      projectType: 'website'
     })
 
     sdkInstance.updateContext({ appKey: response?.key })

@@ -3,7 +3,7 @@ import { faker } from '@faker-js/faker'
 export const dataSets = {
   keyRequired: {
     data: {
-      projectType: 'web',
+      projectType: 'website',
       name: 'Integration Test Project'
     },
     title: 'Failed to create project: Project key is required',
@@ -22,7 +22,7 @@ export const dataSets = {
   nameRequired: {
     data: {
       key: `${faker.string.uuid()}.symbo.ls`,
-      projectType: 'web'
+      projectType: 'website'
     },
     title: 'Failed to create project: Project name is required',
     error:
@@ -31,7 +31,7 @@ export const dataSets = {
   mustBeSymbols: {
     data: {
       key: `${faker.string.uuid()}`,
-      projectType: 'web',
+      projectType: 'website',
       name: 'Integration Test Project'
     },
     title: 'Failed to create project: Project key must end with .symbo.ls',
@@ -41,7 +41,7 @@ export const dataSets = {
   designToolIncorrectPayload: {
     data: {
       key: `${faker.string.uuid()}.symbo.ls`,
-      projectType: 'web',
+      projectType: 'website',
       name: 'Integration Test Project'
     },
     title:
@@ -53,7 +53,7 @@ export const dataSets = {
     data: {
       key: `${faker.string.uuid()}.symbo.ls`,
       name: 'Integration Test Project',
-      projectType: 'web',
+      projectType: 'website',
       designTool: 'figma'
     },
     title:

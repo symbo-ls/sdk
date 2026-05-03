@@ -97,7 +97,7 @@ async function createDefaultProject () {
       designTool: 'figma',
       access: 'public',
       isSharedLibrary: false,
-      projectType: 'web'
+      projectType: 'website'
     })
 
     global.globalSdk.updateContext({ appKey: createResponse?.key })
