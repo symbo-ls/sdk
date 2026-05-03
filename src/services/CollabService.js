@@ -225,6 +225,14 @@ export class CollabService extends BaseService {
       // arrive (e.g. for new/empty documents).
       const { socket } = this._client
 
+      // Attach the persistent connect/disconnect/error listeners *before* we
+      // start awaiting the one-shot connect promise. Otherwise, if the socket
+      // connects then immediately disconnects (e.g. server-side auth
+      // rejection), the disconnect lands in the gap between the await
+      // resolving and the post-await `_attachSocketLifecycleListeners()`
+      // call, leaving `_connected` stuck at false.
+      this._attachSocketLifecycleListeners()
+
       try {
         await new Promise((resolve, reject) => {
           if (!socket) {
@@ -283,14 +291,17 @@ export class CollabService extends BaseService {
           /* eslint-enable no-use-before-define */
         })
       } catch (error) {
+        this._detachSocketLifecycleListeners()
         socket?.disconnect()
         this._client = null
         this._connectionMeta = null
         throw error
       }
 
-      this._attachSocketLifecycleListeners()
-      if (socket?.connected) {
+      // Lifecycle listeners are already attached (above). If `_connected`
+      // wasn't set by the just-fired connect event for some reason (e.g.
+      // listener races), set it explicitly when the socket reports connected.
+      if (socket?.connected && !this._connected) {
         this._onSocketConnect()
       }
 
