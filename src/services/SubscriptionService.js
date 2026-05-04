@@ -12,10 +12,10 @@ export class SubscriptionService extends BaseService {
       throw new Error('Subscription data is required')
     }
 
-    const { projectId, planId, pricingKey = 'monthly', seats = 1, successUrl, cancelUrl } = subscriptionData
+    const { projectId, workspaceId, planId, pricingKey = 'monthly', seats = 1, successUrl, cancelUrl } = subscriptionData
 
-    if (!projectId) {
-      throw new Error('Project ID is required')
+    if (!projectId && !workspaceId) {
+      throw new Error('Project ID or Workspace ID is required')
     }
     if (!planId) {
       throw new Error('Plan ID is required')
@@ -26,6 +26,7 @@ export class SubscriptionService extends BaseService {
         method: 'POST',
         body: JSON.stringify({
           projectId,
+          workspaceId,
           planId,
           pricingKey,
           seats,
@@ -131,12 +132,19 @@ export class SubscriptionService extends BaseService {
       if (startingAfter) {queryParams.append('startingAfter', startingAfter)}
 
       const queryString = queryParams.toString()
-      const url = `/subscriptions/${subscriptionId}/invoices${queryString ? `?${queryString}` : ''}`
 
-      const response = await this._request(url, {
-        method: 'GET',
-        methodName: 'listInvoices'
-      })
+      // Inline both branches at the _request call site so the drift
+      // analyzer matches /subscriptions/:id/invoices (it can't see
+      // through `_request(url, …)` when `url` is a variable).
+      const response = queryString
+        ? await this._request(`/subscriptions/${subscriptionId}/invoices?${queryString}`, {
+          method: 'GET',
+          methodName: 'listInvoices'
+        })
+        : await this._request(`/subscriptions/${subscriptionId}/invoices`, {
+          method: 'GET',
+          methodName: 'listInvoices'
+        })
       if (response.success) {
         return response.data
       }
@@ -160,12 +168,17 @@ export class SubscriptionService extends BaseService {
       if (returnUrl) {queryParams.append('returnUrl', returnUrl)}
 
       const queryString = queryParams.toString()
-      const url = `/subscriptions/${subscriptionId}/portal${queryString ? `?${queryString}` : ''}`
 
-      const response = await this._request(url, {
-        method: 'GET',
-        methodName: 'getPortalUrl'
-      })
+      // Inline at each branch so the analyzer matches /subscriptions/:id/portal.
+      const response = queryString
+        ? await this._request(`/subscriptions/${subscriptionId}/portal?${queryString}`, {
+          method: 'GET',
+          methodName: 'getPortalUrl'
+        })
+        : await this._request(`/subscriptions/${subscriptionId}/portal`, {
+          method: 'GET',
+          methodName: 'getPortalUrl'
+        })
       if (response.success) {
         return response.data
       }
@@ -185,12 +198,13 @@ export class SubscriptionService extends BaseService {
       throw new Error('Subscription data must be a valid object')
     }
 
-    // Basic validation for required fields
-    const requiredFields = ['projectId', 'planId']
-    for (const field of requiredFields) {
-      if (!subscriptionData[field]) {
-        throw new Error(`Required field '${field}' is missing`)
-      }
+    // Either projectId or workspaceId is required (I2 dev-bind supports
+    // workspace-scoped subscriptions; Phase 1 keeps both paths active).
+    if (!subscriptionData.projectId && !subscriptionData.workspaceId) {
+      throw new Error("Required field 'projectId' or 'workspaceId' is missing")
+    }
+    if (!subscriptionData.planId) {
+      throw new Error("Required field 'planId' is missing")
     }
 
     // Validate seats is a positive integer
@@ -421,5 +435,76 @@ export class SubscriptionService extends BaseService {
     }
 
     return await this.downgrade(downgradeData)
+  }
+
+  // ==================== PRICING + FEATURES ====================
+
+  /**
+   * Retrieve the set of plans + upgrade/downgrade options applicable to
+   * a subscription. Used by upgrade UIs to render the plan-picker
+   * without hitting Stripe directly.
+   * @param {string} subscriptionId
+   * @returns {Promise<{plans: Array<object>, currentPlan?: object}>}
+   */
+  async getPricingOptions (subscriptionId) {
+    if (!subscriptionId) throw new Error('subscriptionId is required')
+    return this._call(
+      'getPricingOptions',
+      `/subscriptions/${subscriptionId}/pricing-options`
+    )
+  }
+
+  /**
+   * Check whether a project has access to a named feature. Server
+   * resolves the subscription's feature set + any per-project grants.
+   * Open to any project member.
+   * @param {string} projectId
+   * @param {string} featureKey
+   * @returns {Promise<{canAccess: boolean, reason?: string, source?: string}>}
+   */
+  async canAccessProjectFeature (projectId, featureKey) {
+    this._requireReady('canAccessProjectFeature')
+    if (!projectId) throw new Error('projectId is required')
+    if (!featureKey) throw new Error('featureKey is required')
+    const response = await this._request(
+      `/subscriptions/project/${projectId}/features/${encodeURIComponent(featureKey)}/can-access`,
+      { method: 'GET', methodName: 'canAccessProjectFeature' }
+    )
+    if (response?.success) return response.data
+    return { canAccess: false }
+  }
+
+  /**
+   * Grant a project-scoped feature override — admin-tier only on the
+   * server. Useful for beta/trial access without touching the plan.
+   * @param {string} projectId
+   * @param {string} featureKey
+   * @returns {Promise<object>}
+   */
+  async grantProjectFeature (projectId, featureKey) {
+    if (!projectId) throw new Error('projectId is required')
+    if (!featureKey) throw new Error('featureKey is required')
+    return this._call(
+      'grantProjectFeature',
+      `/subscriptions/project/${projectId}/features/${encodeURIComponent(featureKey)}/grant`,
+      { method: 'POST' }
+    )
+  }
+
+  /**
+   * Revoke a previously granted project-scoped feature override. After
+   * revoke, access reverts to whatever the subscription plan allows.
+   * @param {string} projectId
+   * @param {string} featureKey
+   * @returns {Promise<object>}
+   */
+  async revokeProjectFeature (projectId, featureKey) {
+    if (!projectId) throw new Error('projectId is required')
+    if (!featureKey) throw new Error('featureKey is required')
+    return this._call(
+      'revokeProjectFeature',
+      `/subscriptions/project/${projectId}/features/${encodeURIComponent(featureKey)}/revoke`,
+      { method: 'POST' }
+    )
   }
 }

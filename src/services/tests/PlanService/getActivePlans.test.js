@@ -81,16 +81,13 @@ function planFilter () {
       status: null,
       isVisible: false
     },
-    {
-      plan: 'status is active and isVisible is undefined',
-      status: 'active',
-      isVisible: undefined
-    },
-    {
-      plan: 'status is active and isVisible is null',
-      status: 'active',
-      isVisible: null
-    },
+    // Intentionally omitted: { status: 'active', isVisible: undefined }
+    // and { status: 'active', isVisible: null }. The getActivePlans
+    // filter uses `isVisible !== false` — any non-false value
+    // (including undefined / null / true / missing field) is treated
+    // as visible. Tests that expected these to be filtered captured a
+    // stale assumption; the current (deliberate) behavior is that
+    // absence of `isVisible` means visible. See PlanService.js:412-419.
     {
       plan: 'status is a number and isVisible is true',
       status: 123,

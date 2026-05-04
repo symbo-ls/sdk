@@ -3,7 +3,7 @@ import { CollabClient } from '../utils/CollabClient.js'
 import { RootStateManager } from '../state/RootStateManager.js'
 import { rootBus } from '../state/rootEventBus.js'
 import { validateParams } from '../utils/validation.js'
-import { deepStringifyFunctions } from '@domql/utils'
+import { deepStringifyFunctions } from '@symbo.ls/utils'
 import { preprocessChanges } from '../utils/changePreprocessor.js'
 import { logger } from '../utils/logger.js'
 
@@ -225,6 +225,14 @@ export class CollabService extends BaseService {
       // arrive (e.g. for new/empty documents).
       const { socket } = this._client
 
+      // Attach the persistent connect/disconnect/error listeners *before* we
+      // start awaiting the one-shot connect promise. Otherwise, if the socket
+      // connects then immediately disconnects (e.g. server-side auth
+      // rejection), the disconnect lands in the gap between the await
+      // resolving and the post-await `_attachSocketLifecycleListeners()`
+      // call, leaving `_connected` stuck at false.
+      this._attachSocketLifecycleListeners()
+
       try {
         await new Promise((resolve, reject) => {
           if (!socket) {
@@ -283,15 +291,47 @@ export class CollabService extends BaseService {
           /* eslint-enable no-use-before-define */
         })
       } catch (error) {
+        this._detachSocketLifecycleListeners()
         socket?.disconnect()
         this._client = null
         this._connectionMeta = null
         throw error
       }
 
-      this._attachSocketLifecycleListeners()
-      if (socket?.connected) {
+      // Lifecycle listeners are already attached (above). If `_connected`
+      // wasn't set by the just-fired connect event for some reason (e.g.
+      // listener races), set it explicitly when the socket reports connected.
+      if (socket?.connected && !this._connected) {
         this._onSocketConnect()
+      }
+
+      // Server may accept the socket then immediately `socket.disconnect(true)`
+      // from inside the connection handler (auth/permission rejection). The
+      // 'connect' event already resolved the promise above, so without this
+      // probe the SDK would silently sit with `_connected=false` and every
+      // later checkpoint/addItem would surface as "Not connected" with no
+      // root cause. Briefly observe the connection and reject loudly.
+      const POST_CONNECT_PROBE_MS = 600
+      let postConnectDisconnectReason = null
+      const probeDisconnect = (reason) => { postConnectDisconnectReason = reason }
+      socket?.once('disconnect', probeDisconnect)
+      try {
+        await new Promise((resolve) => setTimeout(resolve, POST_CONNECT_PROBE_MS))
+      } finally {
+        socket?.off('disconnect', probeDisconnect)
+      }
+      if (postConnectDisconnectReason || !socket?.connected) {
+        const reason = postConnectDisconnectReason ||
+          (socket?.disconnected ? 'socket reports disconnected' : 'unknown')
+        this._detachSocketLifecycleListeners()
+        socket?.disconnect()
+        this._client = null
+        this._connectionMeta = null
+        throw new Error(
+          `[CollabService] Server closed the socket immediately after connect (reason: ${reason}). ` +
+          'Likely server-side auth/permission rejection on the collab namespace ' +
+          '(e.g. checkAuthorization viewer denied for this user/project).'
+        )
       }
 
       // Set up event listeners
@@ -463,7 +503,9 @@ export class CollabService extends BaseService {
         orders,
         options
       })
-      return
+      // Op was accepted (queued) — callers (addItem/deleteItem/etc.) treat
+      // the returned envelope's `.success` as a yes/no on acceptance.
+      return { success: true, queued: true }
     }
 
     // When connected, send the operations to the backend.
@@ -877,22 +919,45 @@ export class CollabService extends BaseService {
    * Resolves with the new version number once the backend confirms via the
    * regular "commit" event.
    */
-  checkpoint() {
+  checkpoint({ timeout = 10000 } = {}) {
     if (!this.isConnected()) {
       logger.warn('[CollabService] Not connected, cannot request checkpoint')
       return Promise.reject(new Error('Not connected'))
     }
 
-    return new Promise((resolve) => {
-      const handler = ({ version }) => {
-        // Ensure we clean up the listener after the first commit event.
+    return new Promise((resolve, reject) => {
+      let timer = null
+
+      const cleanup = () => {
+        if (timer) {
+          clearTimeout(timer)
+          timer = null
+        }
         this.socket?.off('commit', handler)
+      }
+
+      const handler = ({ version }) => {
+        cleanup()
         rootBus.emit('checkpoint:done', { version, origin: 'manual' })
         resolve(version)
       }
 
       // Listen for the next commit that the server will emit after checkpoint.
       this.socket?.once('commit', handler)
+
+      // Bound the wait — if the server never emits 'commit' (commit pipeline
+      // broken upstream of this socket), we must not hang forever. Callers
+      // (waitFor predicates, UI flush handlers, etc.) need a deterministic
+      // outcome.
+      timer = setTimeout(() => {
+        cleanup()
+        reject(new Error(
+          `[CollabService] checkpoint timed out after ${timeout}ms — server ` +
+          'never emitted commit event in response to socket.emit("checkpoint"). ' +
+          'Likely a server-side commit pipeline failure (apiCommitChanges / ' +
+          'commit-socket-ops endpoint).'
+        ))
+      }, timeout)
 
       // Trigger server-side checkpoint.
       this.socket?.emit('checkpoint')

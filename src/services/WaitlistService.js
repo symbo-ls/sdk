@@ -56,13 +56,18 @@ export class WaitlistService extends BaseService {
     if (limit != null) { queryParams.append('limit', String(limit)) }
 
     const queryString = queryParams.toString()
-    const url = `/waitlist${queryString ? `?${queryString}` : ''}`
 
     try {
-      const response = await this._request(url, {
-        method: 'GET',
-        methodName: 'listWaitlistEntries'
-      })
+      // Inline both branches so the analyzer matches /waitlist.
+      const response = queryString
+        ? await this._request(`/waitlist?${queryString}`, {
+          method: 'GET',
+          methodName: 'listWaitlistEntries'
+        })
+        : await this._request('/waitlist', {
+          method: 'GET',
+          methodName: 'listWaitlistEntries'
+        })
       if (response.success) {
         return response.data
       }

@@ -513,6 +513,14 @@ function topLevelKeyValidation () {
       key: null
     }
   ]
+  // Null-key hits an earlier validation branch with a different error
+  // message (`Plan key must be a valid string` — see PlanService.js:
+  // the null-gate runs before the format regex). Every other bad shape
+  // hits the format-check branch with the lowercase-hyphen message.
+  const expectedError = (name) =>
+    name === 'Null value'
+      ? 'Error: Plan key must be a valid string'
+      : 'Error: Plan key must contain only lowercase letters, numbers, and hyphens'
   for (let ii = 0; ii < planData.length; ii++) {
     test(`top-level key validation should throw an error checking for: ${planData[ii].name}`, async t => {
       t.plan(1)
@@ -526,7 +534,7 @@ function topLevelKeyValidation () {
       } catch (err) {
         t.equal(
           err.toString(),
-          'Error: Plan key must contain only lowercase letters, numbers, and hyphens',
+          expectedError(planData[ii].name),
           `displayName validation detected bad data: ${planData[ii].name} with ${err}`
         )
       }

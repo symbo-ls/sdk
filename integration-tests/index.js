@@ -92,12 +92,15 @@ async function createDefaultProject () {
 
   try {
     const createResponse = await global.globalSdk.createProject({
-      key: `${faker.string.uuid()}.symbo.ls`.toLowerCase(),
+      // Server-side validator (validateExplicitProjectKey) requires the
+      // explicit `key` to match [a-z0-9-]+ only — no dots, no underscores,
+      // no uppercase. faker uuid is already lowercase hex+dashes.
+      key: faker.string.uuid(),
       name: faker.company.name(),
       designTool: 'figma',
       access: 'public',
       isSharedLibrary: false,
-      projectType: 'web'
+      projectType: 'website'
     })
 
     global.globalSdk.updateContext({ appKey: createResponse?.key })

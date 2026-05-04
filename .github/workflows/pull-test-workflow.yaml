@@ -1,20 +1,49 @@
 name: Pull Request Tests Workflow
+# Smoke-tests on PRs. NODE_ENV is selected so the SDK under test hits the
+# matching API channel (server/packages/channels/channels.json):
+#   head_ref == next     → next.api.symbols.app
+#   head_ref == upcoming → upcoming.api.symbols.app
+#   anything else        → fall back to base_ref; main → test.api.symbols.app
+#                          (isolated test API — never mutates prod)
+#
+# Keying off the head ref means an upcoming→main or next→main PR hits the
+# matching upcoming.api / next.api (SDK ↔ API versions aligned) instead of
+# the mismatched test.api.
 on:
   workflow_dispatch:
   repository_dispatch:
     types: [run_smoke_tests]
   pull_request:
     branches:
-     - main
+      - next
+      - upcoming
+      - main
     paths:
-    - 'src/**'
-    - 'integration-tests/**'
-    - 'package.json'
+      - 'src/**'
+      - 'integration-tests/**'
+      - 'package.json'
+
+# Cancel superseded runs when a PR is force-pushed.
+concurrency:
+  group: pr-tests-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   smoke-tests:
     uses: ./.github/workflows/test-workflow.yaml
     with:
-      node_env: 'testing'
+      # head=upcoming|next  → match channel (SDK ↔ API versions aligned)
+      # base=upcoming|next  → match channel
+      # everything else     → test (test.api.symbols.app — isolated, never
+      #                       prod). `main` and any other base_ref land here
+      #                       so we never emit a `node_env` value the SDK's
+      #                       CONFIG block doesn't recognise.
+      node_env: >-
+        ${{
+          (github.head_ref == 'upcoming' || github.head_ref == 'next') && github.head_ref
+          || (github.base_ref == 'upcoming' || github.base_ref == 'next') && github.base_ref
+          || 'test'
+        }}
       suite: 'smoke'
+      # ref left empty — checkout uses the PR head (correct for pull_request).
     secrets: inherit

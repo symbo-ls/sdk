@@ -1,11 +1,45 @@
 import { BaseService } from './BaseService.js'
 import { computeOrdersForTuples } from '../utils/ordering.js'
 import { preprocessChanges } from '../utils/changePreprocessor.js'
-import { deepStringifyFunctions } from '@domql/utils'
+import { deepStringifyFunctions } from '@symbo.ls/utils'
+import { PROJECT_SOURCE_ACCESS } from '../constants/roles.js'
+import { projectKeyPath as keyPath } from '../utils/projectKeyPath.js'
+import { logger } from '../utils/logger.js'
+
+// BaseService wraps every error as `new Error(`Request failed: …`,
+// { cause: <inner Error> })` and the inner error has `cause = <body>`.
+// Public-preview controllers route by body.error, so this helper unwraps
+// at most two levels and returns the JSON body (or {}).
+function _readErrorBody (err) {
+  const candidate = err?.cause?.cause ?? err?.cause ?? null
+  if (candidate && typeof candidate === 'object' && !(candidate instanceof Error)) {
+    return candidate
+  }
+  return {}
+}
 
 export class ProjectService extends BaseService {
   // ==================== PROJECT METHODS ====================
 
+  /**
+   * Create a user-owned project (owner = authenticated user).
+   *
+   * For org-owned projects use `organizationService.createOrgProject(orgId, data)`
+   * which hits `POST /organizations/:orgId/projects` and scopes ownership
+   * to the org.
+   *
+   * `projectData.key` / `projectData.slug` is optional — server mints a
+   * bare slug via allocateUniqueProjectKey when omitted. Accepted shapes:
+   *   - bare slug (canonical): `{ name, projectType, slug: 'my-app' }`
+   *   - legacy compound: `{ name, slug: 'owner--my-app' }` — server strips
+   *     the owner segment via parseOwnerProjectKey
+   *   - legacy suffix: `{ name, slug: 'my-app.symbo.ls' }` — stripped
+   *
+   * Post-§45 identity is `(ownerOrganization|ownerUser FK, key)`; two
+   * different owners can legitimately reuse the same bare slug.
+   *
+   * @param {object} projectData - { name, projectType, slug?, workspaceId?, ...content }
+   */
   async createProject (projectData) {
     this._requireReady('createProject')
     try {
@@ -36,12 +70,18 @@ export class ProjectService extends BaseService {
       })
 
       const queryString = queryParams.toString()
-      const url = `/projects${queryString ? `?${queryString}` : ''}`
 
-      const response = await this._request(url, {
-        method: 'GET',
-        methodName: 'getProjects'
-      })
+      // Inline both branches as literals so the drift analyzer can match
+      // them against GET /projects (it can't see through `_request(url, …)`).
+      const response = queryString
+        ? await this._request(`/projects?${queryString}`, {
+          method: 'GET',
+          methodName: 'getProjects'
+        })
+        : await this._request('/projects', {
+          method: 'GET',
+          methodName: 'getProjects'
+        })
       if (response.success) {
         return response
       }
@@ -73,12 +113,18 @@ export class ProjectService extends BaseService {
       })
 
       const queryString = queryParams.toString()
-      const url = `/projects/public${queryString ? `?${queryString}` : ''}`
 
-      const response = await this._request(url, {
-        method: 'GET',
-        methodName: 'listPublicProjects'
-      })
+      // Literals inlined at both branches so the drift analyzer can
+      // match /projects/public (it can't see through `_request(url, …)`).
+      const response = queryString
+        ? await this._request(`/projects/public?${queryString}`, {
+          method: 'GET',
+          methodName: 'listPublicProjects'
+        })
+        : await this._request('/projects/public', {
+          method: 'GET',
+          methodName: 'listPublicProjects'
+        })
       if (response.success) {
         return response.data
       }
@@ -141,14 +187,17 @@ export class ProjectService extends BaseService {
     }
   }
 
-  async getProjectByKey (key) {
+  /**
+   * Look up a project by its key. Pass `{owner, key}` to use the
+   * collision-safe 2-seg route when the owner is known.
+   *
+   * @param {string | { owner?: string, key: string }} keyOrSpec
+   */
+  async getProjectByKey (keyOrSpec) {
     this._requireReady('getProjectByKey')
-    if (!key) {
-      throw new Error('Project key is required')
-    }
+    const path = keyPath(keyOrSpec)
     try {
-      // Fetch project by key using new backend route
-      const response = await this._request(`/projects/key/${key}`, {
+      const response = await this._request(`/projects/key/${path}`, {
         method: 'GET',
         methodName: 'getProjectByKey'
       })
@@ -170,13 +219,16 @@ export class ProjectService extends BaseService {
   }
 
   /**
-   * Get current project data by key (no project ID required)
+   * Get current project data by key (no project ID required). Pass
+   * `{owner, key}` to use the collision-safe 2-seg route when owner is
+   * known.
+   *
+   * @param {string | { owner?: string, key: string }} keyOrSpec
+   * @param {object} [options]
    */
-  async getProjectDataByKey (key, options = {}) {
+  async getProjectDataByKey (keyOrSpec, options = {}) {
     this._requireReady('getProjectDataByKey')
-    if (!key) {
-      throw new Error('Project key is required')
-    }
+    const path = keyPath(keyOrSpec)
 
     const {
       branch = 'main',
@@ -193,7 +245,7 @@ export class ProjectService extends BaseService {
 
     try {
       const response = await this._request(
-        `/projects/key/${key}/data?${queryParams}`,
+        `/projects/key/${path}/data?${queryParams}`,
         {
           method: 'GET',
           methodName: 'getProjectDataByKey',
@@ -209,6 +261,153 @@ export class ProjectService extends BaseService {
     } catch (error) {
       throw new Error(`Failed to get project data by key: ${error.message}`, { cause: error })
     }
+  }
+
+  /**
+   * Anonymous read of a public project's current data for a given env.
+   * Server-side gated on `project.visibility === 'public'`. Returns null on
+   * 403/404 so callers can fall back to the authed route. Pass `{owner, key}`
+   * to use the collision-safe 2-seg route.
+   *
+   * Throws an error with `code: 'password_required'` (status 401) when the
+   * project is password-protected — preview surfaces use this to short-
+   * circuit the env-fallback chain and prompt for a password.
+   *
+   * @param {string | { owner?: string, key: string }} keyOrSpec
+   * @param {{ envKey: string }} opts
+   */
+  async getPublicProjectDataByKey (keyOrSpec, { envKey } = {}) {
+    if (!envKey) throw new Error('Environment key is required')
+    const path = keyPath(keyOrSpec)
+    try {
+      const response = await this._request(
+        `/projects/key/${path}/public/${encodeURIComponent(envKey)}/data`,
+        { method: 'GET', methodName: 'getPublicProjectDataByKey' }
+      )
+      if (response?.success) return response.data
+      return null
+    } catch (error) {
+      // BaseService wraps once (`Request failed: ...`) and attaches the
+      // inner Error as `cause`. The inner Error has `cause` = the JSON
+      // body (e.g. `{error: 'not_public', visibility: 'private'}`). HTTP
+      // status isn't attached anywhere — so we route by body.error.
+      const body = _readErrorBody(error)
+      const errCode = body?.error
+      if (errCode === 'password_required') {
+        const e = new Error(body.message || 'Project is password-protected')
+        e.code = 'password_required'
+        e.visibility = body.visibility || 'password-protected'
+        e.status = 401
+        throw e
+      }
+      // Visibility-bearing 403 (private) and the 404s (project_not_found,
+      // env_not_found) all mean "no public data here" — return null so
+      // the preview's env-fallback chain advances to the next env.
+      if (errCode === 'not_public' || errCode === 'project_not_found' || errCode === 'env_not_found') {
+        return null
+      }
+      throw new Error(
+        `Failed to get public project data by key: ${error.message}`,
+        { cause: error }
+      )
+    }
+  }
+
+  /**
+   * Anonymous probe of a project's effective visibility — `public`,
+   * `private`, or `password-protected`. Used by preview surfaces to
+   * decide between cross-domain login redirect (private) and an inline
+   * password card (password-protected) AFTER all env data fetches have
+   * failed. Returns null on 404 / network error so callers can degrade
+   * gracefully to the legacy "not published" message.
+   *
+   * @param {string | { owner?: string, key: string }} keyOrSpec
+   * @returns {Promise<'public' | 'private' | 'password-protected' | null>}
+   */
+  async getPublicProjectVisibility (keyOrSpec) {
+    const path = keyPath(keyOrSpec)
+    try {
+      const response = await this._request(
+        `/projects/key/${path}/public/visibility`,
+        { method: 'GET', methodName: 'getPublicProjectVisibility' }
+      )
+      return response?.data?.visibility || null
+    } catch (err) {
+      // Probe-only — degrade to null so callers fall back to the
+      // legacy "not published" message rather than blowing up. Log so
+      // backend outages don't go silent.
+      logger.warn('[ProjectService.getPublicProjectVisibility] probe failed:', err?.message || err)
+      return null
+    }
+  }
+
+  /**
+   * Anonymous unlock of a `password-protected` project's data for a
+   * given env. `password` is the SHA-256 hex digest of the user-typed
+   * value (matching how project-account.js stores it server-side).
+   * Returns null on invalid password / not-password-protected so the
+   * caller can re-prompt; throws on infrastructure errors only.
+   *
+   * @param {string | { owner?: string, key: string }} keyOrSpec
+   * @param {{ envKey: string, password: string }} opts
+   */
+  async unlockPublicProjectDataByKey (keyOrSpec, { envKey, password } = {}) {
+    if (!envKey) throw new Error('Environment key is required')
+    if (!password) throw new Error('Password is required')
+    const path = keyPath(keyOrSpec)
+    try {
+      const response = await this._request(
+        `/projects/key/${path}/public/${encodeURIComponent(envKey)}/unlock`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ password }),
+          methodName: 'unlockPublicProjectDataByKey'
+        }
+      )
+      if (response?.success) return response.data
+      return null
+    } catch (error) {
+      // Server reports `invalid_password` (403), `invalid_params` (400),
+      // and `not_password_protected` (400) for the user-recoverable
+      // states. Anything else is infrastructure — re-throw.
+      const body = _readErrorBody(error)
+      const errCode = body?.error
+      if (
+        errCode === 'invalid_password' ||
+        errCode === 'invalid_params' ||
+        errCode === 'not_password_protected'
+      ) {
+        return null
+      }
+      throw new Error(
+        `Failed to unlock public project data by key: ${error.message}`,
+        { cause: error }
+      )
+    }
+  }
+
+  /**
+   * Resolve a domain / hostname / appkey to `{owner, key}`. Used by mermaid
+   * edge + any client that needs the canonical `(owner, key)` pair from a
+   * raw hostname (e.g. `silverbreeze.silverbreeze-labs.symbo.ls`).
+   *
+   * @param {string} appkey - hostname, custom domain, or bare key
+   * @returns {Promise<{ owner: string | null, key: string }>}
+   */
+  async resolveAppkey (appkey) {
+    if (!appkey) throw new Error('appkey is required')
+    const response = await this._request(
+      `/projects/resolve/${encodeURIComponent(appkey)}`,
+      { method: 'GET', methodName: 'resolveAppkey' }
+    )
+    // Prefer the enveloped form so a `data: { owner: null, key: '…' }`
+    // response doesn't accidentally match the bare-shape branch and return
+    // the outer envelope instead.
+    if (response?.success && response.data) return response.data
+    if (response?.owner !== undefined || response?.key !== undefined) {
+      return response
+    }
+    throw new Error(response?.message || 'Failed to resolve appkey')
   }
 
   async updateProject (projectId, data) {
@@ -294,6 +493,23 @@ export class ProjectService extends BaseService {
     }
   }
 
+  // Single axis controlling both source read scope AND library consumption scope.
+  // Replaces setProjectAccess / setProjectVisibility.
+  async setProjectSourceAccess (projectId, sourceAccess) {
+    if (!projectId) throw new Error('Project ID is required')
+    if (!sourceAccess) throw new Error('sourceAccess is required')
+    if (!PROJECT_SOURCE_ACCESS.includes(sourceAccess)) {
+      throw new Error(
+        `Invalid sourceAccess: ${sourceAccess}. Must be one of: ${PROJECT_SOURCE_ACCESS.join(', ')}`
+      )
+    }
+    return this._call('setProjectSourceAccess', `/projects/${projectId}`, {
+      method: 'PATCH',
+      body: { sourceAccess },
+    })
+  }
+
+  /** @deprecated Use setProjectSourceAccess. Removed when server drops Project.access (Phase 3). */
   async setProjectAccess (projectId, access) {
     this._requireReady('setProjectAccess')
     if (!projectId) {
@@ -325,6 +541,7 @@ export class ProjectService extends BaseService {
     }
   }
 
+  /** @deprecated visibility moved to per-env (MODEL.md §Project). Kept for compatibility until Phase 3 removes it server-side. */
   async setProjectVisibility (projectId, visibility) {
     this._requireReady('setProjectVisibility')
     if (!projectId) {
@@ -425,6 +642,20 @@ export class ProjectService extends BaseService {
       method: 'POST',
       body: JSON.stringify({ targetType, userId, organizationId }),
       methodName: 'transferProjectOwnership'
+    })
+    if (response.success) return response.data
+    throw new Error(response.message)
+  }
+
+  async transferProjectToWorkspace (projectId, targetWorkspaceId) {
+    this._requireReady('transferProjectToWorkspace')
+    if (!projectId) throw new Error('Project ID is required')
+    if (!targetWorkspaceId) throw new Error('targetWorkspaceId is required')
+
+    const response = await this._request(`/projects/${projectId}/transfer-workspace`, {
+      method: 'POST',
+      body: JSON.stringify({ targetWorkspaceId }),
+      methodName: 'transferProjectToWorkspace'
     })
     if (response.success) return response.data
     throw new Error(response.message)
@@ -917,40 +1148,6 @@ export class ProjectService extends BaseService {
   }
 
   /**
-   * Activate multi-environment support for a project.
-   * Optional `force` will reconfigure DNS/TLS even if already active.
-   * Mirrors ProjectController.activateMultipleEnvironments.
-   */
-  async activateMultipleEnvironments (projectId, options = {}) {
-    this._requireReady('activateMultipleEnvironments')
-    if (!projectId) {
-      throw new Error('Project ID is required')
-    }
-
-    const { force = false, headers } = options
-
-    try {
-      const response = await this._request(`/projects/${projectId}/environments/activate`, {
-        method: 'POST',
-        body: JSON.stringify({ ...(force ? { force: true } : {}) }),
-        ...(headers ? { headers } : {}),
-        methodName: 'activateMultipleEnvironments'
-      })
-
-      if (response && response.success) {
-        return response.data
-      }
-
-      throw new Error(response.message)
-    } catch (error) {
-      throw new Error(
-        `Failed to activate multiple environments: ${error.message}`,
-        { cause: error }
-      )
-    }
-  }
-
-  /**
    * Create or update (upsert) an environment config for a project.
    * Mirrors ProjectController.upsertEnvironment.
    */
@@ -1349,14 +1546,20 @@ export class ProjectService extends BaseService {
     const queryString = new URLSearchParams({
       limit: limit.toString()
     }).toString()
-    const url = `/users/projects/recent${queryString ? `?${queryString}` : ''}`
 
     try {
-      const response = await this._request(url, {
-        method: 'GET',
-        ...(headers ? { headers } : {}),
-        methodName: 'getRecentProjects'
-      })
+      // Inline both branches so the analyzer matches /users/projects/recent.
+      const response = queryString
+        ? await this._request(`/users/projects/recent?${queryString}`, {
+          method: 'GET',
+          ...(headers ? { headers } : {}),
+          methodName: 'getRecentProjects'
+        })
+        : await this._request('/users/projects/recent', {
+          method: 'GET',
+          ...(headers ? { headers } : {}),
+          methodName: 'getRecentProjects'
+        })
 
       if (response.success) {
         // Map icon src similar to other project lists
@@ -1376,5 +1579,189 @@ export class ProjectService extends BaseService {
     } catch (error) {
       throw new Error(`Failed to get recent projects: ${error.message}`, { cause: error })
     }
+  }
+
+  // ==================== RESOURCE ENUMERATION ====================
+  //
+  // Read-only resource listings (components / functions / pages) for a
+  // given project. Two addressing modes — by numeric/ObjectId id, or by
+  // bare project key. The key-based routes are 1-seg on the server
+  // today; see 🤝 REQUEST → SERVER in NEEDED_FOR_SDK.md for the 2-seg
+  // follow-up (post-§45 collision safety).
+  //
+  // Response envelope follows the server convention:
+  //   { success: true, data: [ { id, name, ... } ], total? }
+  // Fails-soft to `{ items: [] }` on non-success so UIs don't crash when
+  // the server is briefly unreachable.
+
+  /**
+   * List all component resources for a project by id.
+   * @param {string} projectId
+   * @returns {Promise<{items: Array<object>, total?: number}>}
+   */
+  async getProjectComponents (projectId) {
+    this._requireReady('getProjectComponents')
+    if (!projectId) throw new Error('projectId is required')
+    const response = await this._request(
+      `/projects/${encodeURIComponent(projectId)}/resources/components`,
+      { method: 'GET', methodName: 'getProjectComponents' }
+    )
+    if (response?.success) return response
+    return { items: [] }
+  }
+
+  /**
+   * List all function resources for a project by id.
+   * @param {string} projectId
+   * @returns {Promise<{items: Array<object>, total?: number}>}
+   */
+  async getProjectFunctions (projectId) {
+    this._requireReady('getProjectFunctions')
+    if (!projectId) throw new Error('projectId is required')
+    const response = await this._request(
+      `/projects/${encodeURIComponent(projectId)}/resources/functions`,
+      { method: 'GET', methodName: 'getProjectFunctions' }
+    )
+    if (response?.success) return response
+    return { items: [] }
+  }
+
+  /**
+   * List all page resources for a project by id.
+   * @param {string} projectId
+   * @returns {Promise<{items: Array<object>, total?: number}>}
+   */
+  async getProjectPages (projectId) {
+    this._requireReady('getProjectPages')
+    if (!projectId) throw new Error('projectId is required')
+    const response = await this._request(
+      `/projects/${encodeURIComponent(projectId)}/resources/pages`,
+      { method: 'GET', methodName: 'getProjectPages' }
+    )
+    if (response?.success) return response
+    return { items: [] }
+  }
+
+  /**
+   * List all component resources for a project by key. Today the server
+   * only exposes the 1-seg variant; pass a bare key (string) or
+   * `{ key }` object. `{ owner, key }` is accepted for forward-compat
+   * but currently hits the 1-seg route (owner segment is a no-op).
+   * @param {string | { owner?: string, key: string }} projectKey
+   * @returns {Promise<{items: Array<object>, total?: number}>}
+   */
+  async getProjectComponentsByKey (projectKey) {
+    this._requireReady('getProjectComponentsByKey')
+    if (!projectKey) throw new Error('projectKey is required')
+    const response = await this._request(
+      `/projects/key/${keyPath(projectKey)}/resources/components`,
+      { method: 'GET', methodName: 'getProjectComponentsByKey' }
+    )
+    if (response?.success) return response
+    return { items: [] }
+  }
+
+  /**
+   * List all function resources for a project by key. See
+   * `getProjectComponentsByKey` for the key-shape contract.
+   * @param {string | { owner?: string, key: string }} projectKey
+   * @returns {Promise<{items: Array<object>, total?: number}>}
+   */
+  async getProjectFunctionsByKey (projectKey) {
+    this._requireReady('getProjectFunctionsByKey')
+    if (!projectKey) throw new Error('projectKey is required')
+    const response = await this._request(
+      `/projects/key/${keyPath(projectKey)}/resources/functions`,
+      { method: 'GET', methodName: 'getProjectFunctionsByKey' }
+    )
+    if (response?.success) return response
+    return { items: [] }
+  }
+
+  /**
+   * List all page resources for a project by key. See
+   * `getProjectComponentsByKey` for the key-shape contract.
+   * @param {string | { owner?: string, key: string }} projectKey
+   * @returns {Promise<{items: Array<object>, total?: number}>}
+   */
+  async getProjectPagesByKey (projectKey) {
+    this._requireReady('getProjectPagesByKey')
+    if (!projectKey) throw new Error('projectKey is required')
+    const response = await this._request(
+      `/projects/key/${keyPath(projectKey)}/resources/pages`,
+      { method: 'GET', methodName: 'getProjectPagesByKey' }
+    )
+    if (response?.success) return response
+    return { items: [] }
+  }
+
+  // ==================== OWNERSHIP (admin-only) ====================
+  //
+  // Global-admin-only endpoints for auditing + fixing project ownership.
+  // Surfaced on the SDK so internal admin UIs and ops scripts can hit
+  // them without hand-rolling fetches. All three reject with 403 for
+  // non-admins on the server side.
+
+  /**
+   * List projects with their ownership status. Admin-only on the server.
+   * Useful for finding orphaned projects (no owner) or auditing a specific
+   * owner's footprint.
+   *
+   * @param {{ hasOwner?: 'true' | 'false', search?: string, page?: number, limit?: number }} [params]
+   * @returns {Promise<{success: boolean, data: {items: Array<object>, total: number, page: number, limit: number}}>}
+   */
+  async listProjectOwnership (params = {}) {
+    this._requireReady('listProjectOwnership')
+    const qs = new URLSearchParams()
+    Object.keys(params).forEach((k) => {
+      if (params[k] != null) qs.append(k, String(params[k]))
+    })
+    const queryString = qs.toString()
+    const response = queryString
+      ? await this._request(`/projects/ownership?${queryString}`, {
+        method: 'GET',
+        methodName: 'listProjectOwnership'
+      })
+      : await this._request('/projects/ownership', {
+        method: 'GET',
+        methodName: 'listProjectOwnership'
+      })
+    if (response?.success) return response
+    return { success: false, data: { items: [], total: 0 } }
+  }
+
+  /**
+   * Assign a specific user as project owner. Admin-only on the server.
+   * If another owner exists they are downgraded to admin. Identifies the
+   * target project by id OR key, and the target user by id OR email.
+   *
+   * @param {{ projectId?: string, projectKey?: string, userId?: string, email?: string }} args
+   * @returns {Promise<object>} - server response envelope
+   */
+  async assignProjectOwner (args = {}) {
+    if (!args.projectId && !args.projectKey) {
+      throw new Error('projectId or projectKey is required')
+    }
+    if (!args.userId && !args.email) {
+      throw new Error('userId or email is required')
+    }
+    return this._call('assignProjectOwner', '/projects/ownership/assign', {
+      method: 'POST',
+      body: args
+    })
+  }
+
+  /**
+   * Bulk-promote the earliest-joined admin of each ownerless project to
+   * owner. Admin-only. Returns counts + per-project error list.
+   *
+   * @param {{ limit?: number, skipProjectIds?: Array<string> }} [args]
+   * @returns {Promise<{success: boolean, data: {processed: number, updated: number, skipped: number, errors: Array<object>}}>}
+   */
+  async autoAssignProjectOwners (args = {}) {
+    return this._call('autoAssignProjectOwners', '/projects/ownership/auto-assign', {
+      method: 'POST',
+      body: args
+    })
   }
 }

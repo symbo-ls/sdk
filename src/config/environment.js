@@ -1,5 +1,20 @@
-import { isDevelopment } from '@domql/utils'
+import { isDevelopment } from '@symbo.ls/utils'
+import { apiUrl as channelApiUrl, socketUrl as channelSocketUrl } from '@symbo.ls/channels'
 import { logger } from '../utils/logger.js'
+
+// URL fields (apiUrl/socketUrl) come from `@symbo.ls/channels` — single source
+// of truth across sdk, smbls, server, editor, workspace, platform. The
+// per-env blocks below carry only public, non-credential fields
+// (githubClientId, dnsWorkerUrl, grafanaAppName, typesenseCollectionName,
+// features).
+//
+// CREDENTIAL POLICY: this file ships in the published @symbo.ls/sdk package,
+// so it must contain ZERO secrets. Routes that need credentials go through
+// server middleware (server holds keys in .env):
+//   - Grafana Faro telemetry → POST ${apiUrl}/telemetry/faro
+//   - Typesense docs search  → GET  ${apiUrl}/search/docs
+// .env overrides are honored for self-hosted / dev scenarios but NEVER
+// hardcoded as fallbacks here.
 
 // Base configuration with defaults and environment-specific overrides
 const CONFIG = {
@@ -17,132 +32,102 @@ const CONFIG = {
     }
   },
 
-  // Environment-specific configurations
+  // Environment-specific configurations.
+  // socketUrl/apiUrl are NOT set here — they come from @symbo.ls/channels.
 
   local: {
-    // local
-    socketUrl: 'http://localhost:8080', // For socket api
-    apiUrl: 'http://localhost:8080', // For server api
     dnsWorkerUrl: 'https://dns.symbo.ls',
-    basedEnv: 'development', // For based api
-    basedProject: 'platform-v2-sm', // For based api
-    basedOrg: 'symbols', // For based api
-    githubClientId: 'Ov23liAFrsR0StbAO6PO', // For github api
-    grafanaUrl: '', // For grafana tracing
+    githubClientId: 'Ov23liAFrsR0StbAO6PO',
     grafanaAppName: 'Symbols Localhost',
-    // Environment-specific feature toggles (override common)
     features: {
-      // Disable tracking by default on localhost/dev machines
       trackingEnabled: false,
-      // Enable beta features in local dev
       betaFeatures: true,
-      // Preserve common defaults explicitly for local
       newUserOnboarding: true
     },
-    typesenseCollectionName: 'docs',
-    typesenseApiKey: 'vZya3L2zpq8L6iI5WWMUZJZABvT63VDb',
-    typesenseHost: 'localhost',
-    typesensePort: '8108',
-    typesenseProtocol: 'http'
+    typesenseCollectionName: 'docs'
   },
   development: {
-    socketUrl: 'https://api.dev.symbols.app',
-    apiUrl: 'https://api.dev.symbols.app',
     dnsWorkerUrl: 'https://dns.symbo.ls',
     githubClientId: 'Ov23liHxyWFBxS8f1gnF',
-    grafanaUrl:
-      'https://faro-collector-prod-us-east-0.grafana.net/collect/7a3ba473cee2025c68513667024316b8', // For grafana tracing
     grafanaAppName: 'Symbols Dev',
-    typesenseCollectionName: 'docs',
-    typesenseApiKey: 'awmcVpbWqZi9IUgmvslp1C5LKDU8tMjA',
-    typesenseHost: 'tl2qpnwxev4cjm36p-1.a1.typesense.net',
-    typesensePort: '443',
-    typesenseProtocol: 'https'
+    typesenseCollectionName: 'docs'
   },
-  testing: {
-    socketUrl: 'https://api.test.symbols.app',
-    apiUrl: 'https://api.test.symbols.app',
-    basedEnv: 'testing',
-    basedProject: 'platform-v2-sm',
-    basedOrg: 'symbols',
+  test: {
     githubClientId: 'Ov23liHxyWFBxS8f1gnF',
-    grafanaUrl: '', // For grafana tracing
     grafanaAppName: 'Symbols Test',
-    typesenseCollectionName: 'docs',
-    typesenseApiKey: 'awmcVpbWqZi9IUgmvslp1C5LKDU8tMjA',
-    typesenseHost: 'tl2qpnwxev4cjm36p-1.a1.typesense.net',
-    typesensePort: '443',
-    typesenseProtocol: 'https'
+    typesenseCollectionName: 'docs'
+  },
+  next: {
+    githubClientId: 'Ov23liHxyWFBxS8f1gnF',
+    grafanaAppName: 'Symbols Next',
+    typesenseCollectionName: 'docs'
   },
   upcoming: {
-    socketUrl: 'https://api.upcoming.symbols.app',
-    apiUrl: 'https://api.upcoming.symbols.app',
     githubClientId: 'Ov23liWF7NvdZ056RV5J',
-    grafanaUrl: '', // For grafana tracing
     grafanaAppName: 'Symbols Upcoming',
-    typesenseCollectionName: 'docs',
-    typesenseApiKey: 'awmcVpbWqZi9IUgmvslp1C5LKDU8tMjA',
-    typesenseHost: 'tl2qpnwxev4cjm36p-1.a1.typesense.net',
-    typesensePort: '443',
-    typesenseProtocol: 'https'
+    typesenseCollectionName: 'docs'
   },
   staging: {
-    socketUrl: 'https://api.staging.symbols.app',
-    apiUrl: 'https://api.staging.symbols.app',
-    basedEnv: 'staging',
-    basedProject: 'platform-v2-sm',
-    basedOrg: 'symbols',
     githubClientId: 'Ov23ligwZDQVD0VfuWNa',
-    grafanaUrl: '', // For grafana tracing
     grafanaAppName: 'Symbols Staging',
-    typesenseCollectionName: 'docs',
-    typesenseApiKey: 'awmcVpbWqZi9IUgmvslp1C5LKDU8tMjA',
-    typesenseHost: 'tl2qpnwxev4cjm36p-1.a1.typesense.net',
-    typesensePort: '443',
-    typesenseProtocol: 'https'
+    typesenseCollectionName: 'docs'
   },
   preview: {
-    socketUrl: 'https://api.symbols.app',
-    apiUrl: 'https://api.symbols.app',
     dnsWorkerUrl: 'https://dns.symbo.ls',
-    basedEnv: 'production',
-    basedProject: 'platform-v2-sm',
-    basedOrg: 'symbols',
     githubClientId: 'Ov23liFAlOEIXtX3dBtR',
-    grafanaUrl:
-      'https://faro-collector-prod-us-east-0.grafana.net/collect/5c1089f3c3eea4ec5658e05c3f53baae', // For grafana tracing
     grafanaAppName: 'Symbols Preview',
-    typesenseCollectionName: 'docs',
-    typesenseApiKey: 'awmcVpbWqZi9IUgmvslp1C5LKDU8tMjA',
-    typesenseHost: 'tl2qpnwxev4cjm36p-1.a1.typesense.net',
-    typesensePort: '443',
-    typesenseProtocol: 'https'
+    typesenseCollectionName: 'docs'
   },
   production: {
-    socketUrl: 'https://api.symbols.app',
-    apiUrl: 'https://api.symbols.app',
     dnsWorkerUrl: 'https://dns.symbo.ls',
-    basedEnv: 'production',
-    basedProject: 'platform-v2-sm',
-    basedOrg: 'symbols',
     githubClientId: 'Ov23liFAlOEIXtX3dBtR',
-    grafanaUrl:
-      'https://faro-collector-prod-us-east-0.grafana.net/collect/5c1089f3c3eea4ec5658e05c3f53baae', // For grafana tracing
     grafanaAppName: 'Symbols',
-    typesenseCollectionName: 'docs',
-    typesenseApiKey: 'awmcVpbWqZi9IUgmvslp1C5LKDU8tMjA',
-    typesenseHost: 'tl2qpnwxev4cjm36p-1.a1.typesense.net',
-    typesensePort: '443',
-    typesenseProtocol: 'https'
+    typesenseCollectionName: 'docs'
   }
 }
 
-// Determine environment with error handling
+// Back-compat alias: the historical `testing` env key now maps to the `test`
+// channel. Existing SYMBOLS_APP_ENV=testing keeps working; new code should
+// use `test`.
+CONFIG.testing = CONFIG.test
+
+// Parse apiUrl into typesense-docsearch.js node-config fields. The proxy
+// lives at `${apiUrl}/search/docs/multi_search`; setting
+// `nodes: [{ host, port, protocol, path: '/search/docs' }]` makes the
+// Typesense client POST there. Direct-access env-var overrides
+// (TYPESENSE_*) win when set, for self-hosted scenarios.
+const parseSearchEndpoint = (apiUrl) => {
+  let host = ''
+  let port = ''
+  let protocol = ''
+  try {
+    const u = new URL(apiUrl)
+    host = u.hostname
+    protocol = u.protocol.replace(':', '')
+    port = u.port || (protocol === 'https' ? '443' : '80')
+  } catch (_e) {
+    // apiUrl unparseable — leave fields empty; consumer must override
+  }
+  return {
+    typesenseSearchUrl: `${apiUrl}/search/docs/multi_search`,
+    typesenseSearchPath: '/search/docs',
+    typesenseHost: process.env.TYPESENSE_HOST || host,
+    typesensePort: process.env.TYPESENSE_PORT || port,
+    typesenseProtocol: process.env.TYPESENSE_PROTOCOL || protocol,
+    // Placeholder string sent to the proxy; the server replaces it with
+    // the real key from its .env. Consumers using direct Typesense access
+    // override via TYPESENSE_API_KEY env.
+    typesenseApiKey: process.env.TYPESENSE_API_KEY || 'proxy',
+  }
+}
+
+// Determine environment with error handling. Default matches
+// @symbo.ls/channels' `defaultChannel` so SDK config + channel
+// resolution land on the same env when nothing is explicitly set.
 const getEnvironment = () => {
   // @preserve-env
-  const env = process.env.SYMBOLS_APP_ENV || process.env.NODE_ENV || 'development'
+  const env = process.env.SYMBOLS_APP_ENV || process.env.NODE_ENV || 'next'
 
-  // Validate that the environment exists in our config
   if (!CONFIG[env]) {
     throw new Error(`Unknown environment "${env}"`)
   }
@@ -156,6 +141,12 @@ export const getConfig = () => {
     const env = getEnvironment()
     const envConfig = { ...CONFIG.common, ...CONFIG[env] }
 
+    // Channel name maps from env. The historical `testing` env name resolves
+    // to the canonical `test` channel.
+    const channelName = env === 'testing' ? 'test' : env
+
+    const apiUrl = process.env.SYMBOLS_APP_API_URL || channelApiUrl(channelName)
+
     // Create the final config with environment variable overrides
     const finalConfig = {
       ...envConfig,
@@ -164,32 +155,40 @@ export const getConfig = () => {
         ...(CONFIG.common.features || {}),
         ...((CONFIG[env] && CONFIG[env].features) || {})
       },
-      socketUrl: process.env.SYMBOLS_APP_SOCKET_URL || envConfig.socketUrl,
-      apiUrl: process.env.SYMBOLS_APP_API_URL || envConfig.apiUrl,
-      basedEnv: process.env.SYMBOLS_APP_BASED_ENV || envConfig.basedEnv,
-      basedProject:
-        process.env.SYMBOLS_APP_BASED_PROJECT || envConfig.basedProject,
-      basedOrg: process.env.SYMBOLS_APP_BASED_ORG || envConfig.basedOrg,
+      // URLs come from @symbo.ls/channels (single source of truth across
+      // sdk, smbls, server, editor, workspace, platform). SYMBOLS_API_URL /
+      // SYMBOLS_SOCKET_URL env-var overrides honored inside the helpers.
+      socketUrl: process.env.SYMBOLS_APP_SOCKET_URL || channelSocketUrl(channelName),
+      apiUrl,
       githubClientId:
         process.env.SYMBOLS_APP_GITHUB_CLIENT_ID || envConfig.githubClientId,
-      grafanaUrl: process.env.SYMBOLS_APP_GRAFANA_URL || envConfig.grafanaUrl,
+      // Grafana Faro telemetry: SDK posts events to the server proxy at
+      // ${apiUrl}/telemetry/faro. The server holds the actual collector URL
+      // + token in its .env (GRAFANA_FARO_URL). Direct override honored for
+      // self-hosted/dev scenarios via SYMBOLS_APP_GRAFANA_URL.
+      grafanaUrl: process.env.SYMBOLS_APP_GRAFANA_URL || `${apiUrl}/telemetry/faro`,
       dnsWorkerUrl: process.env.SYMBOLS_DNS_WORKER_URL || envConfig.dnsWorkerUrl,
-      dnsApiKey: process.env.SYMBOLS_DNS_API_KEY || envConfig.dnsApiKey,
+      dnsApiKey: process.env.SYMBOLS_DNS_API_KEY || '',
+      // Typesense docs search: SDK calls the server proxy at
+      // ${apiUrl}/search/docs/multi_search. Server holds TYPESENSE_API_KEY +
+      // TYPESENSE_HOST in its .env. Direct Typesense access still possible
+      // via env vars for self-hosted/dev (e.g. local docker). Pre-parsed
+      // host/port/protocol/path fields are exported so consumers can plug
+      // them straight into typesense-docsearch.js's `nodes[0]` config.
+      ...parseSearchEndpoint(apiUrl),
       typesenseCollectionName:
         process.env.TYPESENSE_COLLECTION_NAME ||
         envConfig.typesenseCollectionName,
-      typesenseApiKey:
-        process.env.TYPESENSE_API_KEY || envConfig.typesenseApiKey,
-      typesenseHost: process.env.TYPESENSE_HOST || envConfig.typesenseHost,
-      typesensePort: process.env.TYPESENSE_PORT || envConfig.typesensePort,
-      typesenseProtocol:
-        process.env.TYPESENSE_PROTOCOL || envConfig.typesenseProtocol,
+      channel: channelName,
       isDevelopment: isDevelopment(env),
-      isTesting: env === 'testing',
+      isTest: env === 'test' || env === 'testing',
+      // Back-compat — historical consumers branch on `isTesting`. Mirror
+      // `isTest` so the rename doesn't silently produce `undefined`. Drop
+      // once all consumers land on `isTest`.
+      isTesting: env === 'test' || env === 'testing',
       isStaging: env === 'staging',
       isPreview: env === 'preview',
       isProduction: env === 'production'
-      // Store all environment variables for potential future use
     }
 
     // Validate critical configuration values

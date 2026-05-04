@@ -1,171 +1,102 @@
-I'll help write the SDK usage documentation focusing on the key services and their methods.
+# SDK Usage
 
-```markdown:packages/sdk/src/docs/sdk_usage.md
-# SDK Usage Documentation
+This document is a thin entry point. The full reference now lives elsewhere:
 
-## Table of Contents
-- [Installation](#installation)
-- [Initialization](#initialization)
-- [Service Methods](#service-methods)
-  - [Auth Service](#auth-service)
-  - [Symstory Service](#symstory-service)
-- [Advanced Usage](#advanced-usage)
+- [`README.md`](../../README.md) — installation, every service, examples
+- [`SDK_FOR_MCP.md`](../../SDK_FOR_MCP.md) — full machine-readable surface
+  for MCP servers and automation agents
+- [`FeatureFlags.md`](./FeatureFlags.md) — feature-flag scenarios
 
-## Installation
+## Quick start
 
-```bash
-npm install @symbo.ls/sdk
-```
-
-## Initialization
-
-```javascript
+```js
 import { SDK } from '@symbo.ls/sdk'
 
-// Initialize with all services (default)
 const sdk = new SDK({
-  appKey: 'your-app-key',
-  authToken: 'optional-auth-token'
+  apiUrl: 'https://next.api.symbols.app',
+  socketUrl: 'https://next.api.symbols.app',
+  debug: false
 })
 
-// Initialize with specific services only
-const sdk = new SDK({
-  appKey: 'your-app-key',
-  services: ['auth', 'symstory']  // Only include auth and symstory services
+await sdk.initialize({
+  authToken: 'your-jwt-token',
+  state: rootState // required only if you call sdk.getService('collab').connect()
 })
-
-// Initialize the SDK
-await sdk.initialize()
 ```
 
-## Service Methods
+## Service access
 
-The SDK provides direct access to service methods through proxy methods. You can call service methods directly on the SDK instance without explicitly accessing the service object.
+Two equivalent patterns:
 
-### Auth Service
-
-Authentication and authorization methods:
-
-```javascript
-// Login
-const response = await sdk.login('email@example.com', 'password')
-
-// Register
-await sdk.register({
-  email: 'email@example.com',
-  password: 'password',
-  name: 'User Name'
-})
-
-// Logout
-await sdk.logout()
-
-// Project Members Management
-await sdk.getProjectMembers('project-id')
-await sdk.inviteMember('project-id', 'email@example.com', 'editor', 'Member Name')
-await sdk.updateMemberRole('project-id', 'user-id', 'admin')
-
-// Permission Checking
-const hasPermission = sdk.hasPermission('project-id', 'edit:content')
-
-// Project Access
-const access = await sdk.getProjectAccess('project-id')
-
-// Password Management
-await sdk.requestPasswordReset('email@example.com')
-await sdk.confirmPasswordReset('reset-token', 'new-password')
+```js
+sdk.getService('project').getProject(id)   // explicit
+sdk.getProject(id)                          // proxy method
 ```
 
-### Symstory Service
+The proxy table lives in [`src/utils/services.js`](../utils/services.js) — it
+maps every public method to its owning service.
 
-Data management and versioning:
+## Available services
 
-```javascript
-// Data Operations
-const data = await sdk.getData({
-  $find: {
-    $traverse: 'children',
-    $filter: [/* your filters */]
-  }
-}, {
-  branch: 'main',
-  version: 'optional-version',
-  bypassCache: false
-})
+`auth`, `collab`, `project`, `plan`, `subscription`, `file`, `payment`,
+`dns`, `branch`, `pullRequest`, `admin`, `screenshot`, `tracking`,
+`waitlist`, `metrics`, `integration`, `featureFlag`, `organization`,
+`workspace`, `workspaceData`, `kv`, `allocationRule`, `sharedAsset`,
+`credits`.
 
-// Item Operations
-await sdk.addItem('content', {
-  key: 'page-1',
-  value: { title: 'Page 1' },
-  schema: { type: 'page' }
-})
+See [`README.md`](../../README.md#services) for per-service method lists or
+[`SDK_FOR_MCP.md`](../../SDK_FOR_MCP.md) for the full canonical reference.
 
-await sdk.updateItem('content', {
-  key: 'page-1',
-  value: { title: 'Updated Page 1' }
-})
+## Project data versioning
 
-await sdk.deleteItem('content', 'page-1')
+Project data mutations (formerly `Symstory`) live on `ProjectService`:
 
-// Branch Management
-const branches = await sdk.getBranches()
-await sdk.createBranch('feature-branch')
-await sdk.mergeBranch('feature-branch')
+```js
+await sdk.applyProjectChanges(projectId, [
+  ['update', ['components', 'Button'], { color: 'blue' }],
+  ['delete', ['pages', 'old']]
+], { message: 'Update button', type: 'patch' })
 
-// Version Management
-await sdk.restoreVersion('version-id')
+await sdk.getProjectData(projectId, options)
+await sdk.getProjectVersions(projectId, options)
+await sdk.restoreProjectVersion(projectId, version, options)
+await sdk.updateProjectItem(projectId, path, value, options)
+await sdk.deleteProjectItem(projectId, path, options)
+await sdk.setProjectValue(projectId, path, value, options)
+await sdk.addProjectItems(projectId, items, options)
+await sdk.getProjectItemByPath(projectId, path, options)
 ```
 
-## Advanced Usage
+## Branches
 
-### Error Handling
+```js
+await sdk.listBranches(projectId)
+await sdk.createBranch(projectId, branchData)
+await sdk.mergeBranch(projectId, branchName, mergeData)
+await sdk.publishVersion(projectId, publishData)
+```
 
-All SDK methods throw errors with descriptive messages. It's recommended to use try-catch blocks:
+Full branch helpers — `createFeatureBranch`, `createHotfixBranch`,
+`previewMerge`, `commitMerge`, `getBranchStatus`, etc. — are documented
+in [`README.md#branch-service`](../../README.md#branch-service).
 
-```javascript
+## Status & context
+
+```js
+sdk.isReady()                      // boolean
+sdk.getStatus()                    // { ready, services, context }
+sdk.updateContext({ authToken })   // propagates to every service
+await sdk.destroy()                // tear down
+```
+
+## Error handling
+
+All methods throw descriptive errors. Wrap calls accordingly:
+
+```js
 try {
-  await sdk.addItem('content', {
-    key: 'new-page',
-    value: { title: 'New Page' }
-  })
+  await sdk.applyProjectChanges(projectId, changes)
 } catch (error) {
-  console.error('Failed to add item:', error.message)
+  console.error('Apply failed:', error.message, error.cause)
 }
-```
-
-### Caching
-
-The Symstory service includes built-in caching for getData operations:
-
-```javascript
-// Using cache (default)
-const data = await sdk.getData(query)
-
-// Bypass cache
-const freshData = await sdk.getData(query, { bypassCache: true })
-
-// Clear cache
-sdk.clearCache()
-```
-
-### Service Status
-
-You can check the status of services:
-
-```javascript
-// Check if SDK is ready
-const isReady = sdk.isReady()
-
-// Get detailed status
-const status = sdk.getStatus()
-```
-
-### Context Updates
-
-The SDK maintains a context that can be updated:
-
-```javascript
-sdk.updateContext({
-  authToken: 'new-token'
-})
 ```

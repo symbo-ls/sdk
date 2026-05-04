@@ -1,4 +1,5 @@
 import { BaseService } from './BaseService.js'
+import { projectKeyPath as screenshotKeyPath } from '../utils/projectKeyPath.js'
 
 export class ScreenshotService extends BaseService {
   constructor (config) {
@@ -35,7 +36,7 @@ export class ScreenshotService extends BaseService {
     if (offset != null) {qs.set('offset', String(offset))}
     try {
       const response = await this._request(
-        `/screenshots/projects/${encodeURIComponent(projectKey)}${qs.toString() ? `?${qs.toString()}` : ''}`,
+        `/screenshots/projects/${screenshotKeyPath(projectKey)}${qs.toString() ? `?${qs.toString()}` : ''}`,
         { method: 'GET', methodName: 'getProjectScreenshots' }
       )
       if (response.success) {return response}
@@ -50,7 +51,7 @@ export class ScreenshotService extends BaseService {
     if (!projectKey) {throw new Error('projectKey is required')}
     try {
       const response = await this._request(
-        `/screenshots/projects/${encodeURIComponent(projectKey)}/reprocess`,
+        `/screenshots/projects/${screenshotKeyPath(projectKey)}/reprocess`,
         { method: 'POST', body: JSON.stringify(body), methodName: 'reprocessProjectScreenshots' }
       )
       if (response.success) {return response}
@@ -60,12 +61,32 @@ export class ScreenshotService extends BaseService {
     }
   }
 
+  /**
+   * Recreate screenshots for a project. Smart delta by default; pass
+   * `force: true` to re-render everything. Server-side this enqueues via
+   * BullMQ so the call returns as soon as jobs are queued.
+   *
+   * Body fields:
+   *   - `environment`: 'development' | 'staging' | 'production' (default production).
+   *     Screenshots are captured per-environment — dev/staging/prod don't
+   *     overwrite each other. Only `production` updates `project.thumbnail`.
+   *   - `process_pages` / `process_components` / `process_descriptions`: booleans
+   *   - `force`: boolean — bypass the delta check
+   *   - `priority`: number (default 5)
+   *   - `only_one` + `page_path` | `page_key` | `component_key` | `screenshot_id`: target a single shot
+   *   - `prefer`: 'auto' | 'page' | 'component'
+   *
+   * Note: normal editor saves + publishes already auto-trigger a 15-min
+   * debounced refresh via the server's `scheduleDebouncedRefresh` hook
+   * (dev on save, stag/prod on publish). Only call this directly when you
+   * need an immediate capture or a force-all refresh.
+   */
   async recreateProjectScreenshots (projectKey, body = {}) {
     this._requireReady('recreateProjectScreenshots')
     if (!projectKey) {throw new Error('projectKey is required')}
     try {
       const response = await this._request(
-        `/screenshots/projects/${encodeURIComponent(projectKey)}/recreate`,
+        `/screenshots/projects/${screenshotKeyPath(projectKey)}/recreate`,
         { method: 'POST', body: JSON.stringify(body), methodName: 'recreateProjectScreenshots' }
       )
       if (response.success) {return response}
@@ -75,12 +96,24 @@ export class ScreenshotService extends BaseService {
     }
   }
 
+  /**
+   * Convenience wrapper: force-refresh screenshots for a specific
+   * environment. Equivalent to `recreateProjectScreenshots(projectKey,
+   * { environment, force: true })`.
+   */
+  async refreshForEnvironment (projectKey, environment = 'production', extra = {}) {
+    if (!['development', 'staging', 'production'].includes(environment)) {
+      throw new Error(`environment must be development | staging | production, got ${environment}`)
+    }
+    return this.recreateProjectScreenshots(projectKey, { environment, force: true, ...extra })
+  }
+
   async deleteProjectScreenshots (projectKey) {
     this._requireReady('deleteProjectScreenshots')
     if (!projectKey) {throw new Error('projectKey is required')}
     try {
       const response = await this._request(
-        `/screenshots/projects/${encodeURIComponent(projectKey)}`,
+        `/screenshots/projects/${screenshotKeyPath(projectKey)}`,
         { method: 'DELETE', methodName: 'deleteProjectScreenshots' }
       )
       if (response.success) {return response}
@@ -100,7 +133,7 @@ export class ScreenshotService extends BaseService {
     if (includeData) {qs.set('include_data', 'true')}
     try {
       const response = await this._request(
-        `/screenshots/projects/${encodeURIComponent(projectKey)}/thumbnail/candidate${qs.toString() ? `?${qs.toString()}` : ''}`,
+        `/screenshots/projects/${screenshotKeyPath(projectKey)}/thumbnail/candidate${qs.toString() ? `?${qs.toString()}` : ''}`,
         { method: 'GET', methodName: 'getThumbnailCandidate' }
       )
       if (response.success) {return response}
@@ -115,7 +148,7 @@ export class ScreenshotService extends BaseService {
     if (!projectKey) {throw new Error('projectKey is required')}
     try {
       const response = await this._request(
-        `/screenshots/projects/${encodeURIComponent(projectKey)}/thumbnail`,
+        `/screenshots/projects/${screenshotKeyPath(projectKey)}/thumbnail`,
         { method: 'POST', body: JSON.stringify(body), methodName: 'updateProjectThumbnail' }
       )
       if (response.success) {return response}
@@ -164,12 +197,16 @@ export class ScreenshotService extends BaseService {
       throw new Error("type must be 'component' or 'page'")
     }
     if (!key) {throw new Error('key is required')}
-    const qs = new URLSearchParams()
-    if (format) {qs.set('format', format)}
-    const sub = type === 'component' ? 'components' : 'pages'
+    const query = format ? `?${new URLSearchParams({ format }).toString()}` : ''
     try {
+      if (type === 'component') {
+        return await this._request(
+          `/screenshots/projects/${screenshotKeyPath(projectKey)}/components/${encodeURIComponent(key)}${query}`,
+          { method: 'GET', methodName: 'getScreenshotByKey' }
+        )
+      }
       return await this._request(
-        `/screenshots/projects/${encodeURIComponent(projectKey)}/${sub}/${encodeURIComponent(key)}${qs.toString() ? `?${qs.toString()}` : ''}`,
+        `/screenshots/projects/${screenshotKeyPath(projectKey)}/pages/${encodeURIComponent(key)}${query}`,
         { method: 'GET', methodName: 'getScreenshotByKey' }
       )
     } catch (error) {
@@ -217,14 +254,36 @@ export class ScreenshotService extends BaseService {
       }
     } = options
 
+    // Debounce key: stringify `{owner, key}` so two callers targeting the
+    // same project (regardless of spec shape) share the debounce/inflight
+    // entry. Bare-string keys stringify to themselves.
+    // Build as `owner/key` only when owner is present so that `{ key: 'x' }`
+    // and `'x'` both produce `"x"` and share the same entry.
+    let debounceKey
+    if (projectKey && typeof projectKey === 'object') {
+      if (!projectKey.key) {
+        throw new Error('refreshThumbnail: projectKey object must include a `key` property')
+      }
+      debounceKey = projectKey.owner
+        ? `${projectKey.owner}/${projectKey.key}`
+        : projectKey.key
+    } else {
+      debounceKey = String(projectKey)
+    }
+
+    // Return existing inflight promise if one is already running for this key
+    const inflight = this._inflightRefreshes.get(debounceKey)
+    if (inflight) { return inflight }
+
     // Clear existing debounce timer if present
-    const existingTimer = this._debounceTimers.get(projectKey)
+    const existingTimer = this._debounceTimers.get(debounceKey)
     if (existingTimer) {
       clearTimeout(existingTimer)
     }
 
-    // Wrap execution in a promise we store, so callers can await the outcome
-    const executionPromise = await new Promise(resolve => {
+    // Create promise without awaiting so it can be stored immediately;
+    // the timer callback's finally block cleans up on completion.
+    const executionPromise = new Promise(resolve => {
       const timer = setTimeout(async () => {
         try {
           // Step 1: queue screenshot recreation (non-blocking server-side)
@@ -240,15 +299,15 @@ export class ScreenshotService extends BaseService {
           // Resolve with error object but do not throw to avoid unhandled rejections
           resolve({ success: false, error: e?.message || String(e) })
         } finally {
-          this._debounceTimers.delete(projectKey)
-          this._inflightRefreshes.delete(projectKey)
+          this._debounceTimers.delete(debounceKey)
+          this._inflightRefreshes.delete(debounceKey)
         }
       }, debounceMs)
 
-      this._debounceTimers.set(projectKey, timer)
+      this._debounceTimers.set(debounceKey, timer)
     })
 
-    this._inflightRefreshes.set(projectKey, executionPromise)
+    this._inflightRefreshes.set(debounceKey, executionPromise)
     return executionPromise
   }
 }

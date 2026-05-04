@@ -49,22 +49,56 @@ Contact the SDET team for creds.
 
 ### Test Execution
 
-To run the all tests simply type `npm run test:all`.
-To run a single test use `npm run test:specific --testname=name-of-test`
+Run all tests:
+
+```sh
+npm run test:all
+```
+
+Run a focused suite (one of the categorized scripts in `package.json`):
+
+```sh
+npm run test:smoke
+npm run test:auth
+npm run test:branch
+npm run test:dataset
+npm run test:external
+npm run test:member
+npm run test:password
+npm run test:project
+npm run test:get-project
+npm run test:update-project
+npm run test:favorite-project
+npm run test:collab
+npm run test:user
+npm run test:unit-all   # SDK unit tests under src/services/tests/
+```
+
+Each script wraps `tape integration-tests/index.js integration-tests/<dir>/*.test.js | tap-spec`.
+Use `tape -p '*pattern*'` ad-hoc when you need to filter by test name.
 
 ### Environments
-Multiple environments are present in which the tests may be run:
+
+Channel resolution is shared with the rest of the platform via
+`@symbo.ls/channels`. Recognized values for `SYMBOLS_APP_ENV`:
+
+- `local`
 - `development`
-- `testing`
+- `next` (default channel — points at `https://next.api.symbols.app`)
+- `test` (alias `testing` — points at `https://test.api.symbols.app`)
+- `upcoming`
 - `staging`
+- `preview`
 - `production`
 
-Currently, smoke tests run after every deployment to one of these environments. When executed locally, the SDK automation is run by default in the `testing` environment.
+Locally the SDK integration tests target the `test` channel
+(`SYMBOLS_APP_ENV=test`). CI smoke tests run after every deployment to one
+of these environments.
 
 ### Conditional Logic for Test Execution in the Environments
-base.js contains helper tools to interrogate the current environment:
+`base.js` contains helper tools to interrogate the current environment:
 - `base.isDevelopment()`
-- `base.isTesting()`
+- `base.isTesting()` — true on `test`/`testing`
 - `base.isStaging()`
 - `base.isProduction()`
 

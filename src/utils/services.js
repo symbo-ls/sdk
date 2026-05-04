@@ -37,11 +37,25 @@ export const SERVICE_METHODS = {
   requestPasswordChange: 'auth',
   confirmPasswordChange: 'auth',
   getMe: 'auth',
+  updateMe: 'auth',
+  getPermissions: 'auth',
+  getSession: 'auth',
+  onAuthStateChange: 'auth',
   getTokenDebugInfo: 'auth',
 
   getMyProjectRoleByKey: 'auth',
   getProjectRoleWithFallback: 'auth',
   getProjectRoleByKeyWithFallback: 'auth',
+
+  // Cross-org notifications + projects + memberships (NEEDED_FOR_INTRANET §I8/§I9/§I10)
+  getMyOrgNotifications: 'auth',
+  getMyFreebusy: 'auth',
+  getMyProjects: 'auth',
+  getMyTeams: 'auth',
+  getMyOrgMemberships: 'auth',
+  getOrgMemberRoles: 'auth',
+  resendVerification: 'auth',
+  verifyEmail: 'auth',
 
   // User methods
   getUserProfile: 'auth',
@@ -56,6 +70,9 @@ export const SERVICE_METHODS = {
   getProject: 'project',
   getProjectByKey: 'project',
   getProjectDataByKey: 'project',
+  getPublicProjectDataByKey: 'project',
+  getPublicProjectVisibility: 'project',
+  unlockPublicProjectDataByKey: 'project',
   getPublicProject: 'project',
   listPublicProjects: 'project',
   listProjects: 'project',
@@ -71,7 +88,6 @@ export const SERVICE_METHODS = {
   getProjectRolePermissionsConfig: 'project',
   updateProjectRolePermissionsConfig: 'project',
   listEnvironments: 'project',
-  activateMultipleEnvironments: 'project',
   upsertEnvironment: 'project',
   updateEnvironment: 'project',
   publishToEnvironment: 'project',
@@ -335,6 +351,7 @@ export const SERVICE_METHODS = {
   // Organization methods
   createOrganization: 'organization',
   listOrganizations: 'organization',
+  checkOrganizationSlug: 'organization',
   getOrganization: 'organization',
   updateOrganization: 'organization',
   transferOrgOwnership: 'organization',
@@ -355,6 +372,13 @@ export const SERVICE_METHODS = {
   listOrgInvitations: 'organization',
   revokeOrgInvitation: 'organization',
   acceptOrgInvitation: 'organization',
+  // Team-scoped invitations (Phase B). `inviteToTeam` aliases
+  // `createTeamInvitation` so DOMQL call sites read clearly.
+  listTeamInvitations: 'organization',
+  createTeamInvitation: 'organization',
+  inviteToTeam: 'organization',
+  revokeTeamInvitation: 'organization',
+  acceptTeamInvitation: 'organization',
   getOrgProjectPermissions: 'organization',
   updateOrgProjectPermissions: 'organization',
   listTeamAccess: 'organization',
@@ -362,5 +386,60 @@ export const SERVICE_METHODS = {
   updateTeamAccess: 'organization',
   revokeTeamAccess: 'organization',
   createOrgProject: 'organization',
-  adminListOrganizations: 'organization'
+  adminListOrganizations: 'organization',
+  getCreditPool: 'organization',
+  updateCreditPool: 'organization',
+  getSso: 'organization',
+  updateSso: 'organization',
+  getScim: 'organization',
+  updateScim: 'organization',
+
+  createWorkspace: 'workspace',
+  listWorkspaces: 'workspace',
+  getWorkspace: 'workspace',
+  updateWorkspace: 'workspace',
+  deleteWorkspace: 'workspace',
+  listWorkspaceMembers: 'workspace',
+  addWorkspaceMember: 'workspace',
+  updateWorkspaceMemberRole: 'workspace',
+  removeWorkspaceMember: 'workspace',
+  grantWorkspaceTeamAccess: 'workspace',
+  revokeWorkspaceTeamAccess: 'workspace',
+  getBilling: 'workspace',
+  getCreditBalance: 'workspace',
+  getCreditLedger: 'workspace',
+  getSpendControls: 'workspace',
+  updateSpendControls: 'workspace',
+
+  // Workspace permissions & project management
+  getWorkspacePermissions: 'workspace',
+  createWorkspaceProject: 'workspace',
+
+  // Workspace invitations
+  listWorkspaceInvitations: 'workspace',
+  createWorkspaceInvitation: 'workspace',
+  revokeWorkspaceInvitation: 'workspace',
+  acceptWorkspaceInvitation: 'workspace',
+
+  setProjectSourceAccess: 'project',
+
+  // Project workspace transfer
+  transferProjectToWorkspace: 'project',
+
+  // Admin rate-limit stats
+  getRateLimitStats: 'admin',
+
+  // Allocation rules
+  listRules: 'allocationRule',
+  getRule: 'allocationRule',
+  createRule: 'allocationRule',
+  updateRule: 'allocationRule',
+  deleteRule: 'allocationRule',
+
+  // Shared assets
+  createAsset: 'sharedAsset',
+  listAssets: 'sharedAsset',
+  getAsset: 'sharedAsset',
+  updateAsset: 'sharedAsset',
+  deleteAsset: 'sharedAsset'
 }

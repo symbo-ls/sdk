@@ -22,6 +22,12 @@ export class AuthService extends BaseService {
     this._projectRoleCache = new Map() // Cache for project roles
     this._roleCacheExpiry = 5 * 60 * 1000 // 5 minutes cache expiry
     this._pluginSession = null
+    // Listener registry for SDK-side auth state subscriptions. Replaces
+    // Supabase's `auth.onAuthStateChange` for consumers migrating off
+    // direct supabase-js usage. Listeners receive the latest session
+    // snapshot (or null on sign-out). Storage events from other tabs +
+    // explicit login/logout/refresh paths emit through `_emitAuth`.
+    this._authListeners = new Set()
 
     this._resolvePluginSession(
       config?.session ||
@@ -99,6 +105,10 @@ export class AuthService extends BaseService {
         if (this._tokenManager) {
           this._tokenManager.setTokens(tokenData)
         }
+        // Cache the user record so getSession() returns a complete session
+        // without needing a follow-up getMe() round-trip.
+        this._currentUser = response.data?.user || null
+        this._emitAuth?.('SIGNED_IN')
       }
 
       if (response.success) {
@@ -126,11 +136,15 @@ export class AuthService extends BaseService {
       if (this._tokenManager) {
         this._tokenManager.clearTokens()
       }
+      this._currentUser = null
+      this._emitAuth?.('SIGNED_OUT')
     } catch (error) {
       // Even if the API call fails, clear local tokens
       if (this._tokenManager) {
         this._tokenManager.clearTokens()
       }
+      this._currentUser = null
+      this._emitAuth?.('SIGNED_OUT')
 
       throw new Error(`Logout failed: ${error.message}`, { cause: error })
     }
@@ -363,15 +377,24 @@ export class AuthService extends BaseService {
     this._requireReady('getMe')
     try {
       const session = this._resolvePluginSession(options.session)
-      const endpoint = session
-        ? `/auth/me?session=${encodeURIComponent(session)}`
-        : '/auth/me'
-
-      const response = await this._request(endpoint, {
-        method: 'GET',
-        methodName: 'getMe'
-      })
+      // Literals inlined at each _request call site so the drift analyzer
+      // can match them against the server route (it can't see through a
+      // variable-typed `endpoint`).
+      const response = session
+        ? await this._request(`/auth/me?session=${encodeURIComponent(session)}`, {
+          method: 'GET',
+          methodName: 'getMe'
+        })
+        : await this._request('/auth/me', {
+          method: 'GET',
+          methodName: 'getMe'
+        })
       if (response.success) {
+        // Cache the user record so getSession() can return it without an
+        // additional /auth/me round-trip, and emit USER_UPDATED so live
+        // subscribers (sdk.onAuthStateChange) re-render.
+        this._currentUser = response.data?.user || response.data || null
+        this._emitAuth?.('USER_UPDATED')
         return response.data
       }
       throw new Error(response.message)
@@ -380,11 +403,116 @@ export class AuthService extends BaseService {
     }
   }
 
+  /**
+   * Update the current user's profile / preferences.
+   * Replaces the (now-removed) `sdk.auth.updateMe(...)` call sites that
+   * existed before SERVICE_METHODS flattened auth methods. Body shape is
+   * forwarded to /auth/me PATCH; server decides what columns are mutable.
+   */
+  async updateMe(payload) {
+    this._requireReady('updateMe')
+    try {
+      const response = await this._request('/auth/me', {
+        method: 'PATCH',
+        body: JSON.stringify(payload || {}),
+        methodName: 'updateMe'
+      })
+      if (response.success) {
+        this._currentUser = response.data?.user || response.data || this._currentUser
+        this._emitAuth?.('USER_UPDATED')
+        return response.data
+      }
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Failed to update user profile: ${error.message}`, { cause: error })
+    }
+  }
+
+  /**
+   * Fetch the caller's permission set, optionally scoped to an org.
+   * Replaces sb()-side workspace_role lookups + the legacy
+   * sdk.auth.getPermissions() call sites in the workspace switchers.
+   */
+  async getPermissions(orgId) {
+    this._requireReady('getPermissions')
+    try {
+      const url = orgId
+        ? `/auth/permissions?org=${encodeURIComponent(orgId)}`
+        : '/auth/permissions'
+      const response = await this._request(url, { method: 'GET', methodName: 'getPermissions' })
+      if (response.success) return response.data
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Failed to fetch permissions: ${error.message}`, { cause: error })
+    }
+  }
+
   getAuthToken() {
     if (!this._tokenManager) {
       return null
     }
     return this._tokenManager.getAccessToken()
+  }
+
+  // ==================== SESSION + STATE-CHANGE ====================
+  //
+  // SDK-side equivalents of Supabase auth.getSession() / auth.onAuthStateChange().
+  // These let frontend consumers migrate off direct supabase-js usage without
+  // losing their auth-state observation pattern. The shape mimics Supabase's
+  // session object so call sites only need a one-line shim during migration.
+
+  /**
+   * Returns the currently-active session, or null when there are no tokens.
+   * Shape:
+   *   { access_token, refresh_token, expires_at, token_type: 'bearer', user }
+   */
+  getSession() {
+    const tm = this._tokenManager
+    if (!tm || !tm.hasTokens?.()) return null
+    const access_token = tm.getAccessToken?.()
+    const refresh_token = tm.getRefreshToken?.()
+    if (!access_token) return null
+    return {
+      access_token,
+      refresh_token,
+      expires_at: tm.tokens?.expiresAt || null,
+      token_type: 'bearer',
+      // _currentUser is hydrated by getMe()/login()/refresh paths; leave
+      // null if the consumer hasn't asked for the profile yet — they can
+      // call sdk.getMe() to populate it.
+      user: this._currentUser || null,
+    }
+  }
+
+  /**
+   * Subscribe to auth state transitions (login, logout, token refresh).
+   * Returns an unsubscribe function. Mirrors Supabase's
+   * `onAuthStateChange((event, session) => {...})` callback shape so
+   * migrating call sites only need to swap the import.
+   *
+   * Events:
+   *   'INITIAL_SESSION'  — fires once on subscribe, current session (or null)
+   *   'SIGNED_IN'        — login / register success
+   *   'SIGNED_OUT'       — logout / token clear
+   *   'TOKEN_REFRESHED'  — refresh path completed
+   *   'USER_UPDATED'     — getMe / updateMe refreshed _currentUser
+   */
+  onAuthStateChange(callback) {
+    if (typeof callback !== 'function') return () => {}
+    this._authListeners.add(callback)
+    // Fire INITIAL_SESSION immediately so callers can hydrate without
+    // waiting for the next state transition.
+    try { callback('INITIAL_SESSION', this.getSession()) } catch (_) {}
+    return () => { this._authListeners.delete(callback) }
+  }
+
+  // Internal: emit an auth event to all subscribers. Login/logout/refresh
+  // call this on completion so consumers stay in sync without polling.
+  _emitAuth(event) {
+    const session = this.getSession()
+    for (const listener of this._authListeners) {
+      try { listener(event, session) } catch (_) { /* listener errors don't propagate */ }
+    }
   }
 
   /**
@@ -642,30 +770,46 @@ export class AuthService extends BaseService {
   }
 
   /**
-   * Get the current user's role for a specific project by project key
-   * Uses caching to avoid repeated API calls
+   * Get the current user's role for a specific project by project key.
+   *
+   * Pass `{owner, key}` to use the collision-safe 2-seg route when the
+   * owner is known. Cache is scoped by the full (owner, key) tuple so two
+   * owners sharing a bare key never share a cached role entry.
+   *
+   * @param {string | { owner?: string, key: string }} keyOrSpec
    */
-  async getMyProjectRoleByKey(projectKey) {
+  async getMyProjectRoleByKey(keyOrSpec) {
     this._requireReady('getMyProjectRoleByKey')
-    if (!projectKey) {
-      throw new Error('Project key is required')
+
+    let owner = null
+    let projectKey = null
+    if (keyOrSpec && typeof keyOrSpec === 'object') {
+      owner = keyOrSpec.owner || null
+      projectKey = keyOrSpec.key
+    } else {
+      projectKey = keyOrSpec
     }
+    if (!projectKey) throw new Error('Project key is required')
 
     // If there are no valid tokens, treat user as guest for public access
     if (!this.hasValidTokens()) {
       return 'guest'
     }
 
-    // Check cache first
-    const cacheKey = `role_key_${projectKey}`
+    // Cache is scoped by (owner, key) so bare-key collisions across owners
+    // don't share a cached role entry.
+    const cacheKey = owner ? `role_key_${owner}/${projectKey}` : `role_key_${projectKey}`
     const cached = this._projectRoleCache.get(cacheKey)
 
     if (cached && Date.now() - cached.timestamp < this._roleCacheExpiry) {
       return cached.role
     }
 
+    const path = owner
+      ? `${encodeURIComponent(owner)}/${encodeURIComponent(projectKey)}`
+      : encodeURIComponent(projectKey)
     try {
-      const response = await this._request(`/projects/key/${projectKey}/role`, {
+      const response = await this._request(`/projects/key/${path}/role`, {
         method: 'GET',
         methodName: 'getMyProjectRoleByKey'
       })
@@ -681,11 +825,11 @@ export class AuthService extends BaseService {
       }
       throw new Error(response.message)
     } catch (error) {
-      const message = error?.message || ''
       // If request failed due to missing/invalid auth, default to guest
-      if (/401|403|unauthorized|no token|invalid token/iu.test(message)) {
+      if (error?.status === 401 || error?.status === 403) {
         return 'guest'
       }
+      const message = error?.message || ''
       throw new Error(`Failed to get project role by key: ${message}`, { cause: error })
     }
   }
@@ -1116,5 +1260,134 @@ export class AuthService extends BaseService {
         // Ignore storage access issues
       }
     }
+  }
+
+  /**
+   * Cross-org notification badge counts for the org-switcher dropdown.
+   * NEEDED_FOR_INTRANET §I8. Fails-soft to `{counts: {}}` when the
+   * governance edge-fn is unavailable.
+   *
+   * @returns {Promise<{counts: Record<string, {mentions?: number, ticketsAssigned?: number, meetingInvites?: number}>}>}
+   */
+  async getMyOrgNotifications () {
+    this._requireReady('getMyOrgNotifications')
+    const response = await this._request('/auth/me/org-notifications', {
+      method: 'GET',
+      methodName: 'getMyOrgNotifications'
+    })
+    if (response?.success) return response.data
+    return { counts: {} }
+  }
+
+  /**
+   * Cross-org calendar busy slots for the unified calendar.
+   * NEEDED_FOR_INTRANET §I9. Fails-soft to `{slots: []}`.
+   *
+   * @param {{from: string, to: string}} window - ISO 8601 timestamps
+   * @returns {Promise<{slots: Array<{workspaceId: string, orgId: string, start_at: string, end_at: string, title?: string}>}>}
+   */
+  async getMyFreebusy ({ from, to }) {
+    this._requireReady('getMyFreebusy')
+    if (!from || !to) throw new Error('from + to (ISO 8601) required')
+    const qs = new URLSearchParams({ from, to }).toString()
+    const response = await this._request(`/auth/me/freebusy?${qs}`, {
+      method: 'GET',
+      methodName: 'getMyFreebusy'
+    })
+    if (response?.success) return response.data
+    return { slots: [] }
+  }
+
+  /**
+   * List every project the authenticated user has any role on, across
+   * every org they're a member of. Combines owner + collaborator
+   * projects into one flat list. Server paginates by default.
+   *
+   * @returns {Promise<{projects: Array<object>, total?: number}>}
+   */
+  async getMyProjects () {
+    this._requireReady('getMyProjects')
+    const response = await this._request('/auth/me/projects', {
+      method: 'GET',
+      methodName: 'getMyProjects'
+    })
+    if (response?.success) return response.data
+    return { projects: [] }
+  }
+
+  /**
+   * List every team the authenticated user belongs to, grouped by org.
+   * Mirrors the `teams[]` claim surfaced via sessionClaims — but a
+   * direct fetch avoids stale free-tier claims.
+   *
+   * @returns {Promise<{teams: Array<{id: string, name: string, organization: string, type: string, role: string}>}>}
+   */
+  async getMyTeams () {
+    this._requireReady('getMyTeams')
+    const response = await this._request('/auth/me/teams', {
+      method: 'GET',
+      methodName: 'getMyTeams'
+    })
+    if (response?.success) return response.data
+    return { teams: [] }
+  }
+
+  /**
+   * List every org the authenticated user is a member of, with role +
+   * ownership flags. Source for workspace-switcher UIs.
+   *
+   * @returns {Promise<{memberships: Array<{orgId: string, role: string, isOwner: boolean, workspaces?: Array<object>}>}>}
+   */
+  async getMyOrgMemberships () {
+    this._requireReady('getMyOrgMemberships')
+    const response = await this._request('/auth/me/org-memberships', {
+      method: 'GET',
+      methodName: 'getMyOrgMemberships'
+    })
+    if (response?.success) return response.data
+    return { memberships: [] }
+  }
+
+  /**
+   * Resend the email verification link for the authenticated user.
+   * Requires auth (the server takes `req.user` as the resend target).
+   * No-op idempotent on the client — server rate-limits resends.
+   */
+  async resendVerification () {
+    return this._call('resendVerification', '/auth/resend-verification', { method: 'POST' })
+  }
+
+  /**
+   * Confirm email verification using a token. The token is the one
+   * emailed to the user — no auth required; verification completes the
+   * sign-up flow for the user the token identifies.
+   * @param {string} token
+   */
+  async verifyEmail (token) {
+    if (!token) throw new Error('token is required')
+    return this._call('verifyEmail', `/auth/verify-email/${encodeURIComponent(token)}`)
+  }
+
+  /**
+   * Role-enrichment feed for the People page. Returns every OrgMember
+   * row in `orgId` with the user's email attached, so consumers can
+   * match by email (common join key in legacy views) and read the raw
+   * role key (builtin or custom). Caller must be an org member.
+   *
+   * Replaces legacy `public.people` + `public.user_roles` view reliance
+   * per NEEDED_FOR_INTRANET §90.
+   *
+   * @param {string} orgId
+   * @returns {Promise<{members: Array<{email: string, role: string}>}>}
+   */
+  async getOrgMemberRoles (orgId) {
+    this._requireReady('getOrgMemberRoles')
+    if (!orgId) throw new Error('orgId is required')
+    const response = await this._request(`/auth/org/${encodeURIComponent(orgId)}/member-roles`, {
+      method: 'GET',
+      methodName: 'getOrgMemberRoles'
+    })
+    if (response?.success) return response.data
+    return { members: [] }
   }
 }

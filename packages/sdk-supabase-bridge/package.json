@@ -1,0 +1,34 @@
+{
+  "name": "@symbo.ls/sdk-supabase-bridge",
+  "version": "3.14.0",
+  "type": "module",
+  "description": "Supabase-flavoured federation bridge — multi-project auth, registry-driven client cache, edge-function login/logout/switch primitives. Built on @symbo.ls/sdk-bridge. Project-specific glue (org defaults, integrations, MCP) belongs in the consumer app.",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./clients": "./src/clients.js",
+    "./bridge": "./src/bridge.js",
+    "./env": "./src/env.js",
+    "./crossAppAuth": "./src/crossAppAuth.js"
+  },
+  "files": [
+    "src/**/*.js",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "tape tests/*.test.js | tap-spec"
+  },
+  "devDependencies": {
+    "tap-spec": "^5.0.0",
+    "tape": "^5.7.5"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.99.1",
+    "@symbo.ls/sdk-bridge": "^3.14.0"
+  },
+  "license": "CC-BY-NC-4.0",
+  "repository": "https://github.com/symbo-ls/sdk",
+  "publishConfig": {
+    "access": "public"
+  }
+}

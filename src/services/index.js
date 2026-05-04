@@ -16,6 +16,23 @@ import { MetricsService } from './MetricsService.js'
 import { IntegrationService } from './IntegrationService.js'
 import { FeatureFlagService } from './FeatureFlagService.js'
 import { OrganizationService } from './OrganizationService.js'
+import { WorkspaceService } from './WorkspaceService.js'
+import {
+  WorkspaceProjectService,
+  workspaceProjectBaseUrl,
+} from './WorkspaceProjectService.js'
+
+// Back-compat alias for the historical class name. Removable once consumers
+// migrate to `WorkspaceProjectService`.
+const WorkspaceDataService = WorkspaceProjectService
+import {
+  createSupabasePassthroughConfig,
+  workspaceProjectEdgeFunctionUrl,
+  governanceSessionAccessToken,
+} from './supabasePassthrough.js'
+import { AllocationRuleService } from './AllocationRuleService.js'
+import { SharedAssetService } from './SharedAssetService.js'
+import { CreditsService } from './CreditsService.js'
 
 const createService = (ServiceClass, config) => new ServiceClass(config)
 
@@ -73,6 +90,27 @@ export const createFeatureFlagService = config =>
 export const createOrganizationService = config =>
   createService(OrganizationService, config)
 
+// Workspace service factory. Intranet org switcher + /data/organizations
+// enrichment both depend on listWorkspaces here.
+export const createWorkspaceService = config =>
+  createService(WorkspaceService, config)
+
+// Workspace-project service — typed surface against
+// next.api.symbols.app/workspace-project/* (the
+// @symbo.ls/server-workspace-project wrapper). Distinct from
+// WorkspaceService (workspace-org CRUD via /core/workspaces).
+export const createWorkspaceProjectService = config =>
+  createService(WorkspaceProjectService, config)
+
+export const createAllocationRuleService = config =>
+  createService(AllocationRuleService, config)
+
+export const createSharedAssetService = config =>
+  createService(SharedAssetService, config)
+
+export const createCreditsService = config =>
+  createService(CreditsService, config)
+
 export {
   AuthService,
   CollabService,
@@ -91,5 +129,15 @@ export {
   MetricsService,
   IntegrationService,
   FeatureFlagService,
-  OrganizationService
+  OrganizationService,
+  WorkspaceService,
+  WorkspaceProjectService,
+  WorkspaceDataService,
+  workspaceProjectBaseUrl,
+  createSupabasePassthroughConfig,
+  workspaceProjectEdgeFunctionUrl,
+  governanceSessionAccessToken,
+  AllocationRuleService,
+  SharedAssetService,
+  CreditsService
 }

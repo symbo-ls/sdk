@@ -15,6 +15,7 @@ export class AdminService extends BaseService {
       ids,
       query,
       status,
+      team,
       page = 1,
       limit = 50,
       sort = { field: 'createdAt', order: 'desc' }
@@ -45,15 +46,23 @@ export class AdminService extends BaseService {
       queryParams.append('sort[field]', sort.field)
       queryParams.append('sort[order]', sort.order || 'desc')
     }
+    if (team != null) {
+      queryParams.append('team', team)
+    }
 
     const queryString = queryParams.toString()
-    const url = `/users/admin/users${queryString ? `?${queryString}` : ''}`
 
     try {
-      const response = await this._request(url, {
-        method: 'GET',
-        methodName: 'getAdminUsers'
-      })
+      // Inline both branches so the analyzer matches /users/admin/users.
+      const response = queryString
+        ? await this._request(`/users/admin/users?${queryString}`, {
+          method: 'GET',
+          methodName: 'getAdminUsers'
+        })
+        : await this._request('/users/admin/users', {
+          method: 'GET',
+          methodName: 'getAdminUsers'
+        })
       if (response.success) {
         return response.data
       }
@@ -87,7 +96,7 @@ export class AdminService extends BaseService {
     }
 
     try {
-      const response = await this._request('/assign-projects', {
+      const response = await this._request('/users/assign-projects', {
         method: 'POST',
         body: JSON.stringify(requestBody),
         methodName: 'assignProjectsToUser'
@@ -362,6 +371,41 @@ export class AdminService extends BaseService {
    */
   async demoteFromAdmin (userId) {
     return await this.updateUser(userId, { role: 'user' })
+  }
+
+  /**
+   * Get rate-limit stats (admin-only). Exposes the middleware's current
+   * per-user/per-IP counters for ops debugging.
+   */
+  async getRateLimitStats () {
+    this._requireReady('getRateLimitStats')
+    try {
+      const response = await this._request('/users/admin/rate-limit-stats', {
+        method: 'GET',
+        methodName: 'getRateLimitStats'
+      })
+      if (response.success) {
+        return response.data
+      }
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Failed to get rate limit stats: ${error.message}`, { cause: error })
+    }
+  }
+
+  /**
+   * Get Project.key migration health (admin-only). Surfaces bare vs
+   * compound vs suffixed counts, missing-owner-FK count, and any
+   * duplicate `(owner, key)` tuples (should be 0 post-§46).
+   */
+  async getProjectKeyStats () {
+    this._requireReady('getProjectKeyStats')
+    const response = await this._request('/users/admin/project-key-stats', {
+      method: 'GET',
+      methodName: 'getProjectKeyStats'
+    })
+    if (response.success) return response.data
+    throw new Error(response.message || 'Failed to get project key stats')
   }
 
   /**

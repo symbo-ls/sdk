@@ -34,13 +34,18 @@ export class FeatureFlagService extends BaseService {
     }
 
     const queryString = queryParams.toString()
-    const url = `/feature-flags${queryString ? `?${queryString}` : ''}`
 
     try {
-      const response = await this._request(url, {
-        method: 'GET',
-        methodName: 'getFeatureFlags'
-      })
+      // Inline both branches so the drift analyzer matches /feature-flags.
+      const response = queryString
+        ? await this._request(`/feature-flags?${queryString}`, {
+          method: 'GET',
+          methodName: 'getFeatureFlags'
+        })
+        : await this._request('/feature-flags', {
+          method: 'GET',
+          methodName: 'getFeatureFlags'
+        })
       if (response.success) {
         return response.data
       }
@@ -85,13 +90,18 @@ export class FeatureFlagService extends BaseService {
     }
 
     const queryString = queryParams.toString()
-    const url = `/admin/feature-flags${queryString ? `?${queryString}` : ''}`
 
     try {
-      const response = await this._request(url, {
-        method: 'GET',
-        methodName: 'getAdminFeatureFlags'
-      })
+      // Inline both branches so the analyzer matches /admin/feature-flags.
+      const response = queryString
+        ? await this._request(`/admin/feature-flags?${queryString}`, {
+          method: 'GET',
+          methodName: 'getAdminFeatureFlags'
+        })
+        : await this._request('/admin/feature-flags', {
+          method: 'GET',
+          methodName: 'getAdminFeatureFlags'
+        })
       if (response.success) {
         return response.data
       }

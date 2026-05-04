@@ -10,12 +10,16 @@ async function createAndGetProject (
   // faker.seed(0)
   try {
     const response = await sdkInstance.createProject({
-      key: `${faker.string.uuid() + Date.now()}.symbo.ls`.toLowerCase(),
+      // Server-side validator (normalizeProjectSlug) truncates to 48
+      // chars and rejects input that isn't equal to the truncated form.
+      // Plain faker uuid is 36 chars + [a-z0-9-] only — well within the
+      // budget and collision-free across runs.
+      key: faker.string.uuid(),
       name: faker.company.name(),
       designTool: 'figma',
       access: 'public',
       isSharedLibrary,
-      projectType: 'web'
+      projectType: 'website'
     })
 
     sdkInstance.updateContext({ appKey: response?.key })
@@ -109,21 +113,51 @@ async function getSdkStatus () {
   console.log(status)
 }
 
-// Determine env for conditional test execution
+// Determine env for conditional test execution. The SDK's `getConfig()`
+// exposes `channel` (canonical channel name) plus boolean flags
+// (`isDevelopment`, `isTest`, `isStaging`, `isPreview`, `isProduction`) — use
+// those instead of the removed `basedEnv` field.
 function isDevelopment () {
-  return getConfig().basedEnv === 'development'
+  return getConfig().channel === 'development' || getConfig().channel === 'local'
 }
 
 function isTesting () {
-  return getConfig().basedEnv === 'testing'
+  return getConfig().isTest === true
 }
 
 function isStaging () {
-  return getConfig().basedEnv === 'staging'
+  return getConfig().channel === 'staging'
 }
 
 function isProduction () {
-  return getConfig().basedEnv === 'production'
+  return getConfig().channel === 'production'
+}
+
+/**
+ * Poll `predicate` every `interval` ms until it returns a truthy value or
+ * `timeout` ms elapse. Resolves with the truthy value, or throws with a
+ * descriptive timeout message (including the last seen error if any).
+ *
+ * Use instead of `await sleep(N); await fetchOnce()`. Tests pass faster
+ * when conditions land early and fail with a meaningful message when
+ * they don't.
+ */
+async function waitFor (predicate, { timeout = 20000, interval = 500, message } = {}) {
+  const start = Date.now()
+  let lastError
+  while (Date.now() - start < timeout) {
+    try {
+      const result = await predicate()
+      if (result) return result
+    } catch (err) {
+      lastError = err
+    }
+    await new Promise(resolve => setTimeout(resolve, interval))
+  }
+  const suffix = lastError ? ` (last error: ${lastError.message})` : ''
+  throw new Error(
+    `waitFor timed out after ${timeout}ms${message ? ': ' + message : ''}${suffix}`
+  )
 }
 
 export {
@@ -136,5 +170,6 @@ export {
   isDevelopment,
   isTesting,
   isStaging,
-  isProduction
+  isProduction,
+  waitFor
 }

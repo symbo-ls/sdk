@@ -177,7 +177,9 @@ export class BaseService {
             statusText: response.statusText
           }
         )
-        throw new Error(error.message || error.error || 'Request failed', { cause: error })
+        const httpErr = new Error(error.message || error.error || 'Request failed', { cause: error })
+        httpErr.status = response.status
+        throw httpErr
       }
 
       return response.status === 204 ? null : response.json()
@@ -187,8 +189,86 @@ export class BaseService {
         endpoint,
         methodName: options.methodName
       })
-      throw new Error(`Request failed: ${error.message}`, { cause: error })
+      const wrapped = new Error(`Request failed: ${error.message}`, { cause: error })
+      if (error?.status) wrapped.status = error.status
+      throw wrapped
     }
+  }
+
+  // Telemetry-aware request against a fully-qualified URL (i.e. not the
+  // `${apiUrl}/core` core surface). Mirrors `_request`'s auth/tracking/retry
+  // semantics so off-core wrappers (workspace-project, KV worker, Supabase
+  // passthrough) don't have to re-implement them and silently lose telemetry.
+  //
+  // `authHeader` overrides the TokenManager-derived header (e.g. when the
+  // wrapper takes a Supabase JWT instead of the Symbols access token).
+  // Pass `null` to send unauthenticated. Omit to use TokenManager.
+  async _requestExternal (url, options = {}) {
+    const { methodName, authHeader, ...init } = options
+    const defaultHeaders = {}
+    if (init.body !== undefined && !(init.body instanceof FormData)) {
+      defaultHeaders['Content-Type'] = 'application/json'
+    }
+
+    if (authHeader === undefined && this._requiresInit(methodName) && this._tokenManager) {
+      try {
+        await this._tokenManager.ensureValidToken()
+        const header = this._tokenManager.getAuthHeader()
+        if (header) defaultHeaders.Authorization = header
+      } catch (error) {
+        logger.warn('Token management failed, proceeding without authentication:', error)
+      }
+    } else if (authHeader) {
+      defaultHeaders.Authorization = authHeader
+    }
+
+    try {
+      const response = await fetch(url, {
+        ...init,
+        headers: { ...defaultHeaders, ...init.headers }
+      })
+
+      if (!response.ok) {
+        let error = { message: `HTTP ${response.status}: ${response.statusText}` }
+        try { error = await response.json() } catch {}
+        this._trackServiceError(
+          new Error(error.message || error.error || `HTTP ${response.status}: ${response.statusText}`),
+          { endpoint: url, methodName, status: response.status, statusText: response.statusText }
+        )
+        const httpErr = new Error(error.message || error.error || 'Request failed', { cause: error })
+        httpErr.status = response.status
+        throw httpErr
+      }
+
+      if (response.status === 204) return null
+      const text = await response.text()
+      if (!text) return null
+      try { return JSON.parse(text) } catch { return text }
+    } catch (error) {
+      this._trackServiceError(error, { endpoint: url, methodName })
+      if (error?.status) throw error
+      const wrapped = new Error(`Request failed: ${error.message}`, { cause: error })
+      throw wrapped
+    }
+  }
+
+  // Envelope-aware request: expects the server to respond with
+  // { success, data, message } and unwraps to `data` on success or throws
+  // `new Error(message)` otherwise. Collapses the ~5 lines of boilerplate
+  // that every service method repeats.
+  async _call (methodName, endpoint, { method = 'GET', body, headers } = {}) {
+    this._requireReady(methodName)
+    const init = { method, methodName }
+    if (headers) init.headers = headers
+    if (body !== undefined) init.body = body instanceof FormData ? body : JSON.stringify(body)
+
+    const response = await this._request(endpoint, init)
+    // Tolerate both enveloped {success, data, message} and bare payloads.
+    if (response && typeof response === 'object' && 'success' in response) {
+      if (response.success) return response.data
+      throw new Error(response.message || `${methodName} failed`)
+    }
+    return response
   }
 
   // Helper method to determine if a method requires initialization

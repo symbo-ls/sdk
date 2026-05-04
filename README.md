@@ -7,7 +7,9 @@
 [![node](https://img.shields.io/node/v/@symbo.ls/sdk.svg)](https://nodejs.org)
 [![ESM](https://img.shields.io/badge/module-ESM%20%7C%20CJS-blue)](https://www.npmjs.com/package/@symbo.ls/sdk)
 
-> Official SDK for the [Symbols](https://symbols.app) design platform — manage projects, collaborate in real-time, handle branches, pull requests, and more.
+> Official SDK for the [Symbols](https://symbols.app) design platform — manage projects, collaborate in real-time, handle branches, pull requests, organizations, workspaces, credits, and more.
+
+> **Looking for a complete machine-readable reference?** See [`SDK_FOR_MCP.md`](./SDK_FOR_MCP.md) — every service, every public method, every event, designed for MCP servers and automation agents.
 
 ## Installation
 
@@ -56,6 +58,13 @@ const waitlist = sdk.getService('waitlist')
 const metrics = sdk.getService('metrics')
 const integration = sdk.getService('integration')
 const featureFlag = sdk.getService('featureFlag')
+const organization = sdk.getService('organization')
+const workspace = sdk.getService('workspace')
+const workspaceData = sdk.getService('workspaceData')
+const kv = sdk.getService('kv')
+const allocationRule = sdk.getService('allocationRule')
+const sharedAsset = sdk.getService('sharedAsset')
+const credits = sdk.getService('credits')
 ```
 
 All service methods are also available directly on the SDK instance via proxy methods:
@@ -140,7 +149,22 @@ auth.getCurrentUser()
 ```javascript
 await auth.getMyProjectRole(projectId)       // cached
 await auth.getMyProjectRoleByKey(projectKey)  // cached
+await auth.getProjectRoleWithFallback(projectId, userProjects)
+await auth.getProjectRoleByKeyWithFallback(projectKey, userProjects)
 auth.clearProjectRoleCache(projectId)
+```
+
+**Cross-Org Reads:**
+
+```javascript
+await auth.getMyOrgNotifications()        // badge counts for org switcher
+await auth.getMyFreebusy({ from, to })    // unified calendar busy slots
+await auth.getMyProjects()                // every project across every org
+await auth.getMyTeams()                   // every team grouped by org
+await auth.getMyOrgMemberships()          // workspace switcher source
+await auth.getOrgMemberRoles(orgId)       // People page enrichment
+await auth.resendVerification()
+await auth.verifyEmail(token)
 ```
 
 **Permissions:**
@@ -175,7 +199,20 @@ await project.updateProjectName(projectId, name)
 await project.updateProjectPackage(projectId, pkg)
 await project.duplicateProject(projectId, newName, newKey, targetUserId)
 await project.removeProject(projectId)
+await project.transferProjectOwnership(projectId, { targetType, userId, organizationId })
+await project.transferProjectToWorkspace(projectId, targetWorkspaceId)
 await project.checkProjectKeyAvailability(key)
+```
+
+**Granular Reads:**
+
+```javascript
+await project.getProjectComponents(projectId)
+await project.getProjectFunctions(projectId)
+await project.getProjectPages(projectId)
+await project.getProjectComponentsByKey(projectKey)
+await project.getProjectFunctionsByKey(projectKey)
+await project.getProjectPagesByKey(projectKey)
 ```
 
 **Role Permissions Config:**
@@ -226,7 +263,6 @@ await project.getProjectItemByPath(projectId, path, options)
 
 ```javascript
 await project.listEnvironments(projectId, options)
-await project.activateMultipleEnvironments(projectId, options)
 await project.upsertEnvironment(projectId, envKey, config, options)
 await project.updateEnvironment(projectId, envKey, updates, options)
 await project.publishToEnvironment(projectId, envKey, payload, options)
@@ -246,8 +282,17 @@ await project.getRecentProjects(options)
 **Access Control:**
 
 ```javascript
-await project.setProjectAccess(projectId, access)       // account/team/organization/public
+await project.setProjectAccess(projectId, access)         // account/team/organization/public
 await project.setProjectVisibility(projectId, visibility) // public/private/password-protected
+await project.setProjectSourceAccess(projectId, source)   // public/org/workspace/restricted
+```
+
+**Admin Project Ownership:**
+
+```javascript
+await project.listProjectOwnership(params)
+await project.assignProjectOwner(args)
+await project.autoAssignProjectOwners(args)
 ```
 
 ### Branch Service
@@ -595,6 +640,259 @@ await featureFlag.updateFeatureFlag(id, patch)
 await featureFlag.archiveFeatureFlag(id)
 ```
 
+See [`src/docs/FeatureFlags.md`](./src/docs/FeatureFlags.md) for full
+recipes (kill switch, allowlist, percentage rollout, A/B variants).
+
+### Organization Service
+
+```javascript
+const organization = sdk.getService('organization')
+
+// Org CRUD
+await organization.createOrganization({ name, slug })
+await organization.listOrganizations()
+await organization.getOrganization(orgId)
+await organization.updateOrganization(orgId, updates)
+await organization.transferOrgOwnership(orgId, { userId })
+await organization.deleteOrganization(orgId)
+
+// Members
+await organization.listOrgMembers(orgId)
+await organization.addOrgMember(orgId, { userId, role })
+await organization.updateOrgMember(orgId, memberId, { role })
+await organization.removeOrgMember(orgId, memberId)
+await organization.getMemberEffectiveRole(orgId, memberId)
+
+// Teams
+await organization.createTeam(orgId, { name, slug, parentTeam })
+await organization.listTeams(orgId)
+await organization.updateTeam(orgId, teamId, updates)
+await organization.deleteTeam(orgId, teamId)
+await organization.listTeamMembers(orgId, teamId)
+await organization.addTeamMember(orgId, teamId, { userId, role })
+await organization.updateTeamMember(orgId, teamId, teamMemberId, { role })
+await organization.removeTeamMember(orgId, teamId, teamMemberId)
+
+// Org & team invitations
+await organization.createOrgInvitation(orgId, { email, role, teams })
+await organization.listOrgInvitations(orgId)
+await organization.revokeOrgInvitation(orgId, inviteId)
+await organization.acceptOrgInvitation({ token })
+await organization.listTeamInvitations(orgId, teamId)
+await organization.createTeamInvitation(orgId, teamId, { email, recipientName })
+await organization.revokeTeamInvitation(orgId, teamId, inviteId)
+await organization.acceptTeamInvitation({ token })
+
+// Project & workspace permissions
+await organization.getOrgProjectPermissions(orgId)
+await organization.updateOrgProjectPermissions(orgId, permissions)
+await organization.listTeamAccess(orgId, teamId)
+await organization.grantTeamAccess(orgId, teamId, { projectId, role })
+await organization.updateTeamAccess(orgId, teamId, accessId, { role })
+await organization.revokeTeamAccess(orgId, teamId, accessId)
+await organization.listTeamWorkspaceAccess(orgId, teamId)
+await organization.grantTeamWorkspaceAccess(orgId, teamId, { workspaceId, role })
+await organization.updateTeamWorkspaceAccess(orgId, teamId, accessId, { role })
+await organization.revokeTeamWorkspaceAccess(orgId, teamId, accessId)
+
+// Org-scoped projects
+await organization.createOrgProject(orgId, projectData)
+
+// Roles
+await organization.listOrgRoles(orgId)
+await organization.createOrgRole(orgId, role)
+await organization.updateOrgRole(orgId, roleKey, updates)
+await organization.deleteOrgRole(orgId, roleKey)
+
+// Billing & credit pool
+await organization.listOrgPayments(orgId)
+await organization.getCreditPool(orgId)
+await organization.updateCreditPool(orgId, pooledCredits)
+await organization.ensureOrgStripeCustomer(orgId)
+
+// SSO / SCIM
+await organization.getSso(orgId)
+await organization.updateSso(orgId, sso)
+await organization.getScim(orgId)
+await organization.updateScim(orgId, { enabled, rotateToken })
+
+// Admin overrides
+await organization.adminListOrganizations(params)
+await organization.adminListAllTeams(orgId)
+await organization.adminOverrideTeam(orgId, teamId)
+```
+
+### Workspace Service
+
+Workspace-org CRUD against `/core/workspaces/*`. Distinct from
+`workspaceData` (typed surface against `/workspace/*`).
+
+```javascript
+const workspace = sdk.getService('workspace')
+
+await workspace.createWorkspace({ organization, displayName, slug })
+await workspace.listWorkspaces({ organization, page, limit })
+await workspace.getWorkspace(workspaceId)
+await workspace.updateWorkspace(workspaceId, updates)
+await workspace.deleteWorkspace(workspaceId)
+
+// Members
+await workspace.listWorkspaceMembers(workspaceId)
+await workspace.addWorkspaceMember(workspaceId, { userId, role })
+await workspace.updateWorkspaceMemberRole(workspaceId, userId, { role })
+await workspace.removeWorkspaceMember(workspaceId, userId)
+
+// Team grants
+await workspace.grantWorkspaceTeamAccess(workspaceId, { teamId, role })
+await workspace.revokeWorkspaceTeamAccess(workspaceId, teamId)
+
+// Billing & credits
+await workspace.getBilling(workspaceId)
+await workspace.getCreditBalance(workspaceId)
+await workspace.getCreditLedger(workspaceId, { limit, before, reason })
+await workspace.getSpendControls(workspaceId)
+await workspace.updateSpendControls(workspaceId, controls)
+
+// Permissions / projects
+await workspace.getWorkspacePermissions(workspaceId)
+await workspace.createWorkspaceProject(workspaceId, projectData)
+
+// Invitations
+await workspace.listWorkspaceInvitations(workspaceId)
+await workspace.createWorkspaceInvitation(workspaceId, { email, role, recipientName })
+await workspace.revokeWorkspaceInvitation(workspaceId, inviteId)
+await workspace.acceptWorkspaceInvitation({ token })
+```
+
+### Workspace Data Service
+
+Typed surface against `${apiUrl}/workspace/*`. Methods are namespaced
+sub-objects on the service. Auth requires a workspace JWT carrying `sub` +
+`workspace_id` claims — supply via `context.workspaceTokenProvider`.
+
+```javascript
+const ws = sdk.getService('workspaceData')
+
+// Tickets
+await ws.tickets.list(filter, options)
+await ws.tickets.get(number)
+await ws.tickets.create(payload)
+await ws.tickets.update(number, payload)
+await ws.tickets.remove(number)
+await ws.tickets.epicCounts()
+await ws.tickets.assign(id, assigneeEmail)
+
+// Chat
+await ws.chat.listChannels()
+await ws.chat.createChannel(payload)
+await ws.chat.listMessages(channelId)
+await ws.chat.sendMessage(channelId, payload)
+await ws.chat.listMembers(channelId)
+
+// Calendar
+await ws.calendar.listEvents(filter)
+await ws.calendar.createEvent(payload)
+await ws.calendar.updateEvent(id, payload)
+await ws.calendar.deleteEvent(id)
+await ws.calendar.sync(params)
+
+// Meet
+await ws.meet.listRooms()
+await ws.meet.createRoom(payload)
+await ws.meet.getRoom(id)
+await ws.meet.listMembers(id)
+await ws.meet.listTranscripts(id)
+await ws.meet.waitingRoom()
+await ws.meet.issueToken(params)
+
+// Documents
+await ws.documents.list()
+await ws.documents.create(payload)
+await ws.documents.get(id)
+await ws.documents.update(id, payload)
+await ws.documents.listKb()
+await ws.documents.listResourceLinks()
+await ws.documents.addResourceLink(payload)
+
+// Presence, notifications, search, permissions, system, people, activity
+await ws.presence.online()
+await ws.presence.heartbeat()
+await ws.notifications.list()
+await ws.notifications.unreadCount()
+await ws.notifications.markRead(id)
+await ws.notifications.markAllRead()
+await ws.search(q, opts)
+await ws.permissions.me()
+await ws.permissions.check(action, resource)
+await ws.system.status()
+await ws.system.featureFlags()
+await ws.people.list()
+await ws.people.get(id)
+await ws.people.me()
+await ws.activity.listNotes()
+await ws.activity.addNote(payload)
+await ws.activity.scoringConfig()
+
+// Generic escape hatch
+await ws.query(body)
+```
+
+### KV Service
+
+Cloudflare KV worker proxy (URL from `environment.kvUrl`).
+
+```javascript
+const kv = sdk.getService('kv')
+
+await kv.get(key, { env: 'production' })
+await kv.put(key, value, { env, expirationTtl, metadata })
+await kv.delete(key, { env })
+await kv.list({ env, prefix, limit, cursor })
+```
+
+### Allocation Rule Service
+
+Org-level credit-allocation rules.
+
+```javascript
+const rules = sdk.getService('allocationRule')
+
+await rules.listRules(orgId)
+await rules.getRule(ruleId)
+await rules.createRule({ organizationId, workspaceId, policy, monthlyAllocation, priority })
+await rules.updateRule(ruleId, patch)
+await rules.deleteRule(ruleId)
+```
+
+### Shared Asset Service
+
+Cross-workspace shared assets.
+
+```javascript
+const assets = sdk.getService('sharedAsset')
+
+await assets.createAsset(body)
+await assets.listAssets(query)
+await assets.getAsset(id)
+await assets.updateAsset(id, patch)
+await assets.deleteAsset(id)
+```
+
+### Credits Service
+
+Project-scoped credit ledger + Stripe top-ups.
+
+```javascript
+const credits = sdk.getService('credits')
+
+await credits.getRates()
+await credits.getProjectBalance(projectId)
+await credits.getProjectLedger(projectId, { limit, cursor, reason })
+await credits.getProjectSpendControls(projectId)
+await credits.updateProjectSpendControls(projectId, controls)
+await credits.topupProjectCredits(projectId, { packs, returnUrl })
+```
+
 ---
 
 ## Token Management
@@ -714,4 +1012,48 @@ const auth = createAuthService({ context, options })
 await auth.init({ context, options })
 ```
 
-Available factory functions: `createAuthService`, `createCollabService`, `createProjectService`, `createPlanService`, `createFileService`, `createPaymentService`, `createDnsService`, `createBranchService`, `createPullRequestService`, `createAdminService`, `createSubscriptionService`, `createScreenshotService`, `createTrackingService`, `createWaitlistService`, `createMetricsService`, `createIntegrationService`, `createFeatureFlagService`.
+Available factory functions: `createAuthService`, `createCollabService`, `createProjectService`, `createPlanService`, `createFileService`, `createPaymentService`, `createDnsService`, `createBranchService`, `createPullRequestService`, `createAdminService`, `createSubscriptionService`, `createScreenshotService`, `createTrackingService`, `createWaitlistService`, `createMetricsService`, `createIntegrationService`, `createFeatureFlagService`, `createOrganizationService`, `createWorkspaceService`, `createWorkspaceDataService`, `createKvService`, `createAllocationRuleService`, `createSharedAssetService`, `createCreditsService`.
+
+---
+
+## Federation
+
+`@symbo.ls/sdk/federation` is the abstract multi-Supabase registry primitive.
+
+```javascript
+import { createFederation, createSupabaseClient } from '@symbo.ls/sdk/federation'
+
+const federation = createFederation({
+  projects: {
+    governance: { key: 'governance', url, anonKey, anonJwt },
+    financials: { key: 'financials', url, anonKey, anonJwt }
+  },
+  defaultKey: 'governance'
+})
+
+federation.getClient('governance')      // cached Supabase client
+federation.getDefaultClient()
+federation.listConfiguredProjects()
+federation.forEachClient((client, key) => { ... })
+federation.addProject(key, cfg)
+```
+
+Project-specific federation logic (governance + financials, MCP connectors,
+claim refresh) lives in `@symbo.ls/sdk-bridge`, which imports this abstract
+core.
+
+---
+
+## Validations
+
+```javascript
+import { validate, validators } from '@symbo.ls/sdk'
+
+validate('component', componentData)   // singular or plural accepted
+validate('pages', pagesData)
+
+validators.components / validators.pages / validators.functions
+validators.files / validators.dependencies
+```
+
+Each `Validator` class exposes `validateAll()` returning `{ isValid, errors }`.

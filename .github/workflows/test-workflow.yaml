@@ -5,43 +5,70 @@ on:
       node_env:
         required: false
         type: string
-        default: 'testing'
-        description: 'The Node.js environment (e.g., production, development, testing, etc.)'
+        default: 'upcoming'
+        description: 'NODE_ENV passed to tests. Must match a server channel (server/packages/channels/channels.json): next, upcoming, staging, etc. Legacy `testing` is retired.'
       suite:
         required: false
         type: string
         default: 'smoke'
-        description: 'The suite being run (e.g., smoke, branch, project, etc.)'
+        description: 'Suite to run (smoke, auth, branch, collab, dataset, external, favorite-project, get-project, member, password, project, update-project, user).'
+      ref:
+        required: false
+        type: string
+        default: ''
+        description: 'Git ref to check out. Empty = the triggering ref (correct for PRs). Pass `next` for scheduled / manual runs against the active branch.'
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     permissions:
       id-token: write
       contents: write
       packages: write
     env:
       NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-      GUEST_PASSWORD: ${{ secrets.GUEST_PASSWORD }}
-      LOCAL_EMAIL: ${{ secrets.LOCAL_EMAIL }}
+      INFISICAL_CLIENT_ID: ${{ secrets.INFISICAL_CLIENT_ID }}
+      INFISICAL_CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+      INFISICAL_PROJECT_ID: ${{ secrets.INFISICAL_PROJECT_ID }}
+      INFISICAL_DOMAIN: ${{ secrets.INFISICAL_DOMAIN }}
 
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
         with:
-          node-version: '18'
-          registry-url: 'https://registry.npmjs.org'
+          ref: ${{ inputs.ref }}
 
-      - name: Npm install
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Infisical CLI
+        run: |
+          # The artifacts-cli.infisical.com host returns 403 — use APT repo directly
+          curl -1sLf 'https://dl.cloudsmith.io/public/infisical/infisical-cli/setup.deb.sh' \
+            | sudo -E bash
+          sudo apt-get install -y infisical
+          infisical --version
+
+      - name: Authenticate Infisical (machine identity)
+        run: |
+          INFISICAL_TOKEN=$(infisical login \
+            --method=universal-auth \
+            --client-id="$INFISICAL_CLIENT_ID" \
+            --client-secret="$INFISICAL_CLIENT_SECRET" \
+            --domain="$INFISICAL_DOMAIN" \
+            --plain --silent)
+          echo "::add-mask::$INFISICAL_TOKEN"
+          echo "INFISICAL_TOKEN=$INFISICAL_TOKEN" >> $GITHUB_ENV
+
+      - name: Install dependencies
         run: |
           echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
-          npm install --verbose
+          bun install
 
       - name: Build
-        run: npm run build
+        run: bun run build
         env:
           NODE_ENV: ${{ inputs.node_env }}
 
@@ -52,7 +79,12 @@ jobs:
         run: |
           set -o pipefail
           echo $MESSAGE
-          npm run test:${{ inputs.suite }} 2>&1 | tee test-output.log
+          # The npm `test:*` scripts do their own `infisical run --` wrap (so
+          # local devs can `npm run test:smoke` after `infisical login` without
+          # remembering the prefix). The wrap reads INFISICAL_TOKEN from env to
+          # auth — exported by the previous step. NODE_ENV picks the Infisical
+          # env (defaults to upcoming).
+          bun run test:${{ inputs.suite }} 2>&1 | tee test-output.log
 
       - name: Extract Failure Summary
         if: failure()
@@ -97,7 +129,7 @@ jobs:
               ci-failure-message.json > ci-failure-message-updated.json
 
       - name: Send Google Chat Notification
-        if: failure()
+        if: failure() && env.GCHAT_WEBHOOK_URL != ''
         env:
           GCHAT_WEBHOOK_URL: ${{ secrets.GCHAT_WEBHOOK_URL }}
         run: |
