@@ -1,0 +1,49 @@
+name: Push Tests Workflow
+# Smoke-tests on every push to a tracked branch. NODE_ENV is pinned to
+# the matching API channel so the SDK at HEAD on `<branch>` always
+# tests against the API at `<branch>.api.symbols.app` (versions
+# aligned, no cross-channel surprises).
+#
+# Channel map (server/packages/channels/channels.json):
+#   main      → test.api.symbols.app   (isolated test API — never mutates prod)
+#   next      → next.api.symbols.app
+#   upcoming  → upcoming.api.symbols.app
+#
+# `staging` and `production` are intentionally NOT triggered here — they
+# carry real customer data and a smoke run with random-UUID project keys
+# would pollute it. Add them only when the suite is read-only or has a
+# dedicated test account isolated by RLS.
+
+on:
+  push:
+    branches:
+      - main
+      - next
+      - upcoming
+    paths:
+      - 'src/**'
+      - 'integration-tests/**'
+      - 'package.json'
+      - 'bun.lock'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+# Keep the Actions tab tidy — drop superseded runs on the same branch.
+concurrency:
+  group: push-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke-tests:
+    uses: ./.github/workflows/test-workflow.yaml
+    with:
+      # Branch → channel routing. `main` is the only branch where the
+      # name doesn't match a channel, so it gets the explicit override
+      # to `test`; everything else passes through.
+      node_env: >-
+        ${{
+          github.ref_name == 'main' && 'test' || github.ref_name
+        }}
+      suite: 'smoke'
+      # ref left empty — checkout uses the pushed ref (correct for push).
+    secrets: inherit
