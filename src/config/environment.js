@@ -167,9 +167,6 @@ export const getConfig = () => {
       // + token in its .env (GRAFANA_FARO_URL). Direct override honored for
       // self-hosted/dev scenarios via SYMBOLS_APP_GRAFANA_URL.
       grafanaUrl: process.env.SYMBOLS_APP_GRAFANA_URL || `${apiUrl}/telemetry/faro`,
-      // Cloudflare KV worker URL. No hardcoded fallback — set via env or
-      // initialize KvService with an explicit url option.
-      kvUrl: process.env.SYMBOLS_KV_URL || '',
       dnsWorkerUrl: process.env.SYMBOLS_DNS_WORKER_URL || envConfig.dnsWorkerUrl,
       dnsApiKey: process.env.SYMBOLS_DNS_API_KEY || '',
       // Typesense docs search: SDK calls the server proxy at

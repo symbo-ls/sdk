@@ -30,7 +30,6 @@ import {
   workspaceProjectEdgeFunctionUrl,
   governanceSessionAccessToken,
 } from './supabasePassthrough.js'
-import { KvService } from './KvService.js'
 import { AllocationRuleService } from './AllocationRuleService.js'
 import { SharedAssetService } from './SharedAssetService.js'
 import { CreditsService } from './CreditsService.js'
@@ -103,9 +102,6 @@ export const createWorkspaceService = config =>
 export const createWorkspaceProjectService = config =>
   createService(WorkspaceProjectService, config)
 
-export const createKvService = config =>
-  createService(KvService, config)
-
 export const createAllocationRuleService = config =>
   createService(AllocationRuleService, config)
 
@@ -141,7 +137,6 @@ export {
   createSupabasePassthroughConfig,
   workspaceProjectEdgeFunctionUrl,
   governanceSessionAccessToken,
-  KvService,
   AllocationRuleService,
   SharedAssetService,
   CreditsService

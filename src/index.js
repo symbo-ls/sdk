@@ -19,7 +19,6 @@ import {
   createOrganizationService,
   createWorkspaceService,
   createWorkspaceProjectService,
-  createKvService,
   createAllocationRuleService,
   createSharedAssetService,
   createCreditsService
@@ -234,13 +233,6 @@ export class SDK {
           }
         }
       }),
-      this._initService(
-        'kv',
-        createKvService({
-          context: this._context,
-          options: this._options
-        })
-      ),
       this._initService(
         'allocationRule',
         createAllocationRuleService({
@@ -545,7 +537,6 @@ export {
   createOrganizationService,
   createWorkspaceService,
   createWorkspaceProjectService,
-  createKvService,
   createAllocationRuleService,
   createSharedAssetService,
   createCreditsService,
