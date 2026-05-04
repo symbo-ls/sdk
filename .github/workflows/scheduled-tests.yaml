@@ -2,7 +2,7 @@ name: Scheduled SDK Tests
 # Replaces the 13 per-suite scheduled-test-*.yaml files.
 #
 # Branch: always checks out `next` (the active development branch).
-# Env:    always runs against `testing` → test.api.symbols.app.
+# Env:    always runs against `test` channel → test.api.symbols.app.
 #         NEVER point this at next.api or production — the test account
 #         mutates state with random-UUID project keys and would pollute
 #         live data.
@@ -68,7 +68,7 @@ jobs:
           - user
     uses: ./.github/workflows/test-workflow.yaml
     with:
-      node_env: 'testing'
+      node_env: 'test'
       suite: ${{ matrix.suite }}
       ref: 'next'
     secrets: inherit
@@ -78,7 +78,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.suite != 'all'
     uses: ./.github/workflows/test-workflow.yaml
     with:
-      node_env: 'testing'
+      node_env: 'test'
       suite: ${{ github.event.inputs.suite }}
       ref: 'next'
     secrets: inherit
