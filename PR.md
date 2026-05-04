@@ -60,7 +60,7 @@ Brings `main` up to date with the work consolidated on `upcoming` since `v3.8.9`
 - `@symbo.ls/*` deps caret-pinned (`3.14.0` → `^3.14.0`).
 
 ## Risk / migration notes
-- `KvService` removed — any consumer relying on it must migrate.
+- `KvService` retained with new API (direct `kvUrl` fetch; no longer routed through server proxy) — consumers previously relying on the old implementation should verify endpoint compatibility.
 - `WorkspaceDataService` → `WorkspaceProjectService` rename.
 - `ScreenshotService` methods now require `{owner, key}` instead of bare slug.
 - Supabase moved to peer-dep — installs without it must add it.

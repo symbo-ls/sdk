@@ -410,6 +410,17 @@ export const SERVICE_METHODS = {
   getCreditLedger: 'workspace',
   getSpendControls: 'workspace',
   updateSpendControls: 'workspace',
+
+  // Workspace permissions & project management
+  getWorkspacePermissions: 'workspace',
+  createWorkspaceProject: 'workspace',
+
+  // Workspace invitations
+  listWorkspaceInvitations: 'workspace',
+  createWorkspaceInvitation: 'workspace',
+  revokeWorkspaceInvitation: 'workspace',
+  acceptWorkspaceInvitation: 'workspace',
+
   setProjectSourceAccess: 'project',
 
   // Project workspace transfer
