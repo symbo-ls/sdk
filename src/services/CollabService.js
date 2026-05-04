@@ -919,22 +919,45 @@ export class CollabService extends BaseService {
    * Resolves with the new version number once the backend confirms via the
    * regular "commit" event.
    */
-  checkpoint() {
+  checkpoint({ timeout = 10000 } = {}) {
     if (!this.isConnected()) {
       logger.warn('[CollabService] Not connected, cannot request checkpoint')
       return Promise.reject(new Error('Not connected'))
     }
 
-    return new Promise((resolve) => {
-      const handler = ({ version }) => {
-        // Ensure we clean up the listener after the first commit event.
+    return new Promise((resolve, reject) => {
+      let timer = null
+
+      const cleanup = () => {
+        if (timer) {
+          clearTimeout(timer)
+          timer = null
+        }
         this.socket?.off('commit', handler)
+      }
+
+      const handler = ({ version }) => {
+        cleanup()
         rootBus.emit('checkpoint:done', { version, origin: 'manual' })
         resolve(version)
       }
 
       // Listen for the next commit that the server will emit after checkpoint.
       this.socket?.once('commit', handler)
+
+      // Bound the wait — if the server never emits 'commit' (commit pipeline
+      // broken upstream of this socket), we must not hang forever. Callers
+      // (waitFor predicates, UI flush handlers, etc.) need a deterministic
+      // outcome.
+      timer = setTimeout(() => {
+        cleanup()
+        reject(new Error(
+          `[CollabService] checkpoint timed out after ${timeout}ms — server ` +
+          'never emitted commit event in response to socket.emit("checkpoint"). ' +
+          'Likely a server-side commit pipeline failure (apiCommitChanges / ' +
+          'commit-socket-ops endpoint).'
+        ))
+      }, timeout)
 
       // Trigger server-side checkpoint.
       this.socket?.emit('checkpoint')
