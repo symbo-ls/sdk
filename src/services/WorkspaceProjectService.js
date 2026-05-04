@@ -630,10 +630,33 @@ export class WorkspaceProjectService extends BaseService {
     get: () =>
       this._sb('companySettings.get', 'company_settings', 'list',
         { options: { single: true } }),
-    update: (payload) =>
-      // Single-row table; PATCH first matching row.
-      this._sb('companySettings.update', 'company_settings', 'update',
-        { id: 1, payload }),
+    // Singleton table — exactly one row per workspace, RLS-scoped by tenant.
+    // We resolve the live id at call time rather than hardcoding `1`, so a
+    // brief multi-row state (failed migration, manual seed) doesn't silently
+    // overwrite row #1; first call after a fresh tenant init INSERTs.
+    update: async (payload) => {
+      const current = await this._sb(
+        'companySettings.update.fetch',
+        'company_settings',
+        'list',
+        { options: { limit: 1 } }
+      )
+      const row = Array.isArray(current) ? current[0] : current
+      if (!row?.id) {
+        return this._sb(
+          'companySettings.update.insert',
+          'company_settings',
+          'create',
+          { payload }
+        )
+      }
+      return this._sb(
+        'companySettings.update',
+        'company_settings',
+        'update',
+        { id: row.id, payload }
+      )
+    },
   }
 
   // Per-user preferences — one row keyed by user_id. RLS scopes to caller.

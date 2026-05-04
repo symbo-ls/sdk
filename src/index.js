@@ -219,20 +219,7 @@ export class SDK {
           context: this._context,
           options: this._options
         })
-      ).then(() => {
-        // Backward-compat: 'workspaceData' alias for the renamed
-        // WorkspaceProjectService. External consumers using
-        // sdk.getService('workspaceData') keep working through one
-        // deprecation cycle.
-        const wp = this._services.get('workspaceProject')
-        if (wp) {
-          this._services.set('workspaceData', wp)
-          this._context.services = {
-            ...this._context.services,
-            workspaceData: wp,
-          }
-        }
-      }),
+      ),
       this._initService(
         'allocationRule',
         createAllocationRuleService({

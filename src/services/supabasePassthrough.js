@@ -5,8 +5,38 @@
 // (`/workspace-project/sb`) and the REST-vs-realtime split (raw WS
 // endpoint, wrapper-proxied REST) are SDK-internal.
 
-import { createClient } from '@supabase/supabase-js'
 import { workspaceProjectBaseUrl } from './WorkspaceProjectService.js'
+
+// `@supabase/supabase-js` is an OPTIONAL peer dep
+// (peerDependenciesMeta.optional). A static `import { createClient } from
+// '@supabase/supabase-js'` resolves at module-load time and crashes with
+// ERR_MODULE_NOT_FOUND for any consumer that doesn't install supabase —
+// even if they never touch the passthrough. Lazy-resolve via dynamic
+// import the first time someone actually constructs an adapter client.
+let _createClientCache = null
+let _createClientPromise = null
+const _resolveCreateClient = () => {
+  if (_createClientCache) return Promise.resolve(_createClientCache)
+  if (!_createClientPromise) {
+    const pkg = '@supabase/' + 'supabase-js' // split so bundlers don't statically resolve
+    _createClientPromise = import(/* webpackIgnore: true */ pkg).then(
+      (mod) => {
+        _createClientCache = mod.createClient
+        return _createClientCache
+      },
+      (err) => {
+        _createClientPromise = null
+        throw new Error(
+          '@supabase/supabase-js is required to use the Supabase passthrough adapter ' +
+          'but is not installed. Add it to your dependencies: ' +
+          '`npm install @supabase/supabase-js`. ' +
+          'Underlying loader error: ' + (err && err.message)
+        )
+      }
+    )
+  }
+  return _createClientPromise
+}
 
 // supabase-js writes the persisted session under `sb-<project-ref>-auth-token`.
 // The wrapper extracts `workspace_id` from this JWT to scope RLS — the
@@ -35,9 +65,10 @@ const _supabaseStorageKey = (rawSupabaseUrl) => {
 export const governanceSessionAccessToken = (rawSupabaseUrl) =>
   _readToken(_supabaseStorageKey(rawSupabaseUrl))
 
-const _createAdapterClient = ({ url, anonKey, rawSupabaseUrl, getRealtimeClient }) => {
+const _createAdapterClient = async ({ url, anonKey, rawSupabaseUrl, getRealtimeClient }) => {
   // Hoist storage key + ref derivation out of the per-request fetch closure.
   const storageKey = _supabaseStorageKey(rawSupabaseUrl)
+  const createClient = await _resolveCreateClient()
 
   const client = createClient(url, anonKey, {
     auth: {

@@ -230,7 +230,7 @@ export class DnsService extends BaseService {
       await this.getDnsRecord(domain)
       return false // Domain exists
     } catch (error) {
-      if (error.message.includes('not found') || error.message.includes('404')) {
+      if (error?.status === 404 || /not.?found/i.test(error?.message || '')) {
         return true // Domain is available
       }
       throw error // Other error occurred
@@ -250,7 +250,7 @@ export class DnsService extends BaseService {
         record
       }
     } catch (error) {
-      if (error.message.includes('not found') || error.message.includes('404')) {
+      if (error?.status === 404 || /not.?found/i.test(error?.message || '')) {
         return {
           exists: false,
           active: false,
