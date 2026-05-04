@@ -65,7 +65,10 @@ jobs:
       - name: Install dependencies
         run: |
           echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
-          bun install
+          # --frozen-lockfile fails fast if bun.lock and package.json have
+          # drifted. Keeps CI deterministic; dep changes go through a
+          # locally-regenerated bun.lock commit.
+          bun install --frozen-lockfile
 
       - name: Build
         run: bun run build
