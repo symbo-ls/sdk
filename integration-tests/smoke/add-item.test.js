@@ -110,9 +110,13 @@ test('Etag should display the correct values', async (tape) => {
   // string '1.0.1:0' — server may bump version differently (e.g. with a
   // non-zero commit counter suffix). Just assert it's no longer the
   // pre-change etag.
+  //
+  // One toggleLiveAndConnect — was previously called twice (before AND
+  // after addItem) which immediately tore down the socket the op had just
+  // been emitted on, racing the server's ops handler. The op was emitted
+  // on a live socket; let the server commit and read via REST.
   await toggleLiveAndConnect(sdkInstance, project)
   await sdkInstance.addItem(testType, testData)
-  await toggleLiveAndConnect(sdkInstance, project)
   const secondProjectResponse = await waitFor(
     async () => {
       const r = await sdkInstance.getProjectData(project.id)
