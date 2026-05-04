@@ -305,6 +305,35 @@ export class CollabService extends BaseService {
         this._onSocketConnect()
       }
 
+      // Server may accept the socket then immediately `socket.disconnect(true)`
+      // from inside the connection handler (auth/permission rejection). The
+      // 'connect' event already resolved the promise above, so without this
+      // probe the SDK would silently sit with `_connected=false` and every
+      // later checkpoint/addItem would surface as "Not connected" with no
+      // root cause. Briefly observe the connection and reject loudly.
+      const POST_CONNECT_PROBE_MS = 600
+      let postConnectDisconnectReason = null
+      const probeDisconnect = (reason) => { postConnectDisconnectReason = reason }
+      socket?.once('disconnect', probeDisconnect)
+      try {
+        await new Promise((resolve) => setTimeout(resolve, POST_CONNECT_PROBE_MS))
+      } finally {
+        socket?.off('disconnect', probeDisconnect)
+      }
+      if (postConnectDisconnectReason || !socket?.connected) {
+        const reason = postConnectDisconnectReason ||
+          (socket?.disconnected ? 'socket reports disconnected' : 'unknown')
+        this._detachSocketLifecycleListeners()
+        socket?.disconnect()
+        this._client = null
+        this._connectionMeta = null
+        throw new Error(
+          `[CollabService] Server closed the socket immediately after connect (reason: ${reason}). ` +
+          'Likely server-side auth/permission rejection on the collab namespace ' +
+          '(e.g. checkAuthorization viewer denied for this user/project).'
+        )
+      }
+
       // Set up event listeners
       socket?.on('ops', ({ changes }) => {
         logger.log(`ops event`)
