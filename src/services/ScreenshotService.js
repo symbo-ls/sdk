@@ -262,14 +262,19 @@ export class ScreenshotService extends BaseService {
         ? `${projectKey.owner || ''}/${projectKey.key || ''}`
         : String(projectKey)
 
+    // Return existing inflight promise if one is already running for this key
+    const inflight = this._inflightRefreshes.get(debounceKey)
+    if (inflight) { return inflight }
+
     // Clear existing debounce timer if present
     const existingTimer = this._debounceTimers.get(debounceKey)
     if (existingTimer) {
       clearTimeout(existingTimer)
     }
 
-    // Wrap execution in a promise we store, so callers can await the outcome
-    const executionPromise = await new Promise(resolve => {
+    // Create promise without awaiting so it can be stored immediately;
+    // the timer callback's finally block cleans up on completion.
+    const executionPromise = new Promise(resolve => {
       const timer = setTimeout(async () => {
         try {
           // Step 1: queue screenshot recreation (non-blocking server-side)
