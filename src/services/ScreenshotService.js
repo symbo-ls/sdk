@@ -257,10 +257,19 @@ export class ScreenshotService extends BaseService {
     // Debounce key: stringify `{owner, key}` so two callers targeting the
     // same project (regardless of spec shape) share the debounce/inflight
     // entry. Bare-string keys stringify to themselves.
-    const debounceKey =
-      projectKey && typeof projectKey === 'object'
-        ? `${projectKey.owner || ''}/${projectKey.key || ''}`
-        : String(projectKey)
+    // Build as `owner/key` only when owner is present so that `{ key: 'x' }`
+    // and `'x'` both produce `"x"` and share the same entry.
+    let debounceKey
+    if (projectKey && typeof projectKey === 'object') {
+      if (!projectKey.key) {
+        throw new Error('refreshThumbnail: projectKey object must include a `key` property')
+      }
+      debounceKey = projectKey.owner
+        ? `${projectKey.owner}/${projectKey.key}`
+        : projectKey.key
+    } else {
+      debounceKey = String(projectKey)
+    }
 
     // Return existing inflight promise if one is already running for this key
     const inflight = this._inflightRefreshes.get(debounceKey)
