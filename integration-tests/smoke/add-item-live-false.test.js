@@ -1,16 +1,12 @@
-/* eslint-disable no-await-in-loop */
 /* eslint-disable no-empty-function */
 import test from 'tape'
-import { createAndGetProject } from '../base.js'
+import { createAndGetProject, waitFor } from '../base.js'
 
-// #region Helpers
-// Wait function
-function sleep (ms) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms)
-  })
-}
-// #endregion
+// Server-side commit debounce when live=false is ~10s
+// (packages/socket/collaborative.js → COMMIT_DEBOUNCE = 10_000).
+// Polling timeout: 25s gives the debounce window plus headroom for
+// network + commit-socket-ops latency.
+const COMMIT_TIMEOUT_MS = 25000
 
 // #region Tests
 test('includePending=false, live=false, change should not be visible or committed until after wait', async (tape) => {
@@ -44,7 +40,7 @@ test('includePending=false, live=false, change should not be visible or committe
     includePending: false
   })
 
-  // Assertions
+  // Assertions — pre-connect snapshot should not yet contain the queued op
   tape.ok(!projectResponse.schema.test_type, 'Changes were not saved.')
   tape.equal(projectResponse.__pending.count, 0, 'pending.count is 0')
   tape.ok(
@@ -57,11 +53,24 @@ test('includePending=false, live=false, change should not be visible or committe
     'Version was not bumped by 1 patch'
   )
   tape.ok(projectResponse.isLatest, 'isLatest field set to true')
+
   await sdkInstance.connect(connectObject)
 
-  // Wait for debounce
-  await sleep(15000) // waiting > 10s without sending further ops
-  projectResponse = await sdkInstance.getProjectData(project.id)
+  // Poll until the queued op flushes through the socket and the server's
+  // debounced commit lands. waitFor returns the first response that has
+  // the committed key, so the test moves on as soon as it lands rather
+  // than always burning 15s.
+  projectResponse = await waitFor(
+    async () => {
+      const r = await sdkInstance.getProjectData(project.id)
+      return r?.schema?.test_type?.test_key ? r : null
+    },
+    {
+      timeout: COMMIT_TIMEOUT_MS,
+      interval: 500,
+      message: 'addItem op did not appear in schema.test_type.test_key after connect+commit'
+    }
+  )
 
   // Assertions
   tape.equal(
@@ -100,19 +109,22 @@ test('includePending=true, live=false, addItem should save change and increment 
 
   // Connecting to project
   await sdkInstance.addItem(testType, testData)
-  let projectResponse = await sdkInstance.getProjectData(project.id, {
-    includePending: true
-  })
 
-  for (let ii = 0; ii < 2; ii++) {
-    if (projectResponse.__pending.count > 0) {
-      break
+  // Poll until either the pending count goes up (op sat in queue, not yet
+  // committed) or the schema reports the key (committed before we polled).
+  // Either is a valid "the op was accepted" outcome for this assertion.
+  const projectResponse = await waitFor(
+    async () => {
+      const r = await sdkInstance.getProjectData(project.id, { includePending: true })
+      const seen = r?.__pending?.count > 0 || r?.schema?.test_type?.test_key
+      return seen ? r : null
+    },
+    {
+      timeout: COMMIT_TIMEOUT_MS,
+      interval: 500,
+      message: 'addItem op never showed up as pending or committed'
     }
-    await sdkInstance.addItem(testType, testData)
-    projectResponse = await sdkInstance.getProjectData(project.id, {
-      includePending: true
-    })
-  }
+  )
 
   // Assertions
   tape.equal(
@@ -128,7 +140,7 @@ test('includePending=true, live=false, addItem should save change and increment 
   tape.end()
 })
 
-test('includePending=true, live=false, changes should commit after 10 second wait', async (tape) => {
+test('includePending=true, live=false, changes should commit after debounce window', async (tape) => {
   // Setup
   const sdkInstance = Object.create(global.globalSdk)
   const project = await createAndGetProject(false, sdkInstance)
@@ -155,21 +167,22 @@ test('includePending=true, live=false, changes should commit after 10 second wai
 
   // Adding item to project
   await sdkInstance.addItem(testType, testData)
-  await sleep(15000) // waiting > 10s without sending further ops
-  let projectResponse = await sdkInstance.getProjectData(project.id, {
-    includePending: true
-  })
 
-  for (let ii = 0; ii < 3; ii++) {
-    if (projectResponse.schema.test_type.test_key.key) {
-      break
-    } else {
-      await sleep(5000)
-      projectResponse = await sdkInstance.getProjectData(project.id, {
-        includePending: true
-      })
+  // Poll until the schema sees the committed key AND pending is zeroed.
+  // This is the post-commit steady state.
+  const projectResponse = await waitFor(
+    async () => {
+      const r = await sdkInstance.getProjectData(project.id, { includePending: true })
+      const committed = r?.schema?.test_type?.test_key?.key
+      const settled = r?.__pending?.count === 0
+      return committed && settled ? r : null
+    },
+    {
+      timeout: COMMIT_TIMEOUT_MS,
+      interval: 500,
+      message: 'addItem op did not commit + clear pending within window'
     }
-  }
+  )
 
   // Assertions
   tape.equal(

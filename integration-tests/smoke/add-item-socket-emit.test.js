@@ -1,29 +1,13 @@
 /* eslint-disable init-declarations */
-/* eslint-disable no-await-in-loop */
 /* eslint-disable no-empty-function */
 import test from 'tape'
-import { createAndGetProject } from '../base.js'
+import { createAndGetProject, waitFor } from '../base.js'
 
-// #region Helpers
-// Wait function
-function sleep (ms) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms)
-  })
-}
-
-function isPending (projectResponse) {
-  return (
-    projectResponse.__pending.count !== 0 ||
-    projectResponse.__pending.uncommitted
-  )
-}
-// #endregion
+const COMMIT_TIMEOUT_MS = 20000
 
 // #region Tests
-test('includePending=true, changes should commit after socket.emit via manual checkpoint ', async (tape) => {
+test('includePending=true, changes should commit after socket.emit via manual checkpoint', async (tape) => {
   // Setup
-  await sleep(5000)
   const sdkInstance = Object.create(global.globalSdk)
   const project = await createAndGetProject(false, sdkInstance)
   const connectObject = {
@@ -49,19 +33,22 @@ test('includePending=true, changes should commit after socket.emit via manual ch
 
   // Adding item to project
   await sdkInstance.addItem(testType, testData)
-  let projectResponse
 
-  // Sets up retry to reduce test flakiness
-  for (let ii = 0; ii < 3; ii++) {
-    await sdkInstance.checkpoint()
-    projectResponse = await sdkInstance.getProjectData(project.id, {
-      includePending: true
-    })
-    if (!isPending(projectResponse)) {
-      break
+  // Manual checkpoint forces a commit; poll until pending settles. The
+  // checkpoint() call resolves on the server's commit ack, but read-side
+  // state can lag a tick — waitFor handles both.
+  const projectResponse = await waitFor(
+    async () => {
+      await sdkInstance.checkpoint()
+      const r = await sdkInstance.getProjectData(project.id, { includePending: true })
+      return r?.__pending?.count === 0 && !r.__pending.uncommitted ? r : null
+    },
+    {
+      timeout: COMMIT_TIMEOUT_MS,
+      interval: 1000,
+      message: 'pending state never settled after manual checkpoint'
     }
-    await sleep(2500)
-  }
+  )
 
   // Assertions
   tape.equal(

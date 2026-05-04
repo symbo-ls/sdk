@@ -1,17 +1,13 @@
 /* eslint-disable init-declarations */
-/* eslint-disable no-await-in-loop */
 /* eslint-disable no-empty-function */
 import test from 'tape'
-import { createAndGetProject } from '../base.js'
+import { createAndGetProject, waitFor } from '../base.js'
+
+// Server-side commit-socket-ops latency window in live=true mode is
+// near-instant; allow generous headroom for cold connect handshakes.
+const COMMIT_TIMEOUT_MS = 20000
 
 // #region Helpers
-// Wait function
-function sleep (ms) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms)
-  })
-}
-
 // Toggles the client to live to mitigate the DB wait
 async function toggleLiveAndConnect (sdkInstance, project) {
   const connectObject = {
@@ -24,19 +20,11 @@ async function toggleLiveAndConnect (sdkInstance, project) {
   await sdkInstance.toggleLive(true)
   await sdkInstance.connect(connectObject)
 }
-
-function checkPending (projectResponse) {
-  return (
-    projectResponse.__pending.count === 0 &&
-    !projectResponse.__pending.uncommitted
-  )
-}
 // #endregion
 
 // #region Tests
 test('includePending=true, should commit after connect set to live=true', async (tape) => {
   // Setup
-  await sleep(10000)
   const sdkInstance = Object.create(global.globalSdk)
   const project = await createAndGetProject(false, sdkInstance)
   const testType = 'test_type'
@@ -55,15 +43,21 @@ test('includePending=true, should commit after connect set to live=true', async 
   // Adding item to project
   await toggleLiveAndConnect(sdkInstance, project)
   await sdkInstance.addItem(testType, testData)
-  let projectResponse
-  let ii = 0
-  do {
-    await toggleLiveAndConnect(sdkInstance, project)
-    projectResponse = await sdkInstance.getProjectData(project.id, {
-      includePending: true
-    })
-    ii++
-  } while (!checkPending(projectResponse) && ii < 3)
+
+  // Poll until pending is fully zeroed out — the live commit lands fast
+  // when the socket is connected, so this usually returns in <1s.
+  const projectResponse = await waitFor(
+    async () => {
+      await toggleLiveAndConnect(sdkInstance, project)
+      const r = await sdkInstance.getProjectData(project.id, { includePending: true })
+      return r?.__pending?.count === 0 && !r.__pending.uncommitted ? r : null
+    },
+    {
+      timeout: COMMIT_TIMEOUT_MS,
+      interval: 500,
+      message: 'pending state never settled in live=true mode'
+    }
+  )
 
   // Assertions
   tape.equal(projectResponse.__pending.count, 0, 'pending.count is 0')
@@ -112,12 +106,22 @@ test('Etag should display the correct values', async (tape) => {
     )
   }
 
-  // Test modified response: ETag value updated
+  // Test modified response: ETag value updated. Poll until the new
+  // version lands rather than sleeping a fixed 5s.
   await toggleLiveAndConnect(sdkInstance, project)
   await sdkInstance.addItem(testType, testData)
-  await sleep(5000) // Waiting for item to be added
   await toggleLiveAndConnect(sdkInstance, project)
-  const secondProjectResponse = await sdkInstance.getProjectData(project.id)
+  const secondProjectResponse = await waitFor(
+    async () => {
+      const r = await sdkInstance.getProjectData(project.id)
+      return r?.__pending?.etag === '1.0.1:0' ? r : null
+    },
+    {
+      timeout: COMMIT_TIMEOUT_MS,
+      interval: 500,
+      message: 'ETag never advanced to 1.0.1:0 after addItem'
+    }
+  )
   const secondETag = secondProjectResponse.__pending.etag
   tape.equal(secondETag, '1.0.1:0', 'ETag present and updated to 1.0.1:0')
   tape.end()

@@ -133,6 +133,33 @@ function isProduction () {
   return getConfig().channel === 'production'
 }
 
+/**
+ * Poll `predicate` every `interval` ms until it returns a truthy value or
+ * `timeout` ms elapse. Resolves with the truthy value, or throws with a
+ * descriptive timeout message (including the last seen error if any).
+ *
+ * Use instead of `await sleep(N); await fetchOnce()`. Tests pass faster
+ * when conditions land early and fail with a meaningful message when
+ * they don't.
+ */
+async function waitFor (predicate, { timeout = 20000, interval = 500, message } = {}) {
+  const start = Date.now()
+  let lastError
+  while (Date.now() - start < timeout) {
+    try {
+      const result = await predicate()
+      if (result) return result
+    } catch (err) {
+      lastError = err
+    }
+    await new Promise(resolve => setTimeout(resolve, interval))
+  }
+  const suffix = lastError ? ` (last error: ${lastError.message})` : ''
+  throw new Error(
+    `waitFor timed out after ${timeout}ms${message ? ': ' + message : ''}${suffix}`
+  )
+}
+
 export {
   authenticateUser,
   createAndGetProject,
@@ -143,5 +170,6 @@ export {
   isDevelopment,
   isTesting,
   isStaging,
-  isProduction
+  isProduction,
+  waitFor
 }
