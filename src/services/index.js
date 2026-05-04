@@ -21,10 +21,6 @@ import {
   WorkspaceProjectService,
   workspaceProjectBaseUrl,
 } from './WorkspaceProjectService.js'
-
-// Back-compat alias for the historical class name. Removable once consumers
-// migrate to `WorkspaceProjectService`.
-const WorkspaceDataService = WorkspaceProjectService
 import {
   createSupabasePassthroughConfig,
   workspaceProjectEdgeFunctionUrl,
@@ -132,7 +128,6 @@ export {
   OrganizationService,
   WorkspaceService,
   WorkspaceProjectService,
-  WorkspaceDataService,
   workspaceProjectBaseUrl,
   createSupabasePassthroughConfig,
   workspaceProjectEdgeFunctionUrl,

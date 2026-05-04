@@ -544,11 +544,12 @@ export class AuthService extends BaseService {
         } catch (error) {
           logger.warn('[AuthService] Token refresh failed:', error.message)
           // Only clear tokens if it's definitely an auth error, not a network error
+          const msg = error?.message || ''
           if (
-            error.message.includes('401') ||
-            error.message.includes('403') ||
-            error.message.includes('invalid') ||
-            error.message.includes('expired')
+            error?.status === 401 ||
+            error?.status === 403 ||
+            msg.includes('invalid') ||
+            msg.includes('expired')
           ) {
             this._tokenManager.clearTokens()
             return {
@@ -591,7 +592,7 @@ export class AuthService extends BaseService {
         logger.warn('[AuthService] Failed to get user data:', error.message)
 
         // Only clear tokens if it's an auth error (401, 403), not network errors
-        if (error.message.includes('401') || error.message.includes('403')) {
+        if (error?.status === 401 || error?.status === 403) {
           this._tokenManager.clearTokens()
           return {
             userId: false,
