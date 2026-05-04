@@ -80,9 +80,12 @@ export function createCrossAppAuth ({
     return hasAny ? out : null
   }
 
+  // A session is fresh only if it has a future expiry. Missing/zero expiry
+  // means we cannot vouch for it — treat as stale rather than blindly
+  // hydrating malformed JSON onto the local origin.
   function isSupabaseSessionFresh (parsed) {
     const exp = Number(parsed?.expires_at || 0)
-    if (!exp) return true
+    if (!exp) return false
     return exp * 1000 > Date.now()
   }
 
@@ -230,14 +233,27 @@ export function createCrossAppAuth ({
     })
   }
 
+  // Snapshot of the originals + the listeners we register, so installAuthSync
+  // can be undone (tests, hot-reload) without poisoning the global JSDOM.
   let _installed = false
+  let _uninstall = null
   function installAuthSync () {
     if (_installed || typeof window === 'undefined') return
     _installed = true
 
-    const origSet = localStorage.setItem.bind(localStorage)
-    const origRemove = localStorage.removeItem.bind(localStorage)
-    const origClear = localStorage.clear.bind(localStorage)
+    // Snapshot the originals at install time so subsequent re-patches by
+    // unrelated shims can't reach back into our wrappers (avoids recursion
+    // if another library decides to monkey-patch localStorage on top of
+    // ours). Keep both the unbound reference (for restoration on uninstall)
+    // and a bound copy (for internal calls — needed when we go through the
+    // patched setter path that wants `this`-bound originals).
+    const origSetUnbound = localStorage.setItem
+    const origRemoveUnbound = localStorage.removeItem
+    const origClearUnbound = localStorage.clear
+    const origSet = origSetUnbound.bind(localStorage)
+    const origRemove = origRemoveUnbound.bind(localStorage)
+    const origGet = localStorage.getItem.bind(localStorage)
+    const origClear = origClearUnbound.bind(localStorage)
 
     let persistAuthTimer = null
     const schedulePersistAuth = () => {
@@ -260,12 +276,12 @@ export function createCrossAppAuth ({
       for (const k of tokenKeys) if (k !== keptKey) origRemove(k)
     }
 
-    localStorage.setItem = function (key, value) {
+    const patchedSet = function (key, value) {
       origSet(key, value)
       if (tokenKeys.includes(key)) schedulePersistAuth()
       else if (SUPABASE_KEY_RE.test(key)) schedulePersistSupabase()
     }
-    localStorage.removeItem = function (key) {
+    const patchedRemove = function (key) {
       origRemove(key)
       if (SUPABASE_KEY_RE.test(key)) {
         schedulePersistSupabase({ clearIfEmpty: true })
@@ -273,30 +289,55 @@ export function createCrossAppAuth ({
         if (key === 'symbols_access_token' || key === 'symbols_bridge_access_token') {
           removeAllTokenMirrors(key)
         }
-        const stillHasAny = tokenKeys.some(k => localStorage.getItem(k))
+        // Use the snapshot getter, not the (possibly re-patched) live one,
+        // so no third party can recursively re-enter our patched remove.
+        const stillHasAny = tokenKeys.some(k => origGet(k))
         if (!stillHasAny) clearAuthCookie()
         else schedulePersistAuth()
       }
     }
-    localStorage.clear = function () {
+    const patchedClear = function () {
       origClear()
       clearAuthCookie()
     }
 
-    window.addEventListener('storage', (e) => {
+    localStorage.setItem = patchedSet
+    localStorage.removeItem = patchedRemove
+    localStorage.clear = patchedClear
+
+    const onStorage = (e) => {
       if (!e.key) return
       if (tokenKeys.includes(e.key)) schedulePersistAuth()
       else if (SUPABASE_KEY_RE.test(e.key)) schedulePersistSupabase()
-    })
-
-    document.addEventListener('visibilitychange', () => {
+    }
+    const onVisibility = () => {
       if (document.visibilityState !== 'visible') return
       hydrateAuthFromCookie()
       hydrateSupabaseSessionsFromCookie()
-    })
+    }
+    window.addEventListener('storage', onStorage)
+    document.addEventListener('visibilitychange', onVisibility)
+
+    _uninstall = () => {
+      // Only restore if our patch is still on top; otherwise something else
+      // wrapped us and we'd un-wrap into THEIR patch's state — leave alone.
+      if (localStorage.setItem === patchedSet) localStorage.setItem = origSetUnbound
+      if (localStorage.removeItem === patchedRemove) localStorage.removeItem = origRemoveUnbound
+      if (localStorage.clear === patchedClear) localStorage.clear = origClearUnbound
+      window.removeEventListener('storage', onStorage)
+      document.removeEventListener('visibilitychange', onVisibility)
+      if (persistAuthTimer) clearTimeout(persistAuthTimer)
+      if (persistSbTimer) clearTimeout(persistSbTimer)
+      _installed = false
+      _uninstall = null
+    }
 
     persistAuthToCookie()
     persistSupabaseSessionsToCookie()
+  }
+
+  function uninstallAuthSync () {
+    if (_uninstall) _uninstall()
   }
 
   return {
@@ -311,6 +352,7 @@ export function createCrossAppAuth ({
     clearAuthCookie,
     persistSupabaseSessionsToCookie,
     hydrateSupabaseSessionsFromCookie,
-    installAuthSync
+    installAuthSync,
+    uninstallAuthSync
   }
 }

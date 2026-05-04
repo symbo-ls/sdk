@@ -15,7 +15,11 @@
     "README.md"
   ],
   "scripts": {
-    "test": "echo \"no tests\""
+    "test": "tape tests/*.test.js | tap-spec"
+  },
+  "devDependencies": {
+    "tap-spec": "^5.0.0",
+    "tape": "^5.7.5"
   },
   "license": "CC-BY-NC-4.0",
   "repository": "https://github.com/symbo-ls/sdk",

@@ -30,7 +30,7 @@ export const workspaceProjectBaseUrl = (apiBase) =>
 //      custom_access_token_hook).
 //   2. this._tokenManager.getAuthHeader() — Mongo SDK fallback for
 //      contexts that don't run their own JWT issuer.
-export class WorkspaceDataService extends BaseService {
+export class WorkspaceProjectService extends BaseService {
   init({ context }) {
     super.init({ context })
     this._workspacePrefix = workspaceProjectBaseUrl(context?.workspaceApiUrl || this._apiUrl)
@@ -59,17 +59,10 @@ export class WorkspaceDataService extends BaseService {
   async _ws(methodName, endpoint, { method = 'GET', body, headers } = {}) {
     this._requireReady(methodName)
     const url = `${this._workspacePrefix}${endpoint}`
-    const init = { method, headers: { ...(headers || {}) } }
-    if (body !== undefined) {
-      init.body = JSON.stringify(body)
-      init.headers['Content-Type'] = 'application/json'
-    }
-    const auth = await this._resolveAuthHeader()
-    if (auth) init.headers.Authorization = auth
-    const res = await fetch(url, init)
-    const json = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(json?.message || json?.error?.message || `HTTP ${res.status}`)
-    return json
+    const init = { method, headers: { ...(headers || {}) }, methodName }
+    if (body !== undefined) init.body = JSON.stringify(body)
+    init.authHeader = await this._resolveAuthHeader()
+    return this._requestExternal(url, init)
   }
 
   // PostgREST-style call routed through the workspace wrapper's existing
@@ -104,37 +97,49 @@ export class WorkspaceDataService extends BaseService {
     const idValue = options.id ?? args?.id
 
     const qs = new URLSearchParams()
-    const _enc = (v) => (v === null ? 'null' : String(v))
+    // PostgREST treats `,()` as filter syntax. Wrap values containing those
+    // characters in double quotes (PostgREST's documented escape) so caller
+    // input can't subvert the operator parser. Embedded `"` are doubled.
+    const _enc = (v) => {
+      if (v === null) return 'null'
+      const s = String(v)
+      if (/[,()"\s]/.test(s)) return `"${s.replace(/"/g, '""')}"`
+      return s
+    }
+    const _validKey = (k) => /^[A-Za-z_][A-Za-z0-9_.]*$/.test(k)
+    const _appendKey = (key, value) => {
+      if (!_validKey(key)) {
+        throw new Error(`[${methodName}] invalid filter key: ${key}`)
+      }
+      qs.append(key, value)
+    }
 
     if (filter && typeof filter === 'object') {
       for (const [rawKey, val] of Object.entries(filter)) {
         if (val === undefined) continue
         // <key>_in: [a,b,c] convenience — translate to in.()
         if (rawKey.endsWith('_in') && Array.isArray(val)) {
-          qs.append(rawKey.slice(0, -3), `in.(${val.map(_enc).join(',')})`)
+          _appendKey(rawKey.slice(0, -3), `in.(${val.map(_enc).join(',')})`)
           continue
         }
         if (val === null) {
-          qs.append(rawKey, 'is.null')
+          _appendKey(rawKey, 'is.null')
         } else if (Array.isArray(val)) {
-          qs.append(rawKey, `in.(${val.map(_enc).join(',')})`)
+          _appendKey(rawKey, `in.(${val.map(_enc).join(',')})`)
         } else if (typeof val === 'object') {
           // Operator form: { gte, lte, gt, lt, eq, neq, like, ilike, is }
           for (const [opName, opVal] of Object.entries(val)) {
-            qs.append(rawKey, `${opName}.${_enc(opVal)}`)
+            if (!/^[a-z]+$/.test(opName)) {
+              throw new Error(`[${methodName}] invalid filter operator: ${opName}`)
+            }
+            _appendKey(rawKey, `${opName}.${_enc(opVal)}`)
           }
         } else {
-          qs.append(rawKey, `eq.${_enc(val)}`)
+          _appendKey(rawKey, `eq.${_enc(val)}`)
         }
       }
     }
-    if (op === 'get' && idValue !== undefined && !qs.has('id')) {
-      qs.append('id', `eq.${_enc(idValue)}`)
-    }
-    if (op === 'update' && idValue !== undefined && !qs.has('id')) {
-      qs.append('id', `eq.${_enc(idValue)}`)
-    }
-    if (op === 'remove' && idValue !== undefined && !qs.has('id')) {
+    if ((op === 'get' || op === 'update' || op === 'remove') && idValue !== undefined && !qs.has('id')) {
       qs.append('id', `eq.${_enc(idValue)}`)
     }
 
@@ -163,12 +168,9 @@ export class WorkspaceDataService extends BaseService {
     const url = `${this._workspacePrefix}/sb/rest/v1/${restPath}${queryStr ? '?' + queryStr : ''}`
 
     const init = { method: httpMethod, headers: {} }
-    const auth = await this._resolveAuthHeader()
-    if (auth) init.headers.Authorization = auth
 
     if (op === 'create' || op === 'update' || op === 'rpc') {
       init.body = JSON.stringify(payload ?? {})
-      init.headers['Content-Type'] = 'application/json'
       if (op !== 'rpc') {
         // resolution=merge-duplicates only meaningful when on_conflict was
         // set above; harmless on plain create — server ignores it for
@@ -184,19 +186,9 @@ export class WorkspaceDataService extends BaseService {
       init.headers['Accept'] = 'application/vnd.pgrst.object+json'
     }
 
-    const res = await fetch(url, init)
-    const text = await res.text()
-    let json = null
-    try { json = text ? JSON.parse(text) : null } catch { json = text }
-    if (!res.ok) {
-      const msg = (json && (json.message || json.error?.message)) || text || `HTTP ${res.status}`
-      throw new Error(`[${methodName}] ${msg}`)
-    }
-    // Wrapper returns { status, data } envelope OR the raw rows depending
-    // on whether the route went through `relay()` or the passthrough.
-    // Passthrough returns the raw Supabase response body — array for list,
-    // object for single. Hand it back as-is.
-    return json
+    init.methodName = methodName
+    init.authHeader = await this._resolveAuthHeader()
+    return this._requestExternal(url, init)
   }
 
   // Factory for the common (filter, options) / (id) / (id, payload) shape
@@ -255,12 +247,20 @@ export class WorkspaceDataService extends BaseService {
         method: 'DELETE',
       }),
 
-    listMessages: (channelId, options) =>
-      channelId
-        ? this._ws('chat.listMessages', `/chat/channels/${encodeURIComponent(channelId)}/messages`, {
-            ...(options ? { method: 'POST', body: { options } } : {}),
-          })
-        : this._ws('chat.listAllMessages', '/chat/messages'),
+    listMessages: (channelId, options) => {
+      const qs = options && typeof options === 'object'
+        ? new URLSearchParams(
+            Object.entries(options).reduce((acc, [k, v]) => {
+              if (v !== undefined && v !== null) acc[k] = String(v)
+              return acc
+            }, {})
+          ).toString()
+        : ''
+      const tail = qs ? `?${qs}` : ''
+      return channelId
+        ? this._ws('chat.listMessages', `/chat/channels/${encodeURIComponent(channelId)}/messages${tail}`)
+        : this._ws('chat.listAllMessages', `/chat/messages${tail}`)
+    },
     sendMessage: (channelId, payload) =>
       this._ws('chat.sendMessage', `/chat/channels/${encodeURIComponent(channelId)}/messages`, {
         method: 'POST',

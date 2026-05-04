@@ -32,11 +32,17 @@ jobs:
   smoke-tests:
     uses: ./.github/workflows/test-workflow.yaml
     with:
+      # head=upcoming|next  → match channel (SDK ↔ API versions aligned)
+      # base=upcoming|next  → match channel
+      # everything else     → test (test.api.symbols.app — isolated, never
+      #                       prod). `main` and any other base_ref land here
+      #                       so we never emit a `node_env` value the SDK's
+      #                       CONFIG block doesn't recognise.
       node_env: >-
         ${{
-          (github.head_ref == 'upcoming' || github.head_ref == 'next')
-          && github.head_ref
-          || (github.base_ref == 'main' && 'test' || github.base_ref)
+          (github.head_ref == 'upcoming' || github.head_ref == 'next') && github.head_ref
+          || (github.base_ref == 'upcoming' || github.base_ref == 'next') && github.base_ref
+          || 'test'
         }}
       suite: 'smoke'
       # ref left empty — checkout uses the PR head (correct for pull_request).

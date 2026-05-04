@@ -20,8 +20,15 @@ const groupMethodsByService = () => {
   return grouped
 }
 
+// JSON-parse user input, but strip __proto__ / constructor / prototype keys
+// so a crafted argument like '{"__proto__":{"polluted":1}}' can't pollute
+// downstream Object prototypes via destructuring/spread on the SDK side.
+const _safeReviver = (key, value) => {
+  if (key === '__proto__' || key === 'constructor' || key === 'prototype') return undefined
+  return value
+}
 const parseArgs = (args) => args.map(arg => {
-  try { return JSON.parse(arg) } catch { return arg }
+  try { return JSON.parse(arg, _safeReviver) } catch { return arg }
 })
 
 const program = new Command()

@@ -1,31 +1,35 @@
+import { BaseService } from './BaseService.js'
+import environment from '../config/environment.js'
+
 /**
  * KvService - Client for @symbo.ls/kv Cloudflare Worker REST API
  *
  * Manages key-value storage across project environments (development, staging, production).
  * Keys use `owner/project` format, e.g. `luka/xmas`.
+ *
+ * Auth: routes through `BaseService._requestExternal`, which attaches the
+ * Symbols access token. The KV worker validates the bearer token server-side
+ * and scopes operations to the caller's projects — never trust the URL alone.
  */
-export class KvService {
-  constructor ({ context, options } = {}) {
-    this._context = context || {}
-    this._options = options || {}
-    this._kvUrl = null
-    this._ready = false
-  }
-
+export class KvService extends BaseService {
   init ({ context }) {
+    super.init({ context })
     const ctx = context || this._context
-    this._kvUrl = ctx.kvUrl || this._options.kvUrl
-    this._ready = true
-  }
-
-  updateContext (context) {
-    if (context && typeof context === 'object') {
-      Object.assign(this._context, context)
+    this._kvUrl = ctx.kvUrl || this._options.kvUrl || environment.kvUrl
+    if (!this._kvUrl) {
+      throw new Error('KvService: kvUrl not configured (set context.kvUrl, options.kvUrl, or SYMBOLS_KV_URL)')
     }
   }
 
-  isReady () {
-    return this._ready
+  _kvEndpoint (key, params = {}) {
+    const qs = new URLSearchParams()
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== null && v !== '') qs.set(k, String(v))
+    }
+    const tail = qs.toString() ? `?${qs}` : ''
+    return key !== undefined && key !== null
+      ? `${this._kvUrl}/kv/${encodeURIComponent(key)}${tail}`
+      : `${this._kvUrl}/kv${tail}`
   }
 
   /**
@@ -36,13 +40,10 @@ export class KvService {
    * @returns {Promise<{ key, value, metadata }>}
    */
   async get (key, { env = 'production' } = {}) {
-    const url = `${this._kvUrl}/kv/${encodeURIComponent(key)}?env=${env}`
-    const res = await fetch(url)
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: res.statusText }))
-      throw new Error(err.error || `KV GET failed (${res.status})`)
-    }
-    return res.json()
+    return this._requestExternal(this._kvEndpoint(key, { env }), {
+      method: 'GET',
+      methodName: 'kv.get'
+    })
   }
 
   /**
@@ -56,20 +57,14 @@ export class KvService {
    * @returns {Promise<{ ok, key }>}
    */
   async put (key, value, { env = 'production', expirationTtl, metadata } = {}) {
-    const url = `${this._kvUrl}/kv/${encodeURIComponent(key)}?env=${env}`
     const body = { value }
     if (expirationTtl) body.expirationTtl = expirationTtl
     if (metadata) body.metadata = metadata
-    const res = await fetch(url, {
+    return this._requestExternal(this._kvEndpoint(key, { env }), {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      methodName: 'kv.put'
     })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: res.statusText }))
-      throw new Error(err.error || `KV PUT failed (${res.status})`)
-    }
-    return res.json()
   }
 
   /**
@@ -80,13 +75,10 @@ export class KvService {
    * @returns {Promise<{ ok, key }>}
    */
   async delete (key, { env = 'production' } = {}) {
-    const url = `${this._kvUrl}/kv/${encodeURIComponent(key)}?env=${env}`
-    const res = await fetch(url, { method: 'DELETE' })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: res.statusText }))
-      throw new Error(err.error || `KV DELETE failed (${res.status})`)
-    }
-    return res.json()
+    return this._requestExternal(this._kvEndpoint(key, { env }), {
+      method: 'DELETE',
+      methodName: 'kv.delete'
+    })
   }
 
   /**
@@ -99,20 +91,13 @@ export class KvService {
    * @returns {Promise<{ keys, list_complete, cursor }>}
    */
   async list ({ env = 'production', prefix, limit, cursor } = {}) {
-    const params = new URLSearchParams({ env })
-    if (prefix) params.set('prefix', prefix)
-    if (limit) params.set('limit', String(limit))
-    if (cursor) params.set('cursor', cursor)
-    const url = `${this._kvUrl}/kv?${params}`
-    const res = await fetch(url)
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: res.statusText }))
-      throw new Error(err.error || `KV LIST failed (${res.status})`)
-    }
-    return res.json()
+    return this._requestExternal(this._kvEndpoint(null, { env, prefix, limit, cursor }), {
+      method: 'GET',
+      methodName: 'kv.list'
+    })
   }
 
   destroy () {
-    this._ready = false
+    super.destroy()
   }
 }

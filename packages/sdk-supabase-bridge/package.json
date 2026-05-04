@@ -16,7 +16,11 @@
     "README.md"
   ],
   "scripts": {
-    "test": "echo \"no tests\""
+    "test": "tape tests/*.test.js | tap-spec"
+  },
+  "devDependencies": {
+    "tap-spec": "^5.0.0",
+    "tape": "^5.7.5"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.99.1",

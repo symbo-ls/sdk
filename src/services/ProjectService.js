@@ -4,6 +4,7 @@ import { preprocessChanges } from '../utils/changePreprocessor.js'
 import { deepStringifyFunctions } from '@symbo.ls/utils'
 import { PROJECT_SOURCE_ACCESS } from '../constants/roles.js'
 import { projectKeyPath as keyPath } from '../utils/projectKeyPath.js'
+import { logger } from '../utils/logger.js'
 
 // BaseService wraps every error as `new Error(`Request failed: …`,
 // { cause: <inner Error> })` and the inner error has `cause = <body>`.
@@ -331,9 +332,11 @@ export class ProjectService extends BaseService {
         { method: 'GET', methodName: 'getPublicProjectVisibility' }
       )
       return response?.data?.visibility || null
-    } catch {
+    } catch (err) {
       // Probe-only — degrade to null so callers fall back to the
-      // legacy "not published" message rather than blowing up.
+      // legacy "not published" message rather than blowing up. Log so
+      // backend outages don't go silent.
+      logger.warn('[ProjectService.getPublicProjectVisibility] probe failed:', err?.message || err)
       return null
     }
   }
@@ -397,10 +400,13 @@ export class ProjectService extends BaseService {
       `/projects/resolve/${encodeURIComponent(appkey)}`,
       { method: 'GET', methodName: 'resolveAppkey' }
     )
+    // Prefer the enveloped form so a `data: { owner: null, key: '…' }`
+    // response doesn't accidentally match the bare-shape branch and return
+    // the outer envelope instead.
+    if (response?.success && response.data) return response.data
     if (response?.owner !== undefined || response?.key !== undefined) {
       return response
     }
-    if (response?.success && response.data) return response.data
     throw new Error(response?.message || 'Failed to resolve appkey')
   }
 

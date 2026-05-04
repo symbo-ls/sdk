@@ -60,8 +60,7 @@ export class OrganizationService extends BaseService {
       return true
     } catch (err) {
       // 404 → slug is free; everything else → check failed.
-      const msg = err?.message || ''
-      if (/404|not.?found/iu.test(msg)) return true
+      if (err?.status === 404) return true
       return null
     }
   }

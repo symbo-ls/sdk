@@ -18,9 +18,13 @@ import { FeatureFlagService } from './FeatureFlagService.js'
 import { OrganizationService } from './OrganizationService.js'
 import { WorkspaceService } from './WorkspaceService.js'
 import {
-  WorkspaceDataService,
+  WorkspaceProjectService,
   workspaceProjectBaseUrl,
 } from './WorkspaceProjectService.js'
+
+// Back-compat alias for the historical class name. Removable once consumers
+// migrate to `WorkspaceProjectService`.
+const WorkspaceDataService = WorkspaceProjectService
 import {
   createSupabasePassthroughConfig,
   workspaceProjectEdgeFunctionUrl,
@@ -97,7 +101,7 @@ export const createWorkspaceService = config =>
 // @symbo.ls/server-workspace-project wrapper). Distinct from
 // WorkspaceService (workspace-org CRUD via /core/workspaces).
 export const createWorkspaceProjectService = config =>
-  createService(WorkspaceDataService, config)
+  createService(WorkspaceProjectService, config)
 
 export const createKvService = config =>
   createService(KvService, config)
@@ -131,6 +135,7 @@ export {
   FeatureFlagService,
   OrganizationService,
   WorkspaceService,
+  WorkspaceProjectService,
   WorkspaceDataService,
   workspaceProjectBaseUrl,
   createSupabasePassthroughConfig,

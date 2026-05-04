@@ -78,7 +78,17 @@ const _createAdapterClient = ({ url, anonKey, rawSupabaseUrl, getRealtimeClient 
   if (typeof getRealtimeClient === 'function') {
     try {
       const rawClient = getRealtimeClient()
-      if (rawClient?.realtime) client.realtime = rawClient.realtime
+      // supabase-js v2.40+ defines `realtime` via Object.defineProperty
+      // without a setter on some builds, so a plain assignment silently
+      // no-ops in strict mode. Force the override via defineProperty.
+      if (rawClient?.realtime) {
+        Object.defineProperty(client, 'realtime', {
+          value: rawClient.realtime,
+          writable: true,
+          configurable: true,
+          enumerable: true
+        })
+      }
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn('[supabasePassthrough] could not bind raw realtime to adapter client:', err)

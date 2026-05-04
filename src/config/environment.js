@@ -185,6 +185,10 @@ export const getConfig = () => {
       channel: channelName,
       isDevelopment: isDevelopment(env),
       isTest: env === 'test' || env === 'testing',
+      // Back-compat — historical consumers branch on `isTesting`. Mirror
+      // `isTest` so the rename doesn't silently produce `undefined`. Drop
+      // once all consumers land on `isTest`.
+      isTesting: env === 'test' || env === 'testing',
       isStaging: env === 'staging',
       isPreview: env === 'preview',
       isProduction: env === 'production'

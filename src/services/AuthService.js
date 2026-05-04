@@ -825,11 +825,11 @@ export class AuthService extends BaseService {
       }
       throw new Error(response.message)
     } catch (error) {
-      const message = error?.message || ''
       // If request failed due to missing/invalid auth, default to guest
-      if (/401|403|unauthorized|no token|invalid token/iu.test(message)) {
+      if (error?.status === 401 || error?.status === 403) {
         return 'guest'
       }
+      const message = error?.message || ''
       throw new Error(`Failed to get project role by key: ${message}`, { cause: error })
     }
   }

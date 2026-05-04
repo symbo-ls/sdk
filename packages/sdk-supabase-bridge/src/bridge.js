@@ -129,6 +129,19 @@ export function createAuthBridge ({
 
     await Promise.all(requiredResults.map((r) => _setSession(r)))
 
+    // _setSession may have downgraded a required project's status to 'error'
+    // (e.g. supabase-js rejected setSession). Abort the login so callers
+    // never observe ok:true for a partial session.
+    const setSessionFailure = requiredResults.find((r) => r.status !== 'ok')
+    if (setSessionFailure) {
+      clearTimeout(timer)
+      return {
+        ok: false,
+        results: requiredResults,
+        error: setSessionFailure.error || new Error(`required project ${setSessionFailure.key} setSession failed`)
+      }
+    }
+
     const optionalFilter = app.optional != null ? new Set(app.optional) : null
     const extensionResults = await Promise.all(
       extensionKeys.map(async (key) => {
