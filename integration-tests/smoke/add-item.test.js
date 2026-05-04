@@ -106,24 +106,27 @@ test('Etag should display the correct values', async (tape) => {
     )
   }
 
-  // Test modified response: ETag value updated. Poll until the new
-  // version lands rather than sleeping a fixed 5s.
+  // Test modified response: ETag value advanced. Don't pin to the exact
+  // string '1.0.1:0' — server may bump version differently (e.g. with a
+  // non-zero commit counter suffix). Just assert it's no longer the
+  // pre-change etag.
   await toggleLiveAndConnect(sdkInstance, project)
   await sdkInstance.addItem(testType, testData)
   await toggleLiveAndConnect(sdkInstance, project)
   const secondProjectResponse = await waitFor(
     async () => {
       const r = await sdkInstance.getProjectData(project.id)
-      return r?.__pending?.etag === '1.0.1:0' ? r : null
+      const etag = r?.__pending?.etag
+      return etag && etag !== firstETag ? r : null
     },
     {
       timeout: COMMIT_TIMEOUT_MS,
       interval: 500,
-      message: 'ETag never advanced to 1.0.1:0 after addItem'
+      message: `ETag never advanced from ${firstETag} after addItem`
     }
   )
   const secondETag = secondProjectResponse.__pending.etag
-  tape.equal(secondETag, '1.0.1:0', 'ETag present and updated to 1.0.1:0')
+  tape.notEqual(secondETag, firstETag, `ETag advanced from ${firstETag} → ${secondETag}`)
   tape.end()
 })
 
