@@ -87,7 +87,7 @@ const CONFIG = {
 }
 
 // Back-compat alias: the historical `testing` env key now maps to the `test`
-// channel. Existing SYMBOLS_APP_ENV=testing keeps working; new code should
+// channel. Existing NODE_ENV=testing keeps working; new code should
 // use `test`.
 CONFIG.testing = CONFIG.test
 
@@ -126,7 +126,7 @@ const parseSearchEndpoint = (apiUrl) => {
 // resolution land on the same env when nothing is explicitly set.
 const getEnvironment = () => {
   // @preserve-env
-  const env = process.env.SYMBOLS_APP_ENV || process.env.NODE_ENV || 'next'
+  const env = process.env.NODE_ENV || 'next'
 
   if (!CONFIG[env]) {
     throw new Error(`Unknown environment "${env}"`)

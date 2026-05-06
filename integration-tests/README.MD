@@ -80,7 +80,7 @@ Use `tape -p '*pattern*'` ad-hoc when you need to filter by test name.
 ### Environments
 
 Channel resolution is shared with the rest of the platform via
-`@symbo.ls/channels`. Recognized values for `SYMBOLS_APP_ENV`:
+`@symbo.ls/channels`. Recognized values for `NODE_ENV`:
 
 - `local`
 - `development`
@@ -92,7 +92,7 @@ Channel resolution is shared with the rest of the platform via
 - `production`
 
 Locally the SDK integration tests target the `test` channel
-(`SYMBOLS_APP_ENV=test`). CI smoke tests run after every deployment to one
+(`NODE_ENV=test`). CI smoke tests run after every deployment to one
 of these environments.
 
 ### Conditional Logic for Test Execution in the Environments
