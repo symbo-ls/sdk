@@ -1,6 +1,6 @@
 {
   "name": "@symbo.ls/sdk-supabase-bridge",
-  "version": "3.14.0",
+  "version": "3.14.1",
   "type": "module",
   "description": "Supabase-flavoured federation bridge — multi-project auth, registry-driven client cache, edge-function login/logout/switch primitives. Built on @symbo.ls/sdk-bridge. Project-specific glue (org defaults, integrations, MCP) belongs in the consumer app.",
   "main": "./dist/cjs/index.cjs",
@@ -45,8 +45,8 @@
   ],
   "scripts": {
     "test": "tape tests/*.test.js | tap-spec",
-    "build:esm": "esbuild $(find . -type f -name \"*.js\" -not -path \"*/dist/*\" -not -path \"*/node_modules/*\" -not -path \"*/__tests__/*\" -not -path \"*/test/*\" -not -name \"*.test.js\") --target=es2020 --format=esm --outbase=. --outdir=dist/esm --minify --log-level=warning",
-    "build:cjs": "esbuild $(find . -type f -name \"*.js\" -not -path \"*/dist/*\" -not -path \"*/node_modules/*\" -not -path \"*/__tests__/*\" -not -path \"*/test/*\" -not -name \"*.test.js\") --target=node18 --format=cjs --outbase=. --outdir=dist/cjs --out-extension:.js=.cjs --minify --log-level=warning",
+    "build:esm": "esbuild $(find . -type f -name \"*.js\" -not -path \"*/dist/*\" -not -path \"*/node_modules/*\" -not -path \"*/__tests__/*\" -not -path \"*/test/*\" -not -path \"*/demo/*\" -not -path \"*/demos/*\" -not -path \"*/examples/*\" -not -path \"*/fixtures/*\" -not -name \"*.test.js\") --target=es2022 --format=esm --outbase=. --outdir=dist/esm --minify --log-level=warning",
+    "build:cjs": "esbuild $(find . -type f -name \"*.js\" -not -path \"*/dist/*\" -not -path \"*/node_modules/*\" -not -path \"*/__tests__/*\" -not -path \"*/test/*\" -not -path \"*/demo/*\" -not -path \"*/demos/*\" -not -path \"*/examples/*\" -not -path \"*/fixtures/*\" -not -name \"*.test.js\") --target=node20 --format=cjs --outbase=. --outdir=dist/cjs --out-extension:.js=.cjs --minify --log-level=warning",
     "build": "rimraf dist && npm run build:esm && npm run build:cjs",
     "prepublishOnly": "npm run build"
   },
