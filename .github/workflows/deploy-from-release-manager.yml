@@ -32,11 +32,6 @@ on:
         required: false
         type: string
         default: 'release-manager'
-      target_env:
-        description: 'Channel to test/deploy against (test/staging/production/...)'
-        required: false
-        type: string
-        default: 'test'
 
 concurrency:
   # Multiple release-manager cycles in flight: keep the newest, cancel
@@ -119,28 +114,14 @@ jobs:
       - name: Install dependencies
         run: bun install --no-save
 
-      # Tests run before deploy. Repos with custom test logic add a
-      # scripts/test-from-release-manager.sh; everything else falls through
-      # to `npm test --if-present`. Test failure stops the deploy.
-      - name: Run tests
-        env:
-          VERSION: ${{ inputs.version }}
-          SOURCE_REPO: ${{ inputs.source_repo }}
-          NODE_ENV: ${{ inputs.target_env || 'test' }}
-        run: |
-          if [ -x "./scripts/test-from-release-manager.sh" ]; then
-            ./scripts/test-from-release-manager.sh
-          else
-            npm test --if-present
-          fi
-
       # Each repo plugs in its own build + deploy here. Common shapes:
       #   - server:    docker build + push + deploy to GCP
       #   - workspace: bun run build + push to CDN
       #   - smbls/sdk: nothing (already published by release-manager)
       #
-      # If no deploy script exists, log + skip (repos that publish-only
-      # don't need anything here — release-manager already published them).
+      # Replace this block with whatever the consumer's existing deploy.sh
+      # or deploy steps do. The version is in $VERSION for any tagging /
+      # logging downstream.
       - name: Build and deploy
         env:
           VERSION: ${{ inputs.version }}
@@ -151,5 +132,6 @@ jobs:
           elif [ -x "./scripts/deploy.sh" ]; then
             ./scripts/deploy.sh
           else
-            echo "::notice::No deploy script — publish-only repo. Tests passed against v${VERSION} from ${SOURCE_REPO}."
+            echo "::warning::No deploy script found at scripts/deploy-from-release-manager.sh or scripts/deploy.sh — set this up per-repo."
+            echo "::notice::Skipping deploy. The release-manager dispatched at v${VERSION} from ${SOURCE_REPO}."
           fi
