@@ -1,22 +1,8 @@
 # Drop into <repo>/.github/workflows/deploy-from-release-manager.yml
+# (server, workspace, smbls, sdk — any repo with a cloud surface)
 #
-# Triggered by release-manager after it tags a new version (v3.X.Y).
-# Pins the deploy to that exact version so all repos in one release
-# cycle deploy in lockstep.
-#
-# This workflow REPLACES (or augments) the per-repo deploy-on-push-to-main
-# trigger. If you keep an existing deploy-on-push, gate it with:
-#   if: !startsWith(github.event.head_commit.message, 'chore(release)')
-# so chore(release) commits made by release-manager don't double-deploy.
-#
-# Required secrets on this repo:
-#   - whatever your existing deploy.sh / deploy step needs (cloud creds,
-#     Infisical machine identity, registry tokens, etc.)
-#
-# Inputs from release-manager:
-#   - version:      the tag (e.g. "3.14.6"). Workflow checks out that tag.
-#   - source_repo:  the repo whose push triggered this release. Useful for
-#                   logging / metrics; doesn't change deploy behavior.
+# Thin wrapper that calls release-manager's reusable deploy workflow.
+# Per-repo customization happens in scripts/deploy-from-release-manager.sh.
 
 name: Deploy from release-manager
 
@@ -32,99 +18,21 @@ on:
         required: false
         type: string
         default: 'release-manager'
+      target_env:
+        description: 'Channel to deploy against (test/staging/production)'
+        required: false
+        type: string
+        default: 'test'
 
 concurrency:
-  # Multiple release-manager cycles in flight: keep the newest, cancel
-  # in-progress deploys. The newest tag is what should actually ship.
   group: deploy-${{ github.repository }}
   cancel-in-progress: true
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: read
-    steps:
-      - name: Log dispatch source
-        run: |
-          echo "Deploying ${{ github.repository }} at v${{ inputs.version }}"
-          echo "Triggered by release of: ${{ inputs.source_repo }}"
-
-      - uses: actions/checkout@v4
-        with:
-          ref: 'v${{ inputs.version }}'
-          fetch-depth: 0
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          registry-url: 'https://registry.npmjs.org'
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      # Cache bun's install output. Keyed by the package.json content +
-      # bun.lock (when present). Cross-cycle cache reuse — most cycles
-      # change only a handful of files.
-      - name: Cache node_modules
-        uses: actions/cache@v4
-        with:
-          path: |
-            node_modules
-            **/node_modules
-          key: bun-${{ runner.os }}-${{ inputs.version }}-${{ hashFiles('**/package.json', 'bun.lock', 'package-lock.json') }}
-          restore-keys: |
-            bun-${{ runner.os }}-${{ inputs.version }}-
-            bun-${{ runner.os }}-
-
-      # GH Packages auth — needed if this repo installs any @symbo-ls/*
-      # private package. Falls through harmlessly if not (.npmrc still
-      # gets npmjs.org auth).
-      # Read-only npm + GH Packages auth for installing the just-published
-      # bumped versions. Same secrets test.yml uses — read-only by design.
-      # Runtime secrets (DB creds, cloud keys, etc.) are fetched separately
-      # by the per-repo deploy script (server's pipeline.yaml etc.) — not
-      # this workflow's concern.
-      - name: Configure dual-registry auth
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          GH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
-        run: |
-          NPMRC="${NPM_CONFIG_USERCONFIG:-$HOME/.npmrc}"
-          {
-            if [ -n "$NPM_TOKEN" ]; then
-              echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN"
-              echo "always-auth=true"
-            fi
-            if [ -n "$GH_TOKEN" ]; then
-              echo "@symbo-ls:registry=https://npm.pkg.github.com"
-              echo "//npm.pkg.github.com/:_authToken=$GH_TOKEN"
-            fi
-          } >> "$NPMRC"
-
-      - name: Install dependencies
-        run: bun install --no-save
-
-      # Each repo plugs in its own build + deploy here. Common shapes:
-      #   - server:    docker build + push + deploy to GCP
-      #   - workspace: bun run build + push to CDN
-      #   - smbls/sdk: nothing (already published by release-manager)
-      #
-      # Replace this block with whatever the consumer's existing deploy.sh
-      # or deploy steps do. The version is in $VERSION for any tagging /
-      # logging downstream.
-      - name: Build and deploy
-        env:
-          VERSION: ${{ inputs.version }}
-          SOURCE_REPO: ${{ inputs.source_repo }}
-        run: |
-          if [ -x "./scripts/deploy-from-release-manager.sh" ]; then
-            ./scripts/deploy-from-release-manager.sh
-          elif [ -x "./scripts/deploy.sh" ]; then
-            ./scripts/deploy.sh
-          else
-            echo "::warning::No deploy script found at scripts/deploy-from-release-manager.sh or scripts/deploy.sh — set this up per-repo."
-            echo "::notice::Skipping deploy. The release-manager dispatched at v${VERSION} from ${SOURCE_REPO}."
-          fi
+    uses: symbo-ls/release-manager/.github/workflows/deploy-reusable.yml@main
+    with:
+      version: ${{ inputs.version }}
+      source_repo: ${{ inputs.source_repo }}
+      target_env: ${{ inputs.target_env }}
+    secrets: inherit
