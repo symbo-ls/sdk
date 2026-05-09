@@ -23,25 +23,25 @@
   ],
   "exports": {
     ".": {
-      "development": "./index.js",
-      "import": "./dist/esm/index.js",
-      "default": "./dist/esm/index.js"
+      "development": "./src/index.js",
+      "import": "./dist/esm/src/index.js",
+      "default": "./dist/esm/src/index.js"
     },
     "./package.json": "./package.json",
     "./environment": {
-      "development": "./environment.js",
-      "import": "./dist/esm/environment.js",
-      "default": "./dist/esm/environment.js"
+      "development": "./src/config/environment.js",
+      "import": "./dist/esm/src/config/environment.js",
+      "default": "./dist/esm/src/config/environment.js"
     },
     "./federation": {
-      "development": "./federation.js",
-      "import": "./dist/esm/federation.js",
-      "default": "./dist/esm/federation.js"
+      "development": "./src/federation/index.js",
+      "import": "./dist/esm/src/federation/index.js",
+      "default": "./dist/esm/src/federation/index.js"
     },
     "./utils/services": {
-      "development": "./utils/services.js",
-      "import": "./dist/esm/utils/services.js",
-      "default": "./dist/esm/utils/services.js"
+      "development": "./src/utils/services.js",
+      "import": "./dist/esm/src/utils/services.js",
+      "default": "./dist/esm/src/utils/services.js"
     }
   },
   "scripts": {

@@ -6,35 +6,35 @@
   "main": "./dist/cjs/index.cjs",
   "exports": {
     ".": {
-      "development": "./index.js",
-      "import": "./dist/esm/index.js",
-      "require": "./dist/cjs/index.cjs",
-      "default": "./dist/esm/index.js"
+      "development": "./src/index.js",
+      "import": "./dist/esm/src/index.js",
+      "require": "./dist/cjs/src/index.cjs",
+      "default": "./dist/esm/src/index.js"
     },
     "./package.json": "./package.json",
     "./clients": {
-      "development": "./clients.js",
-      "import": "./dist/esm/clients.js",
-      "require": "./dist/cjs/clients.cjs",
-      "default": "./dist/esm/clients.js"
+      "development": "./src/clients.js",
+      "import": "./dist/esm/src/clients.js",
+      "require": "./dist/cjs/src/clients.cjs",
+      "default": "./dist/esm/src/clients.js"
     },
     "./bridge": {
-      "development": "./bridge.js",
-      "import": "./dist/esm/bridge.js",
-      "require": "./dist/cjs/bridge.cjs",
-      "default": "./dist/esm/bridge.js"
+      "development": "./src/bridge.js",
+      "import": "./dist/esm/src/bridge.js",
+      "require": "./dist/cjs/src/bridge.cjs",
+      "default": "./dist/esm/src/bridge.js"
     },
     "./env": {
-      "development": "./env.js",
-      "import": "./dist/esm/env.js",
-      "require": "./dist/cjs/env.cjs",
-      "default": "./dist/esm/env.js"
+      "development": "./src/env.js",
+      "import": "./dist/esm/src/env.js",
+      "require": "./dist/cjs/src/env.cjs",
+      "default": "./dist/esm/src/env.js"
     },
     "./crossAppAuth": {
-      "development": "./crossAppAuth.js",
-      "import": "./dist/esm/crossAppAuth.js",
-      "require": "./dist/cjs/crossAppAuth.cjs",
-      "default": "./dist/esm/crossAppAuth.js"
+      "development": "./src/crossAppAuth.js",
+      "import": "./dist/esm/src/crossAppAuth.js",
+      "require": "./dist/cjs/src/crossAppAuth.cjs",
+      "default": "./dist/esm/src/crossAppAuth.js"
     }
   },
   "files": [

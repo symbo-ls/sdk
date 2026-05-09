@@ -6,29 +6,29 @@
   "main": "./dist/cjs/index.cjs",
   "exports": {
     ".": {
-      "development": "./index.js",
-      "import": "./dist/esm/index.js",
-      "require": "./dist/cjs/index.cjs",
-      "default": "./dist/esm/index.js"
+      "development": "./src/index.js",
+      "import": "./dist/esm/src/index.js",
+      "require": "./dist/cjs/src/index.cjs",
+      "default": "./dist/esm/src/index.js"
     },
     "./package.json": "./package.json",
     "./registry": {
-      "development": "./registry.js",
-      "import": "./dist/esm/registry.js",
-      "require": "./dist/cjs/registry.cjs",
-      "default": "./dist/esm/registry.js"
+      "development": "./src/registry.js",
+      "import": "./dist/esm/src/registry.js",
+      "require": "./dist/cjs/src/registry.cjs",
+      "default": "./dist/esm/src/registry.js"
     },
     "./cookies": {
-      "development": "./cookies.js",
-      "import": "./dist/esm/cookies.js",
-      "require": "./dist/cjs/cookies.cjs",
-      "default": "./dist/esm/cookies.js"
+      "development": "./src/cookies.js",
+      "import": "./dist/esm/src/cookies.js",
+      "require": "./dist/cjs/src/cookies.cjs",
+      "default": "./dist/esm/src/cookies.js"
     },
     "./storage": {
-      "development": "./storage.js",
-      "import": "./dist/esm/storage.js",
-      "require": "./dist/cjs/storage.cjs",
-      "default": "./dist/esm/storage.js"
+      "development": "./src/storage.js",
+      "import": "./dist/esm/src/storage.js",
+      "require": "./dist/cjs/src/storage.cjs",
+      "default": "./dist/esm/src/storage.js"
     }
   },
   "files": [
