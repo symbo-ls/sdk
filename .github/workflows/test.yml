@@ -123,6 +123,18 @@ jobs:
         run: npm run build --workspaces --if-present 2>&1 | tail -100 || true
 
       - name: Test
+        env:
+          # Sdk's scripts/test.sh runs live API smoke tests against
+          # <branch>.api.symbols.app. Infisical creds (read-only on
+          # sdk's test channel secrets) are passed through here.
+          # Branch → channel:
+          #   main → test    next → next    upcoming → upcoming
+          INFISICAL_CLIENT_ID: ${{ secrets.INFISICAL_CLIENT_ID }}
+          INFISICAL_CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          INFISICAL_PROJECT_ID: ${{ secrets.INFISICAL_PROJECT_ID }}
+          INFISICAL_DOMAIN: ${{ secrets.INFISICAL_DOMAIN }}
+          CHANNEL: ${{ github.ref_name == 'main' && 'test' || github.ref_name }}
+          SUITE: smoke
         run: |
           if [ -f "scripts/test.sh" ]; then
             bash scripts/test.sh
@@ -130,5 +142,4 @@ jobs:
             npm test
           else
             echo "No tests configured — running install-only smoke test."
-            echo "(That's not nothing — install/resolution failures still gate publish.)"
           fi
