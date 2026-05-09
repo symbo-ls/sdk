@@ -93,7 +93,7 @@ export const createWorkspaceService = config =>
 
 // Workspace-project service — typed surface against
 // next.api.symbols.app/workspace-project/* (the
-// @symbo.ls/server-workspace-project wrapper). Distinct from
+// @symbo-ls/server-workspace-project wrapper). Distinct from
 // WorkspaceService (workspace-org CRUD via /core/workspaces).
 export const createWorkspaceProjectService = config =>
   createService(WorkspaceProjectService, config)

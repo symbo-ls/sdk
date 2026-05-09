@@ -11,7 +11,7 @@ export const workspaceProjectBaseUrl = (apiBase) =>
 
 // Calls the workspace-project wrapper at next.api.symbols.app/workspace-project/*
 // (or ${apiUrl}/workspace-project/* in dev/staging). Built on top of
-// @symbo.ls/server-workspace-project.
+// @symbo-ls/server-workspace-project.
 //
 // Distinct from WorkspaceService — that one CRUDs workspace org records
 // via /core/workspaces. This one is the typed data surface for the
