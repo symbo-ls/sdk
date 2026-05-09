@@ -3,19 +3,46 @@
   "version": "3.14.0",
   "type": "module",
   "description": "Abstract federation primitive — multi-project registry, client cache, and storage helpers. Framework-agnostic; build your own backend layer (Supabase, Firebase, custom) on top via @symbo.ls/sdk-supabase-bridge or your own implementation.",
-  "main": "src/index.js",
+  "main": "./dist/cjs/index.cjs",
   "exports": {
-    ".": "./src/index.js",
-    "./registry": "./src/registry.js",
-    "./cookies": "./src/cookies.js",
-    "./storage": "./src/storage.js"
+    ".": {
+      "development": "./index.js",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.cjs",
+      "default": "./dist/esm/index.js"
+    },
+    "./package.json": "./package.json",
+    "./registry": {
+      "development": "./registry.js",
+      "import": "./dist/esm/registry.js",
+      "require": "./dist/cjs/registry.cjs",
+      "default": "./dist/esm/registry.js"
+    },
+    "./cookies": {
+      "development": "./cookies.js",
+      "import": "./dist/esm/cookies.js",
+      "require": "./dist/cjs/cookies.cjs",
+      "default": "./dist/esm/cookies.js"
+    },
+    "./storage": {
+      "development": "./storage.js",
+      "import": "./dist/esm/storage.js",
+      "require": "./dist/cjs/storage.cjs",
+      "default": "./dist/esm/storage.js"
+    }
   },
   "files": [
-    "src/**/*.js",
+    "dist",
+    "*.md",
+    "LICENSE",
     "README.md"
   ],
   "scripts": {
-    "test": "tape tests/*.test.js | tap-spec"
+    "test": "tape tests/*.test.js | tap-spec",
+    "build:esm": "esbuild $(find . -type f -name \"*.js\" -not -path \"*/dist/*\" -not -path \"*/node_modules/*\" -not -path \"*/__tests__/*\" -not -path \"*/test/*\" -not -name \"*.test.js\") --target=es2020 --format=esm --outbase=. --outdir=dist/esm --minify --log-level=warning",
+    "build:cjs": "esbuild $(find . -type f -name \"*.js\" -not -path \"*/dist/*\" -not -path \"*/node_modules/*\" -not -path \"*/__tests__/*\" -not -path \"*/test/*\" -not -name \"*.test.js\") --target=node18 --format=cjs --outbase=. --outdir=dist/cjs --out-extension:.js=.cjs --minify --log-level=warning",
+    "build": "rimraf dist && npm run build:esm && npm run build:cjs",
+    "prepublishOnly": "npm run build"
   },
   "devDependencies": {
     "tap-spec": "^5.0.0",
@@ -24,6 +51,7 @@
   "license": "CC-BY-NC-4.0",
   "repository": "https://github.com/symbo-ls/sdk",
   "publishConfig": {
-    "access": "public"
-  }
+    "access": "restricted"
+  },
+  "module": "./dist/esm/index.js"
 }

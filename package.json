@@ -2,8 +2,8 @@
   "name": "@symbo.ls/sdk",
   "version": "3.14.2",
   "type": "module",
-  "main": "dist/esm/index.js",
-  "module": "dist/esm/index.js",
+  "main": "./dist/cjs/index.cjs",
+  "module": "./dist/esm/index.js",
   "workspaces": [
     "packages/*"
   ],
@@ -11,7 +11,9 @@
     "symbols-sdk": "./bin/sdk.js"
   },
   "files": [
-    "src/**/*.js",
+    "dist",
+    "*.md",
+    "LICENSE",
     "!src/**/*.test.js",
     "!src/**/tests/**",
     "!src/docs/**",
@@ -22,32 +24,37 @@
   ],
   "exports": {
     ".": {
-      "node": "./dist/node/index.js",
-      "browser": "./dist/esm/index.js",
+      "development": "./index.js",
+      "import": "./dist/esm/index.js",
       "require": "./dist/cjs/index.cjs",
       "default": "./dist/esm/index.js"
     },
+    "./package.json": "./package.json",
     "./environment": {
-      "import": "./dist/config/environment.js",
-      "require": "./dist/config/environment.cjs"
+      "development": "./environment.js",
+      "import": "./dist/esm/environment.js",
+      "require": "./dist/cjs/environment.cjs",
+      "default": "./dist/esm/environment.js"
     },
     "./federation": {
-      "import": "./src/federation/index.js",
-      "default": "./src/federation/index.js"
+      "development": "./federation.js",
+      "import": "./dist/esm/federation.js",
+      "require": "./dist/cjs/federation.cjs",
+      "default": "./dist/esm/federation.js"
     },
     "./utils/services": {
-      "node": "./dist/node/utils/services.js",
+      "development": "./utils/services.js",
       "import": "./dist/esm/utils/services.js",
       "require": "./dist/cjs/utils/services.cjs",
       "default": "./dist/esm/utils/services.js"
     }
   },
   "scripts": {
-    "build:esm": "esbuild $(find src -name '*.js' ! -name '*.test.js') --target=es2019 --format=esm --bundle --external:@symbo.ls/utils --external:@symbo.ls/router --external:@symbo.ls/sync --external:@symbo.ls/sdk-bridge --external:@symbo.ls/sdk-supabase-bridge --external:@supabase/supabase-js --outdir=dist/esm --define:process.env.NODE_ENV=process.env.NODE_ENV",
-    "build:cjs": "esbuild $(find src -name '*.js' ! -name '*.test.js') --target=node16 --format=cjs --out-extension:.js=.cjs --outdir=dist/cjs --define:process.env.NODE_ENV=process.env.NODE_ENV",
+    "build:esm": "esbuild $(find . -type f -name \"*.js\" -not -path \"*/dist/*\" -not -path \"*/node_modules/*\" -not -path \"*/__tests__/*\" -not -path \"*/test/*\" -not -name \"*.test.js\") --target=es2020 --format=esm --outbase=. --outdir=dist/esm --minify --log-level=warning",
+    "build:cjs": "esbuild $(find . -type f -name \"*.js\" -not -path \"*/dist/*\" -not -path \"*/node_modules/*\" -not -path \"*/__tests__/*\" -not -path \"*/test/*\" -not -name \"*.test.js\") --target=node18 --format=cjs --outbase=. --outdir=dist/cjs --out-extension:.js=.cjs --minify --log-level=warning",
     "build:node": "esbuild $(find src -name '*.js' ! -name '*.test.js') --target=node16 --format=esm --platform=node --outdir=dist/node --define:process.env.NODE_ENV=process.env.NODE_ENV",
-    "build": "rimraf dist && bun run build:esm && bun run build:cjs && bun run build:node",
-    "prepublishOnly": "bun run build",
+    "build": "rimraf dist && npm run build:esm && npm run build:cjs",
+    "prepublishOnly": "npm run build",
     "_inf": "infisical run --domain=https://km.api.symbols.app/api --projectId=58275b78-1549-4c3b-bdd5-6bedc6af0430 --env=${NODE_ENV:-upcoming} --",
     "test:all": "bun run _inf -- tape integration-tests/index.js integration-tests/*.test.js | tap-spec",
     "test:smoke": "bun run _inf -- tape integration-tests/index.js integration-tests/smoke/*.test.js | tap-spec",
@@ -116,6 +123,6 @@
   "gitHead": "0be12bcdd99c265fdeded6d756a1a3616a943ffc",
   "packageManager": "bun@1.3.6",
   "publishConfig": {
-    "access": "public"
+    "access": "restricted"
   }
 }

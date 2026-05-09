@@ -3,20 +3,52 @@
   "version": "3.14.0",
   "type": "module",
   "description": "Supabase-flavoured federation bridge — multi-project auth, registry-driven client cache, edge-function login/logout/switch primitives. Built on @symbo.ls/sdk-bridge. Project-specific glue (org defaults, integrations, MCP) belongs in the consumer app.",
-  "main": "src/index.js",
+  "main": "./dist/cjs/index.cjs",
   "exports": {
-    ".": "./src/index.js",
-    "./clients": "./src/clients.js",
-    "./bridge": "./src/bridge.js",
-    "./env": "./src/env.js",
-    "./crossAppAuth": "./src/crossAppAuth.js"
+    ".": {
+      "development": "./index.js",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.cjs",
+      "default": "./dist/esm/index.js"
+    },
+    "./package.json": "./package.json",
+    "./clients": {
+      "development": "./clients.js",
+      "import": "./dist/esm/clients.js",
+      "require": "./dist/cjs/clients.cjs",
+      "default": "./dist/esm/clients.js"
+    },
+    "./bridge": {
+      "development": "./bridge.js",
+      "import": "./dist/esm/bridge.js",
+      "require": "./dist/cjs/bridge.cjs",
+      "default": "./dist/esm/bridge.js"
+    },
+    "./env": {
+      "development": "./env.js",
+      "import": "./dist/esm/env.js",
+      "require": "./dist/cjs/env.cjs",
+      "default": "./dist/esm/env.js"
+    },
+    "./crossAppAuth": {
+      "development": "./crossAppAuth.js",
+      "import": "./dist/esm/crossAppAuth.js",
+      "require": "./dist/cjs/crossAppAuth.cjs",
+      "default": "./dist/esm/crossAppAuth.js"
+    }
   },
   "files": [
-    "src/**/*.js",
+    "dist",
+    "*.md",
+    "LICENSE",
     "README.md"
   ],
   "scripts": {
-    "test": "tape tests/*.test.js | tap-spec"
+    "test": "tape tests/*.test.js | tap-spec",
+    "build:esm": "esbuild $(find . -type f -name \"*.js\" -not -path \"*/dist/*\" -not -path \"*/node_modules/*\" -not -path \"*/__tests__/*\" -not -path \"*/test/*\" -not -name \"*.test.js\") --target=es2020 --format=esm --outbase=. --outdir=dist/esm --minify --log-level=warning",
+    "build:cjs": "esbuild $(find . -type f -name \"*.js\" -not -path \"*/dist/*\" -not -path \"*/node_modules/*\" -not -path \"*/__tests__/*\" -not -path \"*/test/*\" -not -name \"*.test.js\") --target=node18 --format=cjs --outbase=. --outdir=dist/cjs --out-extension:.js=.cjs --minify --log-level=warning",
+    "build": "rimraf dist && npm run build:esm && npm run build:cjs",
+    "prepublishOnly": "npm run build"
   },
   "devDependencies": {
     "tap-spec": "^5.0.0",
@@ -29,6 +61,7 @@
   "license": "CC-BY-NC-4.0",
   "repository": "https://github.com/symbo-ls/sdk",
   "publishConfig": {
-    "access": "public"
-  }
+    "access": "restricted"
+  },
+  "module": "./dist/esm/index.js"
 }
