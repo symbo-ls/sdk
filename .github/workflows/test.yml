@@ -1,28 +1,12 @@
-# Drop into <repo>/.github/workflows/test.yml
-#
-# Thin wrapper that calls release-manager's reusable Test workflow.
-# All implementation lives in symbo-ls/release-manager — change there
-# once and every consumer's next push picks it up.
-#
-# Required secrets on this repo (read-only):
-#   - NPM_TOKEN          — npmjs Granular Access Token, read on @symbo.ls
-#   - GH_PACKAGES_TOKEN  — Classic PAT, read:packages only
-# Optional (for live API smoke tests like sdk):
-#   - INFISICAL_CLIENT_ID / INFISICAL_CLIENT_SECRET
-#   - INFISICAL_PROJECT_ID / INFISICAL_DOMAIN
-
 name: Test
-
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
-
 concurrency:
   group: test-${{ github.ref }}
   cancel-in-progress: true
-
 jobs:
   test:
     uses: symbo-ls/release-manager/.github/workflows/test-reusable.yml@main
