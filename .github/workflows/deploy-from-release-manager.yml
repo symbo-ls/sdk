@@ -90,7 +90,7 @@ jobs:
       - name: Configure dual-registry auth
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          GH_TOKEN: ${{ secrets.GITHUB_PACKAGES_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
         run: |
           NPMRC="${NPM_CONFIG_USERCONFIG:-$HOME/.npmrc}"
           {
