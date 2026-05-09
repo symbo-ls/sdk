@@ -30,7 +30,7 @@ concurrency:
 
 jobs:
   deploy:
-    uses: symbo-ls/release-manager/.github/workflows/deploy-reusable.yml@main
+    uses: symbo-ls/.github/.github/workflows/deploy-reusable.yml@main
     with:
       version: ${{ inputs.version }}
       source_repo: ${{ inputs.source_repo }}
