@@ -87,7 +87,17 @@ export function createAuthBridge ({
     }
   }
 
-  const loginAll = async ({ email, password, claimsHint } = {}) => {
+  // Federation entry point. Two auth modes:
+  //   - email+password: primary signin path (Symbols server's
+  //     `/auth/login` verifies credentials, returns full session).
+  //   - symbolsAccessToken: OAuth fan-out path (Symbols server's
+  //     `/auth/me` validates the token + returns the same user
+  //     payload). Either mode flows through the same Edge Function
+  //     (`symbols-auth-bridge`) and ends with a Supabase session
+  //     whose `app_metadata` carries the federated claims.
+  // Pre-existing `email+password` callers keep working unchanged;
+  // OAuth callers pass `{symbolsAccessToken}` instead.
+  const loginAll = async ({ email, password, symbolsAccessToken, claimsHint } = {}) => {
     const keys = registry.listConfiguredProjects()
     const app = appConfig.get()
     const requiredSet = new Set(
@@ -105,7 +115,7 @@ export function createAuthBridge ({
       requiredKeys.map(async (key) => {
         const cfg = registry.getProjectConfig(key)
         try {
-          const data = await callBridge(cfg, { email, password }, ac.signal)
+          const data = await callBridge(cfg, symbolsAccessToken ? { symbols_access_token: symbolsAccessToken } : { email, password }, ac.signal)
           return projectResult(key, 'ok', data)
         } catch (err) {
           return projectResult(key, 'error', null, err)
@@ -153,7 +163,7 @@ export function createAuthBridge ({
         try { applicable = !!cfg.shouldActivate(mergedClaims) } catch { applicable = false }
         if (!applicable) return projectResult(key, 'not-applicable')
         try {
-          const data = await callBridge(cfg, { email, password }, ac.signal)
+          const data = await callBridge(cfg, symbolsAccessToken ? { symbols_access_token: symbolsAccessToken } : { email, password }, ac.signal)
           const r = projectResult(key, 'ok', data)
           await _setSession(r)
           return r
