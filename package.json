@@ -24,8 +24,8 @@
   "exports": {
     ".": {
       "development": "./src/index.js",
-      "import": "./dist/esm/src/index.js",
-      "default": "./dist/esm/src/index.js"
+      "import": "./dist/esm/index.js",
+      "default": "./dist/esm/index.js"
     },
     "./package.json": "./package.json",
     "./environment": {
