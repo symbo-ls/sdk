@@ -3,7 +3,7 @@
   "version": "3.14.6",
   "type": "module",
   "description": "Abstract federation primitive — multi-project registry, client cache, and storage helpers. Framework-agnostic; build your own backend layer (Supabase, Firebase, custom) on top via @symbo.ls/sdk-supabase-bridge or your own implementation.",
-  "main": "./dist/cjs/index.cjs",
+  "main": "./dist/cjs/src/index.cjs",
   "exports": {
     ".": {
       "development": "./src/index.js",
@@ -53,5 +53,5 @@
   "publishConfig": {
     "access": "restricted"
   },
-  "module": "./dist/esm/index.js"
+  "module": "./dist/esm/src/index.js"
 }

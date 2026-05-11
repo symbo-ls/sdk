@@ -3,7 +3,7 @@
   "version": "3.14.6",
   "type": "module",
   "description": "Supabase-flavoured federation bridge — multi-project auth, registry-driven client cache, edge-function login/logout/switch primitives. Built on @symbo.ls/sdk-bridge. Project-specific glue (org defaults, integrations, MCP) belongs in the consumer app.",
-  "main": "./dist/cjs/index.cjs",
+  "main": "./dist/cjs/src/index.cjs",
   "exports": {
     ".": {
       "development": "./src/index.js",
@@ -63,5 +63,5 @@
   "publishConfig": {
     "access": "restricted"
   },
-  "module": "./dist/esm/index.js"
+  "module": "./dist/esm/src/index.js"
 }
