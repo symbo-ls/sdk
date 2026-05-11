@@ -797,6 +797,85 @@ const ENTITY_ROUTES = {
       subscribe: (a) => [a?.toAgent ?? a?.filter?.to_agent ?? a?.params?.to_agent],
     },
   },
+  // ─── Community feed + follow graph ────────────────────────────────────────
+  // Backed by migration 0106_community_feed.sql. Tables are read-public and
+  // write-scoped to the caller's email via RLS. Routes thread through the
+  // workspace passthrough; argMap follows the same CRUD shape used elsewhere.
+
+  'workspaceProject.feed': {
+    service: 'workspaceProject',
+    methods: {
+      list: 'feed.list',
+      get: 'feed.get',
+      create: 'feed.create',
+      update: 'feed.update',
+      remove: 'feed.remove',
+    },
+    argMap: CRUD_ARG_MAP,
+  },
+
+  'workspaceProject.feed.likes': {
+    service: 'workspaceProject',
+    methods: {
+      list: 'feed.likes.list',
+      create: 'feed.likes.create',
+      remove: 'feed.likes.remove',
+    },
+    argMap: {
+      list: (a) => [a?.postId ?? a?.post_id ?? a?.filter?.post_id],
+      create: (a) => [
+        a?.postId ?? a?.post_id ?? a?.payload?.post_id,
+        a?.userEmail ?? a?.user_email ?? a?.payload?.user_email,
+      ],
+      remove: argMaps.id,
+    },
+  },
+
+  'workspaceProject.feed.comments': {
+    service: 'workspaceProject',
+    methods: {
+      list: 'feed.comments.list',
+      create: 'feed.comments.create',
+      update: 'feed.comments.update',
+      remove: 'feed.comments.remove',
+    },
+    argMap: {
+      list: (a) => [
+        a?.postId ?? a?.post_id ?? a?.filter?.post_id,
+        { order: a?.order, limit: a?.limit, ...(a?.options || {}) },
+      ],
+      create: (a) => [
+        a?.postId ?? a?.post_id ?? a?.payload?.post_id,
+        a?.payload ?? a?.data ?? a,
+      ],
+      update: argMaps.idPayload,
+      remove: argMaps.id,
+    },
+  },
+
+  'workspaceProject.follows': {
+    service: 'workspaceProject',
+    methods: {
+      list: 'follows.list',
+      create: 'follows.create',
+      remove: 'follows.remove',
+      // Custom op for the (follower, followee) tuple convenience helper.
+      removePair: 'follows.removeByPair',
+    },
+    argMap: {
+      list: argMaps.filterOptions,
+      create: (a) => [
+        a?.followerEmail ?? a?.follower_email ?? a?.payload?.follower_email,
+        a?.followeeEmail ?? a?.followee_email ?? a?.payload?.followee_email,
+      ],
+      remove: argMaps.id,
+      removePair: (a) => [
+        a?.followerEmail ?? a?.follower_email,
+        a?.followeeEmail ?? a?.followee_email,
+      ],
+    },
+  },
+
   // Generic escape-hatch for one-off RPCs that don't have a dedicated route.
   // sdk.execute('workspaceProject.query', 'rpc', { body }) calls
   // workspaceProject.query(body). Use sparingly — prefer adding a real route.

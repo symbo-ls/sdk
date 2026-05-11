@@ -786,6 +786,80 @@ export class WorkspaceProjectService extends BaseService {
     subscribe: (_toAgent) => () => {},
   }
 
+  // --- Community feed + follow graph ----------------------------------------
+  // Backed by migration 0106_community_feed.sql. Tables are public-readable
+  // (the feed is a global / cross-tenant social surface) and writes are
+  // RLS-scoped to the caller's email — `auth.email() = author_email`.
+  //
+  // Each surface is a thin _sb() wrapper rather than _sbCrud so we can pin
+  // the default ordering (recent posts / oldest comments first) without
+  // every caller passing it.
+  feed = {
+    list: (filter, options) =>
+      this._sb('feed.list', 'feed_posts', 'list', {
+        filter,
+        options: { order: 'created_at.desc', limit: 50, ...(options || {}) },
+      }),
+    get: (id) => this._sb('feed.get', 'feed_posts', 'get', { id }),
+    create: (payload) =>
+      this._sb('feed.create', 'feed_posts', 'create', { payload }),
+    update: (id, payload) =>
+      this._sb('feed.update', 'feed_posts', 'update', { id, payload }),
+    remove: (id) => this._sb('feed.remove', 'feed_posts', 'remove', { id }),
+
+    likes: {
+      list: (postId) =>
+        this._sb('feed.likes.list', 'feed_post_likes', 'list',
+          { filter: { post_id: postId } }),
+      create: (postId, userEmail) =>
+        this._sb('feed.likes.create', 'feed_post_likes', 'create',
+          { payload: { post_id: postId, user_email: userEmail } }),
+      remove: (id) =>
+        this._sb('feed.likes.remove', 'feed_post_likes', 'remove', { id }),
+    },
+
+    comments: {
+      list: (postId, options) =>
+        this._sb('feed.comments.list', 'feed_post_comments', 'list', {
+          filter: { post_id: postId },
+          options: { order: 'created_at.asc', ...(options || {}) },
+        }),
+      create: (postId, payload) =>
+        this._sb('feed.comments.create', 'feed_post_comments', 'create',
+          { payload: { post_id: postId, ...(payload || {}) } }),
+      update: (id, payload) =>
+        this._sb('feed.comments.update', 'feed_post_comments', 'update',
+          { id, payload }),
+      remove: (id) =>
+        this._sb('feed.comments.remove', 'feed_post_comments', 'remove', { id }),
+    },
+  }
+
+  follows = {
+    list: (filter, options) =>
+      this._sb('follows.list', 'user_follows', 'list', {
+        filter,
+        options: { order: 'created_at.desc', ...(options || {}) },
+      }),
+    create: (followerEmail, followeeEmail) =>
+      this._sb('follows.create', 'user_follows', 'create', {
+        payload: { follower_email: followerEmail, followee_email: followeeEmail },
+      }),
+    remove: (id) => this._sb('follows.remove', 'user_follows', 'remove', { id }),
+    // Convenience helper — many UIs only have the (follower, followee) tuple
+    // and would otherwise have to do a list+find before remove.
+    removeByPair: async (followerEmail, followeeEmail) => {
+      const rows = await this._sb('follows.removeByPair.find', 'user_follows', 'list', {
+        filter: { follower_email: followerEmail, followee_email: followeeEmail },
+        options: { limit: 1 },
+      })
+      const row = Array.isArray(rows) ? rows[0] : null
+      if (!row) return null
+      return this._sb('follows.removeByPair.remove', 'user_follows', 'remove',
+        { id: row.id })
+    },
+  }
+
   // --- i18n (translation stream) --------------------------------------------
   // Stub backend wire-up — TranslationWatcher subscribes to translation diffs
   // for the active lang+namespace tuple. Returns a noop unsub today; once
