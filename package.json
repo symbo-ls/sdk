@@ -30,18 +30,18 @@
     "./package.json": "./package.json",
     "./environment": {
       "development": "./src/config/environment.js",
-      "import": "./dist/esm/src/config/environment.js",
-      "default": "./dist/esm/src/config/environment.js"
+      "import": "./dist/esm/config/environment.js",
+      "default": "./dist/esm/config/environment.js"
     },
     "./federation": {
       "development": "./src/federation/index.js",
-      "import": "./dist/esm/src/federation/index.js",
-      "default": "./dist/esm/src/federation/index.js"
+      "import": "./dist/esm/federation/index.js",
+      "default": "./dist/esm/federation/index.js"
     },
     "./utils/services": {
       "development": "./src/utils/services.js",
-      "import": "./dist/esm/src/utils/services.js",
-      "default": "./dist/esm/src/utils/services.js"
+      "import": "./dist/esm/utils/services.js",
+      "default": "./dist/esm/utils/services.js"
     }
   },
   "scripts": {
