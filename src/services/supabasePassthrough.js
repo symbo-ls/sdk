@@ -70,20 +70,23 @@ const _createAdapterClient = async ({ url, anonKey, rawSupabaseUrl, getRealtimeC
   const storageKey = _supabaseStorageKey(rawSupabaseUrl)
   const createClient = await _resolveCreateClient()
 
-  // Resolve the browser's native WebSocket constructor up-front so we can
-  // hand it to supabase-js's realtime client. supabase-realtime-js v2.105+
-  // ships an environment-detector that mis-fires in some bundled contexts
-  // (Parcel + Vite) — when `process.versions.node` is polyfilled but the
-  // global `WebSocket` reference isn't visible from the realtime module's
-  // scope, detectEnvironment falls through to the Node.js branch and
-  // throws "Node.js 20 detected without native WebSocket support",
-  // crashing the whole client init even for REST-only callers.
-  // Passing `transport` explicitly bypasses detection.
-  const _nativeWS =
-    (typeof WebSocket !== 'undefined' && WebSocket) ||
-    (typeof globalThis !== 'undefined' && globalThis.WebSocket) ||
-    null
-
+  // Resolve the browser's native WebSocket constructor and hand it to
+  // supabase-js's realtime client. supabase-realtime-js v2.105+ ships
+  // an environment-detector that mis-fires in some bundled contexts —
+  // when `process.versions.node` is polyfilled by the bundler but the
+  // global `WebSocket` reference isn't visible from the realtime
+  // module's scope, detectEnvironment falls through to the Node.js
+  // branch and throws "Node.js 20 detected without native WebSocket
+  // support", crashing the whole client init even for REST-only
+  // callers. Passing `transport` explicitly bypasses detection.
+  //
+  // The `?? globalThis.WebSocket` fallback is intentionally written as
+  // a runtime expression (not a `const _nativeWS = …` capture) — Parcel
+  // has been observed to statically-fold module-top-level captures of
+  // `typeof WebSocket` to `null` at build time (build runs in Node
+  // where `WebSocket` is undefined), permanently removing the spread
+  // from the deployed bundle. Reading `globalThis.WebSocket` inline at
+  // call time always observes the live browser environment.
   const client = createClient(url, anonKey, {
     auth: {
       persistSession: false,
@@ -98,7 +101,9 @@ const _createAdapterClient = async ({ url, anonKey, rawSupabaseUrl, getRealtimeC
     },
     realtime: {
       params: { eventsPerSecond: 20 },
-      ...(_nativeWS ? { transport: _nativeWS } : {})
+      transport: (typeof globalThis !== 'undefined' && globalThis.WebSocket) ||
+        (typeof window !== 'undefined' && window.WebSocket) ||
+        undefined
     },
     global: {
       // Strip `x-client-info` before sending: supabase-js auto-injects it
