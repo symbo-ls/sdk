@@ -1,6 +1,6 @@
 {
   "name": "@symbo.ls/sdk-supabase-bridge",
-  "version": "3.14.9",
+  "version": "3.14.10",
   "type": "module",
   "description": "Supabase-flavoured federation bridge — multi-project auth, registry-driven client cache, edge-function login/logout/switch primitives. Built on @symbo.ls/sdk-bridge. Project-specific glue (org defaults, integrations, MCP) belongs in the consumer app.",
   "main": "./dist/cjs/src/index.cjs",
