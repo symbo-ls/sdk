@@ -48,6 +48,7 @@
     "build:esm": "esbuild $(find . -type f -name \"*.js\" -not -path \"*/dist/*\" -not -path \"*/node_modules/*\" -not -path \"*/__tests__/*\" -not -path \"*/test/*\" -not -path \"*/demo/*\" -not -path \"*/demos/*\" -not -path \"*/examples/*\" -not -path \"*/fixtures/*\" -not -name \"*.test.js\") --target=es2022 --format=esm --outbase=. --outdir=dist/esm --minify --log-level=warning",
     "build:node": "esbuild $(find src -name '*.js' ! -name '*.test.js') --target=node16 --format=esm --platform=node --outdir=dist/node --define:process.env.NODE_ENV=process.env.NODE_ENV",
     "build": "rimraf dist && npm run build:esm",
+    "watch": "esbuild $(find . -type f -name \"*.js\" -not -path \"*/dist/*\" -not -path \"*/node_modules/*\" -not -path \"*/__tests__/*\" -not -path \"*/test/*\" -not -path \"*/demo/*\" -not -path \"*/demos/*\" -not -path \"*/examples/*\" -not -path \"*/fixtures/*\" -not -name \"*.test.js\") --target=es2022 --format=esm --outbase=. --outdir=dist/esm --watch=forever --log-level=warning",
     "prepublishOnly": "npm run build",
     "_inf": "infisical run --domain=https://km.api.symbols.app/api --projectId=58275b78-1549-4c3b-bdd5-6bedc6af0430 --env=${NODE_ENV:-upcoming} --",
     "test:all": "bun run _inf -- tape integration-tests/index.js integration-tests/*.test.js | tap-spec",

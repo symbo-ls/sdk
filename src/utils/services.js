@@ -54,6 +54,8 @@ export const SERVICE_METHODS = {
   getMyTeams: 'auth',
   getMyOrgMemberships: 'auth',
   getOrgMemberRoles: 'auth',
+  setActiveOrganization: 'auth',
+  subscribeUserEvents: 'auth',
   resendVerification: 'auth',
   verifyEmail: 'auth',
 
@@ -443,3 +445,4 @@ export const SERVICE_METHODS = {
   updateAsset: 'sharedAsset',
   deleteAsset: 'sharedAsset'
 }
+

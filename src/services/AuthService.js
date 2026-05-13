@@ -1,4 +1,5 @@
 import { BaseService } from './BaseService.js'
+import { io as socketIoClient } from 'socket.io-client'
 import {
   ROLE_PERMISSIONS,
   TIER_FEATURES,
@@ -1278,6 +1279,122 @@ export class AuthService extends BaseService {
     })
     if (response?.success) return response.data
     return { counts: {} }
+  }
+
+  /**
+   * Set the caller's active organization. Persisted on Mongo so the
+   * choice survives reloads, AND broadcast in real time via the
+   * socket.io `user:<id>` room — every other signed-in session for the
+   * same user receives an `active-org-changed` event and re-keys its UI.
+   *
+   * Server validates membership; throws 403 if the user isn't actually
+   * in the target org (covers the case where a stale id is replayed
+   * after `removeMember`).
+   *
+   * Hydrates `_currentUser.activeOrganization` on success so the next
+   * `getMe()` reflects the change without a round-trip. Does NOT call
+   * `sdk.switchOrg` itself — callers that want the local-tab side-
+   * effects (per-service cache invalidation, `sdk.orgSwitched` bus
+   * emit) should chain it explicitly:
+   *
+   *   await sdk.setActiveOrganization(id)
+   *   await sdk.switchOrg(id)
+   *
+   * Splitting the two keeps the service single-responsibility (REST
+   * write) and lets the shell decide whether to also drive the local
+   * bus immediately or wait on the socket fan-out.
+   *
+   * @param {string} orgId - Mongo ObjectId of the target org.
+   * @returns {Promise<{activeOrganization: string}>}
+   */
+  async setActiveOrganization (orgId) {
+    this._requireReady('setActiveOrganization')
+    if (!orgId) throw new Error('[sdk.setActiveOrganization] orgId is required')
+    const response = await this._request('/auth/me/active-org', {
+      method: 'PATCH',
+      body: JSON.stringify({ orgId: String(orgId) }),
+      methodName: 'setActiveOrganization'
+    })
+    const next = response?.data?.activeOrganization || String(orgId)
+    if (this._currentUser && typeof this._currentUser === 'object') {
+      this._currentUser.activeOrganization = next
+    }
+    return { activeOrganization: next }
+  }
+
+  /**
+   * Subscribe to per-user real-time events. Opens a socket.io connection
+   * to the server's `/user-socket` namespace, joins the `user:<id>`
+   * room (server-side handshake decodes the SDK access token and maps
+   * the connection to the authenticated user), and dispatches every
+   * incoming event by name to the matching handler in `handlers`.
+   *
+   * Today's event vocabulary (mirrors `server/packages/socket/user.js`):
+   *   `connected`            — { userId, at }     handshake landed
+   *   `active-org-changed`   — { orgId, at }      `setActiveOrganization`
+   *                                                fired in another session
+   *
+   * Why this is in SDK rather than in each shell: the auth token,
+   * realtime transport, and event vocabulary all belong with the SDK
+   * surface. Workspace shells should never need to import
+   * `socket.io-client` directly — that's a wire detail the SDK owns,
+   * same as `CollabService` owns the project-collab transport.
+   *
+   * Usage:
+   *   const unsub = sdk.subscribeUserEvents({
+   *     'active-org-changed': ({ orgId }) => sdk.switchOrg(orgId, { skipPersist: true })
+   *   })
+   *   // later: unsub()
+   *
+   * Fail-soft: returns a no-op unsubscribe when no auth token is
+   * available, no API URL is configured, or the transport throws on
+   * construct. Callers don't need defensive guards.
+   *
+   * @param {Record<string, (payload: any) => void>} handlers
+   * @returns {() => void} unsubscribe — closes the socket and removes listeners.
+   */
+  subscribeUserEvents (handlers = {}) {
+    if (!this._tokenManager) return () => {}
+    const token = this._tokenManager.getAccessToken?.()
+    if (!token) return () => {}
+    const baseUrl = this._apiUrl
+    if (!baseUrl) return () => {}
+
+    let socket
+    try {
+      socket = socketIoClient(baseUrl, {
+        path: '/user-socket',
+        transports: ['websocket', 'polling'],
+        auth: { token },
+        autoConnect: true,
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 10_000
+      })
+    } catch (err) {
+      logger.warn('[sdk.subscribeUserEvents] socket init failed:', err?.message || err)
+      return () => {}
+    }
+
+    let _loggedAuthFail = false
+    socket.on('connect_error', (err) => {
+      // Server disconnects unauthed clients on handshake — surface once
+      // at warn so logged-out tabs don't spam the console as the client
+      // retries.
+      if (err?.message && !_loggedAuthFail) {
+        _loggedAuthFail = true
+        logger.warn('[sdk.subscribeUserEvents] connect_error:', err.message)
+      }
+    })
+
+    for (const [event, fn] of Object.entries(handlers)) {
+      if (typeof fn === 'function') socket.on(event, fn)
+    }
+
+    return () => {
+      try { socket.removeAllListeners() } catch (_) {}
+      try { socket.disconnect() } catch (_) {}
+    }
   }
 
   /**

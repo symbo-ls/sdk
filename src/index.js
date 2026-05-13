@@ -323,37 +323,65 @@ export class SDK {
     }
   }
 
-  // Switch the active organization. Resets internal SDK state that's scoped
-  // to an org so the next call uses the new org's claims/clients/caches.
+  // Switch the active organization — the single canonical entry point for
+  // changing org context. Atomically:
   //
-  // Caller is responsible for telling each service ABOUT the new orgId via
-  // updateContext({ activeOrgId }) — that's already part of this method. Any
-  // org-scoped fetch caches in consumers (e.g. queryClient in the fetch
-  // plugin) should be invalidated by the caller separately.
+  //   1. Writes Mongo `User.activeOrganization` via
+  //      `setActiveOrganization` (skipped when `opts.skipPersist === true`,
+  //      e.g. echo from socket fan-out).
+  //   2. Updates SDK `_context.activeOrgId` so every service sees the new
+  //      org on next access.
+  //   3. Invalidates TokenManager cached claims (next request re-mints).
+  //   4. Walks per-service `switchOrg(newOrgId, previousOrgId)` hooks.
+  //   5. Federates workspace-project Supabase to the new org's home
+  //      workspace via `switchWorkspace`, IF `opts.homeWorkspaceId` is
+  //      supplied AND `opts.skipFederation !== true`. This keeps Mongo
+  //      and the workspace-project session pointing at the same org —
+  //      without it, RLS-scoped reads (announcements, tickets, chat,
+  //      calendar, …) silently stay scoped to the previous workspace.
+  //   6. Emits `sdk.orgSwitched` on rootBus.
   //
-  // What this method clears internally:
-  //   - TokenManager: any cached claims that include the old orgId (the next
-  //     refresh will mint with the new claim).
-  //   - CollabService active subscriptions tied to projects in the old org.
-  //   - WorkspaceProjectService cached prefix (recomputed lazily on next call).
-  //   - Per-service cached state via service.switchOrg(newOrgId) when the
-  //     service implements that hook (additive — services without the hook
-  //     are skipped).
-  async switchOrg (newOrgId) {
+  // Opts:
+  //   skipPersist     — don't PATCH Mongo (use this in socket-echo paths
+  //                     where another session already persisted).
+  //   skipFederation  — don't refresh the workspace-project Supabase JWT
+  //                     (use for the rare org with no federated workspace,
+  //                     or when the caller wants to manage the federation
+  //                     hop separately).
+  //   homeWorkspaceId — the workspace-project Supabase workspace id whose
+  //                     `org_id === newOrgId`. Callers compute this from
+  //                     their `root.jwtClaims.workspaces` snapshot (or
+  //                     equivalent). When omitted, no federation hop runs
+  //                     and Mongo-only state advances.
+  //
+  // If `setActiveOrganization` throws, the whole switch aborts BEFORE
+  // touching local context — Mongo's pre-write state is the source of
+  // truth, and the UI must stay pointed at the previous org so a failed
+  // server write doesn't leave the user looking at a context that
+  // server-side reads will reject.
+  async switchOrg (newOrgId, opts = {}) {
     if (!newOrgId) throw new Error('[sdk.switchOrg] newOrgId is required')
     const previousOrgId = this._context.activeOrgId
     if (previousOrgId === newOrgId) return { changed: false, orgId: newOrgId }
+    const { skipPersist = false, skipFederation = false, homeWorkspaceId = null } = opts
 
-    // Update context so every service sees the new org on next access.
+    // 1. Persist to Mongo FIRST. If this fails, we never touched local
+    //    context; the caller surfaces the error and the UI stays put.
+    let persistResult = null
+    if (!skipPersist && typeof this.setActiveOrganization === 'function') {
+      persistResult = await this.setActiveOrganization(newOrgId)
+    }
+
+    // 2. Local context — every service sees the new org on next access.
     this.updateContext({ activeOrgId: newOrgId })
 
-    // Token manager — clear cached claims so next request re-mints
+    // 3. Token manager — clear cached claims so next request re-mints.
     if (this._tokenManager?.invalidateClaims) {
       try { this._tokenManager.invalidateClaims() } catch {}
     }
 
-    // Walk services; if a service exposes its own switchOrg hook, call it.
-    // Services that don't implement it are silently skipped (additive surface).
+    // 4. Walk per-service switchOrg hooks. Services that don't implement
+    //    the hook are silently skipped (additive surface).
     const switchPromises = []
     for (const [name, service] of this._services.entries()) {
       if (typeof service.switchOrg === 'function') {
@@ -366,11 +394,37 @@ export class SDK {
     }
     await Promise.all(switchPromises)
 
-    // Emit on root bus so external consumers (fetch plugin's queryClient,
-    // shell state managers, etc.) can react and clear their own caches.
-    this.rootBus?.emit?.('sdk.orgSwitched', { previousOrgId, newOrgId })
+    // 5. Federate workspace-project Supabase to the org's home workspace
+    //    so RLS-scoped reads re-scope. Errors here don't abort: Mongo
+    //    is already updated and the SDK-side context advanced; a Supabase
+    //    federation hiccup is recoverable (the next JWT refresh will
+    //    settle it) and shouldn't roll back the org switch.
+    let federationResult = null
+    if (!skipFederation && homeWorkspaceId && typeof this.switchWorkspace === 'function') {
+      try {
+        federationResult = await this.switchWorkspace(homeWorkspaceId)
+      } catch (err) {
+        logger.warn('[sdk.switchOrg] switchWorkspace federation failed:', err?.message || err)
+      }
+    }
 
-    return { changed: true, previousOrgId, newOrgId }
+    // 6. Emit on rootBus so external consumers (fetch plugin's queryClient,
+    //    shell state managers, workspace's onWorkspaceChange pipeline)
+    //    react and clear their own caches.
+    this.rootBus?.emit?.('sdk.orgSwitched', {
+      previousOrgId,
+      newOrgId,
+      persist: persistResult,
+      federation: federationResult,
+    })
+
+    return {
+      changed: true,
+      previousOrgId,
+      newOrgId,
+      persist: persistResult,
+      federation: federationResult,
+    }
   }
 
   // Switch the active workspace within the current org. The federation
