@@ -286,9 +286,9 @@ export class WorkspaceProjectService extends BaseService {
         ? this._ws('chat.listMembers', `/chat/channels/${encodeURIComponent(channelId)}/members`)
         : this._ws('chat.listAllMembers', '/chat/members'),
     addMember: (channelId, payload) =>
-      this._ws('chat.addMember', `/chat/channels/${encodeURIComponent(channelId)}/members`, {
+      this._ws('chat.addMember', '/chat/members', {
         method: 'POST',
-        body: { payload },
+        body: { payload: { ...payload, channel_id: channelId } },
       }),
     updateMember: (channelId, userId, payload) =>
       this._ws('chat.updateMember', `/chat/channels/${encodeURIComponent(channelId)}/members/${encodeURIComponent(userId)}`, {
