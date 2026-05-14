@@ -121,6 +121,29 @@ export class WorkspaceService extends BaseService {
     return this._call('getCreditLedger', `/workspaces/${workspaceId}/credits/ledger${qs}`)
   }
 
+  /**
+   * Workspace credit-meter usage rollup. Mirrors
+   * `GET /workspaces/:workspaceId/usage` (UsageController.workspaceSummary,
+   * server PR #349). Server aggregates UsageMeterEvent → UsageRollup rows
+   * by reason for the requested period (`day` | `month` | explicit
+   * `from`/`to`). Returns totals per reason + ratedCredits + eventCount.
+   * Workspace member access required server-side.
+   *
+   * @param {string} workspaceId
+   * @param {{ period?: 'day'|'month', from?: string|Date, to?: string|Date, reason?: string }} [options]
+   * @returns {Promise<object>}
+   */
+  async getWorkspaceUsage (workspaceId, { period, from, to, reason } = {}) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    const params = new URLSearchParams()
+    if (period) params.set('period', String(period))
+    if (from) params.set('from', from instanceof Date ? from.toISOString() : String(from))
+    if (to) params.set('to', to instanceof Date ? to.toISOString() : String(to))
+    if (reason) params.set('reason', String(reason))
+    const qs = params.toString() ? `?${params}` : ''
+    return this._call('getWorkspaceUsage', `/workspaces/${workspaceId}/usage${qs}`)
+  }
+
   // ==================== SPEND CONTROLS ====================
 
   async getSpendControls (workspaceId) {
