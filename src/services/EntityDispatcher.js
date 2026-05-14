@@ -244,6 +244,11 @@ const ENTITY_ROUTES = {
       create: 'calendar.createEvent',
       update: 'calendar.updateEvent',
       remove: 'calendar.deleteEvent',
+      // upsert routes through the workspace PostgREST passthrough rather
+      // than the worker /calendar/events endpoint — keeps the on_conflict
+      // column list caller-controlled (default 'id'; google-sync writers
+      // pass 'google_calendar_id,google_event_id').
+      upsert: 'calendar.upsertEvent',
     },
     argMap: {
       list: (a) => [a?.filter ?? a?.params],
@@ -251,6 +256,7 @@ const ENTITY_ROUTES = {
       create: argMaps.payload,
       update: argMaps.idPayload,
       remove: argMaps.id,
+      upsert: (a) => [a?.payload ?? a?.data ?? a, a?.onConflict],
     },
   },
   'workspaceProject.documents': {

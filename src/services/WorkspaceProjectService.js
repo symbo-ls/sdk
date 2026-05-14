@@ -348,6 +348,14 @@ export class WorkspaceProjectService extends BaseService {
       this._ws('calendar.deleteEvent', `/calendar/events/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       }),
+    // PostgREST upsert via workspace passthrough — caller picks the
+    // on_conflict column list (default 'id'). Google-sync writers pass
+    // 'google_calendar_id,google_event_id' so re-pulls don't duplicate.
+    upsertEvent: (payload, onConflict) =>
+      this._sb('calendar.upsertEvent', 'calendar_events', 'create', {
+        payload,
+        options: { upsertOnConflict: onConflict || 'id' },
+      }),
     sync: (params) => this._ws('calendar.sync', '/calendar/sync', { method: 'POST', body: { params } }),
   }
 
