@@ -1,5 +1,11 @@
 # @symbo.ls/sdk-supabase-bridge
 
+## 3.14.11
+
+### Patch Changes
+
+- Auto-generated cross-repo patch release.
+
 ## 3.14.10
 
 ### Patch Changes
