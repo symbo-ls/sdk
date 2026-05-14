@@ -414,6 +414,11 @@ export const SERVICE_METHODS = {
   getSpendControls: 'workspace',
   updateSpendControls: 'workspace',
 
+  // Public rate card from CreditsService — unauthenticated, used by the
+  // admin /admin/usage operator view and /data/plans pricing-model
+  // overview. Without this entry sdk.getRates is undefined.
+  getRates: 'credits',
+
   // Workspace permissions & project management
   getWorkspacePermissions: 'workspace',
   createWorkspaceProject: 'workspace',
