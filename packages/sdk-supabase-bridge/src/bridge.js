@@ -228,7 +228,24 @@ export function createAuthBridge ({
       body: JSON.stringify(body || {})
     })
     const json = await res.json().catch(() => null)
-    if (!res.ok) return { ok: false, error: new Error(json?.error || `refresh-claims ${res.status}`) }
+    if (!res.ok) {
+      // Surface the diagnostics that SERVER-FED-CLAIMS-NULL-1 added so
+      // operators tracing 503s see the upstream cause (HMAC mismatch,
+      // empty claims fetch, transient timeout) instead of just
+      // "claims_fetch_failed". The edge fn populates these only on
+      // failures where it knows more than the top-level error code.
+      const parts = [json?.error || `refresh-claims ${res.status}`]
+      if (json?.message) parts.push(json.message)
+      if (json?.upstream_status) parts.push(`upstream_status=${json.upstream_status}`)
+      if (json?.upstream_error) parts.push(`upstream_error=${json.upstream_error}`)
+      if (json?.upstream_body) parts.push(`upstream_body=${String(json.upstream_body).slice(0, 200)}`)
+      const err = new Error(parts.join(' — '))
+      // Attach the raw payload too so callers that want structured access
+      // can inspect without re-parsing the message.
+      err.payload = json
+      err.status = res.status
+      return { ok: false, error: err }
+    }
     return { ok: true, data: json }
   }
 
