@@ -1319,6 +1319,29 @@ export class AuthService extends BaseService {
     if (this._currentUser && typeof this._currentUser === 'object') {
       this._currentUser.activeOrganization = next
     }
+    // Project the new Mongo activeOrganization onto the workspace-project
+    // Supabase session so `app_metadata.active_workspace_id` stays in sync
+    // and every `/workspace-project/*` read scopes to the right tenant
+    // (WORKSPACE-AUTH-DRIFT). The federation refresh hits
+    // `symbols-refresh-claims` with the SDK Mongo access token; the edge fn
+    // re-fetches the canonical claims from the Symbols server (which now
+    // reflects the PATCH above) and writes them to `app_metadata`, then
+    // we `refreshSession` to mint a JWT with the new claims.
+    //
+    // Best-effort: a Supabase refresh failure must NOT roll back the Mongo
+    // write — Mongo is the source of truth, and the next session.refresh
+    // can re-settle the JWT. We log + carry on.
+    const refresh = this._context?.federationRefreshClaims
+    if (typeof refresh === 'function') {
+      try {
+        await refresh()
+      } catch (err) {
+        logger.warn(
+          '[sdk.setActiveOrganization] federation refreshClaims failed:',
+          err?.message || err
+        )
+      }
+    }
     return { activeOrganization: next }
   }
 
