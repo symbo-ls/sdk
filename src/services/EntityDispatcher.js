@@ -105,6 +105,23 @@ const ENTITY_ROUTES = {
     service: 'organization',
     methods: { list: 'list', get: 'get', create: 'create', update: 'update', remove: 'remove' },
   },
+  // Namespaced delete entry — sdk.execute('organizations', 'delete', args).
+  // Supports mode/dryRun/cascade opts per ticket #4588 spec.
+  // Plural alias 'organizations' matches the spec's sdk.organizations.delete(orgId, opts) form.
+  'organizations': {
+    service: 'organization',
+    methods: { delete: 'deleteOrganization' },
+    argMap: {
+      delete: (a) => [
+        a?.id ?? a?.orgId,
+        {
+          mode: a?.mode,
+          dryRun: a?.dryRun,
+          cascade: a?.cascade
+        }
+      ]
+    }
+  },
   'organization.members': {
     service: 'organization',
     methods: { list: 'listMembers', create: 'inviteMember', remove: 'removeMember' },
@@ -471,6 +488,49 @@ const ENTITY_ROUTES = {
     service: 'workspaceProject',
     methods: { list: 'rolePermissions.list' },
     argMap: { list: () => [] },
+  },
+
+  // ─── Analyzed (observability) ──────────────────────────────────────────────
+  // Replaces Grafana Faro. Browser → workspace-project worker →
+  // analyzed_* tables. Writes use the curated POST /analyzed/ingest route
+  // (server-stamps workspace_id from the JWT); reads use the PostgREST
+  // passthrough with RLS gating by app_metadata.workspace_id.
+  'workspaceProject.analyzed': {
+    service: 'workspaceProject',
+    methods: { ingest: 'analyzed.ingest' },
+    // Browser SDK packs a single envelope `{ session, app, events, … }`.
+    // Pass it straight through as the first positional arg.
+    argMap: { ingest: (a) => [a] },
+  },
+  'workspaceProject.analyzedSessions': {
+    service: 'workspaceProject',
+    methods: {
+      list: 'analyzed.listSessions',
+      get:  'analyzed.getSession',
+    },
+    argMap: {
+      list: argMaps.filterOptions,
+      get:  argMaps.id,
+    },
+  },
+  'workspaceProject.analyzedEvents': {
+    service: 'workspaceProject',
+    methods: { list: 'analyzed.listEvents' },
+    argMap: { list: argMaps.filterOptions },
+  },
+  'workspaceProject.analyzedBugs': {
+    service: 'workspaceProject',
+    methods: { list: 'analyzed.clusters' },
+    argMap: {
+      // Bug clusters live in an RPC, not a table — adapt the adapter's
+      // params/filter bag into named args fn_analyzed_bug_clusters expects.
+      list: (a) => [{
+        workspaceId: a?.workspaceId ?? a?.filter?.workspaceId ?? a?.params?.workspaceId,
+        appKey:      a?.appKey      ?? a?.filter?.appKey      ?? a?.params?.appKey,
+        since:       a?.since       ?? a?.filter?.since       ?? a?.params?.since,
+        limit:       a?.limit       ?? a?.filter?.limit       ?? a?.params?.limit ?? 200,
+      }],
+    },
   },
 
   // ─── Workspace tables that don't yet have a dedicated service namespace.

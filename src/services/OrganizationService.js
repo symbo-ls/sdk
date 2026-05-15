@@ -104,16 +104,94 @@ export class OrganizationService extends BaseService {
     throw new Error(response.message)
   }
 
-  async deleteOrganization (orgId) {
+  /**
+   * Delete an organization. Supports soft and hard modes with optional dry-run
+   * and cascade control.
+   *
+   * Options:
+   *   mode     — 'soft' (default) sets status='deleted', preserves child records.
+   *              'hard' purges all data across Mongo + Supabase + Stripe + R2.
+   *              Hard mode requires root admin privileges on the server.
+   *   dryRun   — When true with mode='hard', returns projected counts WITHOUT
+   *              deleting anything. Ignored in soft mode (server-side).
+   *   cascade  — When false, skip dependent project cleanup.
+   *              Default true. // TODO(server-4588): server does not yet accept
+   *              this param; reserved for future server-side support.
+   *
+   * Returns: { ok: boolean, deleted: boolean, mode: string, dryRun: boolean,
+   *            dryRunPlan?: { projects: [], usersAffected: number }, error?: string }
+   *
+   * @param {string} orgId
+   * @param {{ mode?: 'soft'|'hard', dryRun?: boolean, cascade?: boolean }} opts
+   */
+  async deleteOrganization (orgId, opts = {}) {
     this._requireReady('deleteOrganization')
     if (!orgId) throw new Error('orgId is required')
 
-    const response = await this._request(`/organizations/${orgId}`, {
-      method: 'DELETE',
-      methodName: 'deleteOrganization'
-    })
-    if (response.success) return response.data
-    throw new Error(response.message)
+    const {
+      mode = 'soft',
+      dryRun = false,
+      cascade = true // TODO(server-4588): pass cascade to server once endpoint supports it
+    } = opts
+
+    const qs = new URLSearchParams()
+    if (mode !== 'soft') qs.set('mode', mode)
+    if (dryRun) qs.set('dryRun', 'true')
+    // cascade is reserved for future server support — omit from query string until server accepts it
+    // if (!cascade) qs.set('cascade', 'false')
+
+    const queryString = qs.toString()
+
+    // Literals at both branches so the drift analyzer can match
+    // /organizations/:orgId (it can't see through a local url variable).
+    const response = queryString
+      ? await this._request(`/organizations/${orgId}?${queryString}`, {
+        method: 'DELETE',
+        methodName: 'deleteOrganization'
+      })
+      : await this._request(`/organizations/${orgId}`, {
+        method: 'DELETE',
+        methodName: 'deleteOrganization'
+      })
+
+    if (!response.success && response.error) {
+      return {
+        ok: false,
+        deleted: false,
+        mode,
+        dryRun,
+        error: response.message || response.error
+      }
+    }
+
+    if (response.success === false) {
+      throw new Error(response.message)
+    }
+
+    const data = response.data ?? response
+
+    // Hard mode + dryRun: server returns counts (no success wrapper)
+    if (mode === 'hard' && dryRun) {
+      return {
+        ok: true,
+        deleted: false,
+        mode: 'hard',
+        dryRun: true,
+        dryRunPlan: {
+          projects: data.projects ?? [],
+          usersAffected: data.members ?? data.orgMembers ?? 0,
+          ...data
+        }
+      }
+    }
+
+    return {
+      ok: true,
+      deleted: true,
+      mode,
+      dryRun: false,
+      data
+    }
   }
 
   // ==================== MEMBERS ====================
