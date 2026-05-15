@@ -145,7 +145,16 @@ export const getConfig = () => {
     // to the canonical `test` channel.
     const channelName = env === 'testing' ? 'test' : env
 
-    const apiUrl = process.env.SYMBOLS_APP_API_URL || channelApiUrl(channelName)
+    // Pass no explicit name to channelApiUrl so currentChannel() runs at the
+    // call site and a runtime `globalThis.__SYMBOLS_CHANNEL__` override wins
+    // — used by dev shells to point the SDK at http://localhost:8080 without
+    // rebuilding the bundle. Fall back to env-derived channelName when the
+    // override isn't set so production stays deterministic.
+    const apiUrl =
+      process.env.SYMBOLS_APP_API_URL ||
+      (typeof globalThis !== 'undefined' && globalThis.__SYMBOLS_CHANNEL__
+        ? channelApiUrl()
+        : channelApiUrl(channelName))
 
     // Create the final config with environment variable overrides
     const finalConfig = {
@@ -158,7 +167,11 @@ export const getConfig = () => {
       // URLs come from @symbo.ls/channels (single source of truth across
       // sdk, smbls, server, editor, workspace, platform). SYMBOLS_API_URL /
       // SYMBOLS_SOCKET_URL env-var overrides honored inside the helpers.
-      socketUrl: process.env.SYMBOLS_APP_SOCKET_URL || channelSocketUrl(channelName),
+      socketUrl:
+        process.env.SYMBOLS_APP_SOCKET_URL ||
+        (typeof globalThis !== 'undefined' && globalThis.__SYMBOLS_CHANNEL__
+          ? channelSocketUrl()
+          : channelSocketUrl(channelName)),
       apiUrl,
       githubClientId:
         process.env.SYMBOLS_APP_GITHUB_CLIENT_ID || envConfig.githubClientId,
