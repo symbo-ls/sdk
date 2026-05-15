@@ -93,11 +93,19 @@ export const createAnalyzing = (opts = {}) => {
   // explicit `transport` to override; pass `endpoint` to keep the legacy
   // direct-fetch path (used by the standalone @symbo.ls/analyzing demo, not
   // by the workspace shell).
+  //
+  // sdk can be: an SDK instance, a function returning the SDK (lazy), or
+  // null. Resolution happens at EACH call so a not-yet-hydrated SDK passed
+  // at boot time still produces a working transport once the SDK lands.
   let resolvedTransport = transport
-  if (!resolvedTransport && sdk && typeof sdk.execute === 'function') {
+  if (!resolvedTransport && sdk) {
+    const _resolveSdk = () =>
+      typeof sdk === 'function' ? sdk() : sdk
     resolvedTransport = async (envelope) => {
       try {
-        const res = await sdk.execute('workspaceProject.analyzed', 'ingest', envelope)
+        const live = _resolveSdk()
+        if (!live || typeof live.execute !== 'function') return { ok: false }
+        const res = await live.execute('workspaceProject.analyzed', 'ingest', envelope)
         return { ok: !res?.error }
       } catch (_) {
         return { ok: false }
