@@ -3,9 +3,14 @@
 import {
   createAnalyzeState,
   makeEvent,
-  analyzePlugin,
-  classifyEvent
+  analyzePlugin
 } from '@symbo.ls/analyze'
+// `classifyEvent` is duplicated locally as `classifyEnvelope` in ./classify.js
+// so this package stays parseable when @symbo.ls/analyze's root index.js is
+// loaded by a bundler that can't statically resolve `export *` re-exports
+// (Parcel's tree-shaker hits this in the workspace shell). The two
+// implementations are kept in sync — see classify.js header.
+import { classifyEnvelope as classifyEvent } from './classify.js'
 import { SDK_NAME, SDK_VERSION } from './meta.js'
 
 const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefined'
@@ -78,18 +83,38 @@ export const createAnalyzing = (opts = {}) => {
     queueLimit
   } = opts
 
-  if (!endpoint && !transport) {
-    throw new Error('[@symbo.ls/analyzing] endpoint or transport is required')
-  }
   if (!appKey) {
     throw new Error('[@symbo.ls/analyzing] appKey is required')
   }
 
-  // SDK-driven auth fallback. We pull the bearer at flush time so a stale
-  // token doesn't get cached on the sink.
+  // Default transport — routes the envelope through the workspace-project
+  // worker via sdk.execute. The wrapper server-stamps workspace_id from the
+  // caller's JWT and writes to analyzed_sessions / analyzed_events. Pass an
+  // explicit `transport` to override; pass `endpoint` to keep the legacy
+  // direct-fetch path (used by the standalone @symbo.ls/analyzing demo, not
+  // by the workspace shell).
+  let resolvedTransport = transport
+  if (!resolvedTransport && sdk && typeof sdk.execute === 'function') {
+    resolvedTransport = async (envelope) => {
+      try {
+        const res = await sdk.execute('workspaceProject.analyzed', 'ingest', envelope)
+        return { ok: !res?.error }
+      } catch (_) {
+        return { ok: false }
+      }
+    }
+  }
+  if (!endpoint && !resolvedTransport) {
+    throw new Error('[@symbo.ls/analyzing] one of { sdk, endpoint, transport } is required')
+  }
+
+  // Legacy bearer resolver — only used when shipping straight to `endpoint`
+  // (no sdk). When `sdk` is present, the workspace-project worker handles auth
+  // through its existing token contract and we don't need to hand a bearer to
+  // the sink layer.
   const resolveAuth = typeof getAuth === 'function'
     ? getAuth
-    : (sdk ? () => safeGetSdkToken(sdk) : null)
+    : (sdk && !resolvedTransport ? () => safeGetSdkToken(sdk) : null)
 
   // The mutable bag of identity + tags lives here; getContext() copies it onto
   // every outbound envelope, so updates from identify()/setContext() apply to
@@ -107,7 +132,7 @@ export const createAnalyzing = (opts = {}) => {
   const remoteSinkConfig = {
     type: 'remote',
     url: endpoint,
-    transport,
+    transport: resolvedTransport,
     apiKey,
     appKey,
     tenantKey,

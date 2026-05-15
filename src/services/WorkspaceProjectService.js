@@ -624,6 +624,43 @@ export class WorkspaceProjectService extends BaseService {
   stories       = this._sbCrud('stories')
   valuations    = this._sbCrud('valuations')
 
+  // --- Analyzed (observability) ----------------------------------------------
+  // Replaces Grafana Faro for symbo.ls apps. Browser → workspace-project
+  // worker → analyzed_* tables — no separate analyzed Cloudflare worker.
+  //
+  // Writes: `ingest` POSTs to /workspace-project/analyzed/ingest. The wrapper
+  // server-stamps workspace_id from the caller's JWT so clients can't lie
+  // about which workspace the telemetry belongs to.
+  //
+  // Reads: PostgREST passthrough at /workspace-project/sb/rest/v1/*. RLS
+  // (0114_analyzed_rls.sql) gates rows by app_metadata.workspace_id from
+  // the minted Supabase JWT, so reads see only the active workspace.
+  //
+  // Bug clustering uses an RPC (0115_analyzed_rpc.sql) because PostgREST
+  // has no native grouping.
+  analyzed = {
+    // Browser SDK ships its batched envelope through here. Body shape is
+    // documented at server/workers/workspace-project/src/surfaces/analyzed.js.
+    ingest: (envelope) =>
+      this._ws('analyzed.ingest', '/analyzed/ingest', { method: 'POST', body: envelope }),
+
+    listSessions: (filter, options) =>
+      this._sb('analyzed.listSessions', 'analyzed_session_summaries', 'list',
+        { filter, options: { order: 'started_at.desc', limit: 100, ...(options || {}) } }),
+
+    getSession: (id) =>
+      this._sb('analyzed.getSession', 'analyzed_session_summaries', 'list',
+        { filter: { id }, options: { single: true } }),
+
+    listEvents: (filter, options) =>
+      this._sb('analyzed.listEvents', 'analyzed_events', 'list',
+        { filter, options: { order: 'ts.asc', limit: 500, ...(options || {}) } }),
+
+    clusters: ({ workspaceId, appKey, since, limit = 200 } = {}) =>
+      this._sb('analyzed.clusters', 'fn_analyzed_bug_clusters', 'rpc',
+        { payload: { p_workspace: workspaceId, p_app_key: appKey || null, p_since: since || null, p_max_rows: limit } }),
+  }
+
   // Single-row org metadata — companyInfo (key/value pairs) + companySettings
   // (one record per org). Provide list + upsert (PostgREST-merge) shapes
   // that match the legacy sb().from('company_info').upsert() call sites.

@@ -4,9 +4,33 @@ import assert from 'node:assert/strict'
 import { createAnalyzing } from '../src/client.js'
 import { classifyEnvelope, LOG_TYPES } from '../src/classify.js'
 
-test('createAnalyzing requires endpoint and appKey', () => {
-  assert.throws(() => createAnalyzing({ appKey: 'x' }), /endpoint or transport/)
+test('createAnalyzing requires appKey + one of sdk/endpoint/transport', () => {
+  assert.throws(() => createAnalyzing({ appKey: 'x' }), /sdk, endpoint, transport/)
   assert.throws(() => createAnalyzing({ endpoint: 'https://x' }), /appKey is required/)
+})
+
+test('createAnalyzing builds a default transport from a passed sdk', async () => {
+  const captured = []
+  const fakeSdk = {
+    execute: async (from, op, envelope) => {
+      captured.push({ from, op, envelope })
+      return { data: { ok: true } }
+    }
+  }
+  const a = createAnalyzing({
+    appKey: 'app',
+    sdk: fakeSdk,
+    level: 'trace',
+    batchMs: 5,
+    maxBatch: 1
+  })
+  a.state.activate(null)
+  a.captureMessage('hello', 'info')
+  await new Promise((r) => setTimeout(r, 20))
+  assert.ok(captured.length >= 1, 'sdk.execute received the envelope')
+  assert.equal(captured[0].from, 'workspaceProject.analyzed')
+  assert.equal(captured[0].op, 'ingest')
+  assert.ok(Array.isArray(captured[0].envelope.events))
 })
 
 test('createAnalyzing produces a config + plugin + manual API', () => {

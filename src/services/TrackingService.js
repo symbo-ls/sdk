@@ -1,23 +1,49 @@
+/**
+ * TrackingService — observability surface on the Symbols SDK.
+ *
+ * Backed by @symbo.ls/analyzing (replaces Grafana Faro). The public API is
+ * preserved verbatim so existing callers (trackEvent, trackError,
+ * captureException, logMessage, addBreadcrumb, trackMeasurement, trackView,
+ * setUser, setSession, setGlobalAttribute*, flushQueue, getClient,
+ * isEnabled, isInitialized, destroy, configure, configureTracking,
+ * updateContext) continue to work unchanged.
+ *
+ * Under the hood, every Faro-shaped call routes through createAnalyzing's
+ * native primitives (capture / captureError / captureMessage / addMeasurement
+ * / identify / setContext / setTag), which batch into envelopes and ship
+ * to the workspace-project worker via the in-SDK transport at flush time
+ * (this._context.services.workspaceProject.analyzed.ingest). RLS in
+ * Supabase (0114_analyzed_rls.sql) gates rows by workspace_id from the
+ * caller's JWT — clients can't lie about tenant scope.
+ *
+ * The legacy Grafana URL + transports + instrumentations config still work
+ * as inert pass-through so consumers that override transports (e.g. local
+ * dev demos) can plug their own fetcher in via `options.tracking.transport`.
+ */
+
 import { BaseService } from './BaseService.js'
 import environment from '../config/environment.js'
 import { logger } from '../utils/logger.js'
+import { createAnalyzing } from '@symbo.ls/analyzing'
 
 const DEFAULT_MAX_QUEUE_SIZE = 100
 
 const isBrowserEnvironment = () => typeof window !== 'undefined'
 
 const DEFAULT_TRACKING_OPTIONS = {
-  // Enabled by default unless explicitly disabled via SDK options or runtime config
+  // Enabled by default unless explicitly disabled via SDK options
   enabled: true,
   sessionTracking: true,
+  // `enableTracing` was a Faro-specific knob — kept for option-shape parity
+  // but no longer affects behavior. createAnalyzing captures perf via
+  // PerformanceObserver, not tracing spans.
   enableTracing: true,
   maxQueueSize: DEFAULT_MAX_QUEUE_SIZE,
-  transports: null,
-  instrumentations: null,
-  instrumentationsFactory: null,
-  webInstrumentationOptions: null,
-  globalAttributes: {},
+  // `transport` lets callers override the default SDK-routed transport
+  // with their own (envelope) => Promise<{ok}> fn. When set, the analyzing
+  // client uses it instead of routing through workspaceProject.analyzed.
   transport: null,
+  globalAttributes: {},
   user: null
 }
 
@@ -34,11 +60,78 @@ const sanitizeAttributes = (value) => {
   }
 }
 
+// Build a Faro-API-compatible shim around a createAnalyzing instance so the
+// pre-existing `_withClient(callback)` call sites work unchanged. The shim
+// keeps the same method names + arity Faro's client.api exposed.
+const buildAnalyzingShim = (analyzing) => {
+  // Mutable view/session attributes — Faro tracks these as separate
+  // setView/setSession surfaces. We model them as long-lived context tags
+  // so subsequent envelopes include them.
+  const viewState = { current: null }
+  const sessionState = { current: null }
+
+  return {
+    api: {
+      pushEvent: (name, attributes, domain, options) => {
+        analyzing.capture('info', String(name || ''), {
+          kind: 'event',
+          domain: domain || null,
+          attributes: attributes || {},
+          ...(options && typeof options === 'object' ? options : {})
+        })
+      },
+
+      pushError: (err, options) => {
+        analyzing.captureError(err, options?.context || options || {})
+      },
+
+      pushLog: (messages, options) => {
+        const msg = Array.isArray(messages)
+          ? messages.map((m) => (typeof m === 'string' ? m : JSON.stringify(m))).join(' ')
+          : String(messages || '')
+        analyzing.capture(options?.level || 'info', msg, options?.context || {})
+      },
+
+      pushMeasurement: (payload, _options) => {
+        const v = payload?.values
+        const numeric =
+          typeof v === 'object' && v !== null
+            ? (v.value ?? Object.values(v).find((n) => typeof n === 'number'))
+            : v
+        analyzing.addMeasurement(payload?.type || 'measurement', Number(numeric) || 0, 'ms')
+      },
+
+      setView: (view) => {
+        viewState.current = view || null
+        analyzing.setContext('view', view || null)
+      },
+
+      setUser: (user) => {
+        analyzing.identify(
+          user
+            ? {
+                userId: user.id || user.email || null,
+                traits: user
+              }
+            : null
+        )
+      },
+
+      setSession: (session, _options) => {
+        sessionState.current = session || null
+        analyzing.setContext('session', session || null)
+      }
+    },
+    destroy: () => analyzing.shutdown()
+  }
+}
+
 export class TrackingService extends BaseService {
   constructor ({ context, options } = {}) {
     super({ context, options })
 
-    this._faroClient = null
+    this._client = null            // analyzing-shim ({ api, destroy })
+    this._analyzing = null         // raw createAnalyzing return value
     this._queue = []
     this._initialized = false
     this._enabled = DEFAULT_TRACKING_OPTIONS.enabled
@@ -59,7 +152,6 @@ export class TrackingService extends BaseService {
   async init ({ context = {}, options = {} } = {}) {
     this.updateContext(context)
 
-    // Merge tracking options from constructor, SDK options and runtime overrides
     this._trackingOptions = {
       ...DEFAULT_TRACKING_OPTIONS,
       ...this._trackingOptions,
@@ -85,18 +177,6 @@ export class TrackingService extends BaseService {
     }
 
     this._runtimeConfig = this._buildRuntimeConfig()
-    this._trackingOptions.transports = this._runtimeConfig.transports
-
-    const hasCustomTransports =
-      Array.isArray(this._runtimeConfig.transports) &&
-      this._runtimeConfig.transports.length > 0
-
-    if (!this._runtimeConfig.url && !hasCustomTransports) {
-      logger.warn('[TrackingService] Grafana Faro URL missing. Tracking will stay disabled.')
-      this._enabled = false
-      this._setReady()
-      return this
-    }
 
     if (this._initialized) {
       this._setReady()
@@ -104,7 +184,7 @@ export class TrackingService extends BaseService {
     }
 
     if (!this._setupPromise) {
-      this._setupPromise = this._loadFaroClient(this._runtimeConfig)
+      this._setupPromise = this._setupAnalyzingClient(this._runtimeConfig)
     }
 
     await this._setupPromise
@@ -162,17 +242,14 @@ export class TrackingService extends BaseService {
     const mergedAttributes = this._mergeAttributes(attributes)
     const eventOptions = options && typeof options === 'object' ? options : {}
     const { domain, queue, ...restOptions } = eventOptions
-    const eventDomain = Object.hasOwn(eventOptions, 'domain')
-      ? domain
-      : null
+    const eventDomain = Object.hasOwn(eventOptions, 'domain') ? domain : null
 
     const invokeTracking = client => {
       const api = client?.api
       if (!api?.pushEvent) {
-        logger.warn('[TrackingService] Faro pushEvent API not available')
+        logger.warn('[TrackingService] pushEvent API not available')
         return
       }
-
       api.pushEvent(name, mergedAttributes, eventDomain, restOptions)
     }
 
@@ -209,9 +286,7 @@ export class TrackingService extends BaseService {
         'originalError' in options
       )
 
-    const normalizedOptions = isContextOnly
-      ? { context: options }
-      : options || {}
+    const normalizedOptions = isContextOnly ? { context: options } : options || {}
 
     const mergedContext = this._mergeAttributes(normalizedOptions.context)
     const apiOptions = {
@@ -225,10 +300,9 @@ export class TrackingService extends BaseService {
     const invokeTracking = client => {
       const api = client?.api
       if (!api?.pushError) {
-        logger.warn('[TrackingService] Faro pushError API not available')
+        logger.warn('[TrackingService] pushError API not available')
         return
       }
-
       api.pushError(err, errorOptions)
     }
 
@@ -260,10 +334,9 @@ export class TrackingService extends BaseService {
     this._withClient(client => {
       const api = client?.api
       if (!api?.pushLog) {
-        logger.warn('[TrackingService] Faro pushLog API not available')
+        logger.warn('[TrackingService] pushLog API not available')
         return
       }
-
       api.pushLog(payload, options)
     })
   }
@@ -361,10 +434,9 @@ export class TrackingService extends BaseService {
     const invokeTracking = client => {
       const api = client?.api
       if (!api?.pushMeasurement) {
-        logger.warn('[TrackingService] Faro pushMeasurement API not available')
+        logger.warn('[TrackingService] pushMeasurement API not available')
         return
       }
-
       api.pushMeasurement(payload, apiOptions)
     }
 
@@ -386,14 +458,10 @@ export class TrackingService extends BaseService {
     this._withClient(client => {
       const api = client?.api
       if (!api?.setView) {
-        logger.warn('[TrackingService] Faro setView API not available')
+        logger.warn('[TrackingService] setView API not available')
         return
       }
-
-      api.setView({
-        name,
-        ...merged
-      })
+      api.setView({ name, ...merged })
     })
   }
 
@@ -408,17 +476,15 @@ export class TrackingService extends BaseService {
     }
 
     const userData = sanitizeAttributes(user)
-
     const queueConfigured =
       options && typeof options === 'object' && Object.hasOwn(options, 'queue')
 
     const invokeTracking = client => {
       const api = client?.api
       if (!api?.setUser) {
-        logger.warn('[TrackingService] Faro setUser API not available')
+        logger.warn('[TrackingService] setUser API not available')
         return
       }
-
       api.setUser(userData)
     }
 
@@ -435,7 +501,7 @@ export class TrackingService extends BaseService {
       if (api?.setUser) {
         api.setUser(null)
       } else {
-        logger.warn('[TrackingService] Faro setUser API not available')
+        logger.warn('[TrackingService] setUser API not available')
       }
     })
   }
@@ -457,10 +523,9 @@ export class TrackingService extends BaseService {
     const invokeTracking = client => {
       const api = client?.api
       if (!api?.setSession) {
-        logger.warn('[TrackingService] Faro setSession API not available')
+        logger.warn('[TrackingService] setSession API not available')
         return
       }
-
       api.setSession(sessionData, sessionOptions)
     }
 
@@ -477,7 +542,7 @@ export class TrackingService extends BaseService {
       if (api?.setSession) {
         api.setSession(null)
       } else {
-        logger.warn('[TrackingService] Faro setSession API not available')
+        logger.warn('[TrackingService] setSession API not available')
       }
     })
   }
@@ -546,25 +611,40 @@ export class TrackingService extends BaseService {
     const queue = [...this._queue]
     this._queue.length = 0
 
-    if (!this._faroClient) {
+    if (!this._client) {
       return
     }
 
     queue.forEach(callback => {
       try {
-        callback(this._faroClient)
+        callback(this._client)
       } catch (error) {
         logger.error('[TrackingService] Failed to flush queued tracking call', error)
       }
     })
   }
 
-  getClient () {
-    return this._faroClient
+  // Returns the Faro-API-compatible shim. Callers that previously dug into
+  // `getClient().api.pushEvent(...)` still work; the shim forwards to the
+  // analyzing client. Set `getRawClient: true` (debug only) to get the raw
+  // createAnalyzing handle.
+  getClient (opts = {}) {
+    if (opts && opts.getRawClient) return this._analyzing
+    return this._client
+  }
+
+  // Force-flush any batched envelope to the network — useful before page
+  // unload or in tests that want deterministic delivery.
+  flush () {
+    try {
+      this._analyzing?.flush?.()
+    } catch (error) {
+      logger.warn('[TrackingService] flush failed:', error)
+    }
   }
 
   isEnabled () {
-    return this._enabled && Boolean(this._faroClient)
+    return this._enabled && Boolean(this._client)
   }
 
   isInitialized () {
@@ -574,19 +654,20 @@ export class TrackingService extends BaseService {
   destroy () {
     this._queue.length = 0
 
-    if (this._faroClient?.destroy) {
+    if (this._client?.destroy) {
       try {
-        this._faroClient.destroy()
+        this._client.destroy()
       } catch (error) {
-        logger.warn('[TrackingService] Failed to destroy Faro client cleanly', error)
+        logger.warn('[TrackingService] Failed to destroy analyzing client cleanly', error)
       }
     }
 
-    if (isBrowserEnvironment() && window.symbols && window.symbols.faro === this._faroClient) {
-      delete window.symbols.faro
+    if (isBrowserEnvironment() && window.symbols && window.symbols.tracking === this._client) {
+      delete window.symbols.tracking
     }
 
-    this._faroClient = null
+    this._client = null
+    this._analyzing = null
     this._initialized = false
     this._setupPromise = null
     this._setReady(false)
@@ -601,37 +682,19 @@ export class TrackingService extends BaseService {
       ...contextConfig
     }
 
-    const transportList = []
-
-    if (Array.isArray(merged.transports)) {
-      transportList.push(...merged.transports.filter(Boolean))
-    } else if (merged.transport) {
-      transportList.push(merged.transport)
-    }
-
-    const configuredUrl =
-      merged.url ||
-      contextConfig.url ||
-      this._trackingOptions.url
-
-    let url = configuredUrl
-
-    if (!url && transportList.length === 0) {
-      url = environment.grafanaUrl
-    }
-
     const appName =
       merged.appName ||
       contextConfig.appName ||
       this._trackingOptions.appName ||
       environment.grafanaAppName ||
-      'Symbols Platform'
+      'workspace'
 
     const appVersion =
       merged.appVersion ||
       contextConfig.appVersion ||
       this._trackingOptions.appVersion ||
-      this._context?.appVersion
+      this._context?.appVersion ||
+      null
 
     const environmentName =
       merged.environment ||
@@ -645,113 +708,76 @@ export class TrackingService extends BaseService {
       ...contextGlobalAttributes
     })
 
-    const runtimeConfig = {
-      url,
+    return {
       appName,
       appVersion,
       environment: environmentName,
       globalAttributes,
       sessionTracking: merged.sessionTracking !== false,
       enableTracing: merged.enableTracing !== false,
+      transport: typeof merged.transport === 'function' ? merged.transport : null,
       user: merged.user,
       maxQueueSize:
         typeof merged.maxQueueSize === 'number' && merged.maxQueueSize > 0
           ? merged.maxQueueSize
           : DEFAULT_MAX_QUEUE_SIZE
     }
-
-    if (typeof merged.isolate === 'boolean') {
-      runtimeConfig.isolate = merged.isolate
-    }
-
-    if (Array.isArray(merged.instrumentations)) {
-      runtimeConfig.instrumentations = merged.instrumentations
-    }
-
-    if (typeof merged.instrumentationsFactory === 'function') {
-      runtimeConfig.instrumentationsFactory = merged.instrumentationsFactory
-    }
-
-    if (merged.webInstrumentationOptions != null) {
-      runtimeConfig.webInstrumentationOptions = merged.webInstrumentationOptions
-    }
-
-    if (transportList.length > 0) {
-      runtimeConfig.transports = transportList
-    }
-
-    return runtimeConfig
   }
 
   _resolveEnvironmentName () {
-    if (environment.isProduction) {
-      return 'production'
-    }
-
-    if (environment.isStaging) {
-      return 'staging'
-    }
-
-    if (environment.isTesting) {
-      return 'testing'
-    }
-
-    if (environment.isDevelopment) {
-      return 'development'
-    }
-
+    if (environment.isProduction) return 'production'
+    if (environment.isStaging) return 'staging'
+    if (environment.isTesting) return 'testing'
+    if (environment.isDevelopment) return 'development'
     return process.env.NODE_ENV || 'development'
   }
 
-  async _loadFaroClient (runtimeConfig) {
+  // Resolves a transport function on demand. Callers can override the SDK
+  // route by passing their own `tracking.transport` in options; otherwise
+  // the envelope flows through the same workspace-project worker every
+  // other workspace SDK call uses.
+  _resolveTransport (runtimeConfig) {
+    if (typeof runtimeConfig.transport === 'function') return runtimeConfig.transport
+    return async (envelope) => {
+      try {
+        const wp = this._context?.services?.workspaceProject
+        if (!wp?.analyzed?.ingest) return { ok: false }
+        const res = await wp.analyzed.ingest(envelope)
+        return { ok: !res?.error }
+      } catch (error) {
+        logger.warn('[TrackingService] transport failed:', error?.message || error)
+        return { ok: false }
+      }
+    }
+  }
+
+  async _setupAnalyzingClient (runtimeConfig) {
     try {
-      const tracingImport = runtimeConfig.enableTracing === false
-        ? Promise.resolve(null)
-        : import('@grafana/faro-web-tracing').catch(error => {
-            logger.warn('[TrackingService] Tracing instrumentation failed to load:', error)
-            return null
-          })
+      const transport = this._resolveTransport(runtimeConfig)
 
-      const [{ initializeFaro, getWebInstrumentations }, tracingModule] = await Promise.all([
-        import('@grafana/faro-web-sdk'),
-        tracingImport
-      ])
-
-      const TracingInstrumentation = tracingModule?.TracingInstrumentation
-
-      const instrumentations = await this._resolveInstrumentations({
-        runtimeConfig,
-        getWebInstrumentations,
-        TracingInstrumentation
+      this._analyzing = createAnalyzing({
+        appKey: runtimeConfig.appName,
+        release: runtimeConfig.appVersion || null,
+        env: runtimeConfig.environment,
+        transport,
+        level: 'info',
+        sampleRate: 1,
+        consoleSink: false,
+        memorySink: true
       })
 
-      const initializeOptions = {
-        app: {
-          name: runtimeConfig.appName,
-          version: runtimeConfig.appVersion,
-          environment: runtimeConfig.environment
-        },
-        instrumentations,
-        globalAttributes: sanitizeAttributes(runtimeConfig.globalAttributes)
+      // Seed the analyzing context with any global attributes the caller
+      // configured pre-init.
+      for (const [k, v] of Object.entries(runtimeConfig.globalAttributes || {})) {
+        try { this._analyzing.setContext(k, v) } catch (_) {}
       }
 
-      if (runtimeConfig.url) {
-        initializeOptions.url = runtimeConfig.url
-      }
+      // The plugin state activates from inside DOMQL's create() chain; here
+      // (outside DOMQL) we activate explicitly so manual captures don't sit
+      // in the pre-ready buffer indefinitely.
+      try { this._analyzing.state.activate(null) } catch (_) {}
 
-      if (Array.isArray(runtimeConfig.transports) && runtimeConfig.transports.length > 0) {
-        initializeOptions.transports = runtimeConfig.transports
-      }
-
-      if (runtimeConfig.sessionTracking === false) {
-        initializeOptions.sessionTracking = false
-      }
-
-      if (runtimeConfig.isolate === true) {
-        initializeOptions.isolate = true
-      }
-
-      this._faroClient = initializeFaro(initializeOptions)
+      this._client = buildAnalyzingShim(this._analyzing)
 
       if (runtimeConfig.user) {
         this.setUser(runtimeConfig.user, { queue: false })
@@ -759,7 +785,7 @@ export class TrackingService extends BaseService {
 
       if (isBrowserEnvironment()) {
         window.symbols ||= {}
-        window.symbols.faro = this._faroClient
+        window.symbols.tracking = this._client
       }
 
       this._initialized = true
@@ -769,53 +795,10 @@ export class TrackingService extends BaseService {
       this._enabled = false
       this._setError(error)
       this._ready = true
-      logger.error('[TrackingService] Failed to initialize Grafana Faro client:', error)
+      logger.error('[TrackingService] Failed to initialize analyzing client:', error)
     } finally {
       this._setupPromise = null
     }
-  }
-
-  async _resolveInstrumentations ({
-    runtimeConfig,
-    getWebInstrumentations,
-    TracingInstrumentation
-  }) {
-    if (Array.isArray(runtimeConfig.instrumentations)) {
-      return runtimeConfig.instrumentations
-    }
-
-    if (typeof runtimeConfig.instrumentationsFactory === 'function') {
-      try {
-        const instrumentations = await runtimeConfig.instrumentationsFactory({
-          runtimeConfig,
-          getWebInstrumentations,
-          TracingInstrumentation
-        })
-
-        if (Array.isArray(instrumentations)) {
-          return instrumentations
-        }
-      } catch (error) {
-        logger.warn('[TrackingService] Custom instrumentation factory failed:', error)
-      }
-    }
-
-    const instrumentationOptions =
-      runtimeConfig.webInstrumentationOptions == null
-        ? {}
-        : runtimeConfig.webInstrumentationOptions
-
-    const defaultInstrumentations = getWebInstrumentations(instrumentationOptions)
-
-    if (runtimeConfig.enableTracing !== false && TracingInstrumentation) {
-      try {
-        defaultInstrumentations.push(new TracingInstrumentation())
-      } catch (error) {
-        logger.warn('[TrackingService] Failed to instantiate tracing instrumentation:', error)
-      }
-    }
-
-    return defaultInstrumentations
   }
 
   _withClient (callback, options = {}) {
@@ -823,9 +806,9 @@ export class TrackingService extends BaseService {
       return null
     }
 
-    if (this._faroClient) {
+    if (this._client) {
       try {
-        return callback(this._faroClient)
+        return callback(this._client)
       } catch (error) {
         logger.error('[TrackingService] Tracking callback failed:', error)
         return null
@@ -850,5 +833,3 @@ export class TrackingService extends BaseService {
     return null
   }
 }
-
-

@@ -71,8 +71,7 @@
   "dependencies": {
     "@symbo.ls/channels": "^3.14.14",
     "@symbo.ls/utils": "^3.14.11",
-    "@grafana/faro-web-sdk": "^1.19.0",
-    "@grafana/faro-web-tracing": "^1.19.0",
+    "@symbo.ls/analyzing": "^3.14.1",
     "acorn": "^8.14.0",
     "acorn-walk": "^8.3.4",
     "chalk": "^5.4.1",
@@ -103,7 +102,6 @@
   },
   "devDependencies": {
     "@faker-js/faker": "^9.5.1",
-    "@grafana/faro-core": "^1.19.0",
     "@supabase/supabase-js": "^2.0.0",
     "esbuild": "^0.27.4",
     "esbuild-plugins-node-modules-polyfill": "^1.6.8",

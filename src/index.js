@@ -264,8 +264,6 @@ export class SDK {
   }
 
   _validateOptions (options) {
-    const onLocalhost = isLocalhost()
-    const hasGrafanaUrl = Boolean(environment.grafanaUrl)
     const defaults = {
       useNewServices: true, // Use new service implementations by default
       apiUrl: environment.apiUrl,
@@ -274,15 +272,18 @@ export class SDK {
       retryAttempts: 3,
       debug: false,
       tracking: {
-        // Faro/Grafana tracking globally disabled — the collector endpoint
-        // rejects CORS from our preview domains, so every call spams the
-        // console with preflight failures. Re-enable per-caller via
-        // `options.tracking.enabled = true` when a valid origin is allowed.
+        // Off by default. TrackingService is now backed by @symbo.ls/analyzing
+        // → workspace-project worker → analyzed_* tables. The workspace shell
+        // boots its own analyzing instance directly (workspace/packages/
+        // workspace/analyzing.js), so leaving TrackingService disabled by
+        // default avoids double-instrumentation. Consumers that want
+        // tracking on the SDK surface itself can opt in via
+        // `options.tracking.enabled = true`.
         enabled: false
       }
     }
 
-    const merged = {
+    return {
       ...defaults,
       ...options,
       tracking: {
@@ -290,13 +291,6 @@ export class SDK {
         ...(options.tracking || {})
       }
     }
-
-    // Enforce disabled tracking on localhost or when no Grafana URL configured, even if overridden
-    if (onLocalhost || !hasGrafanaUrl) {
-      merged.tracking.enabled = false
-    }
-
-    return merged
   }
 
   // Get service instance

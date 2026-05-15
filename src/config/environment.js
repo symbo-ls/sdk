@@ -162,11 +162,13 @@ export const getConfig = () => {
       apiUrl,
       githubClientId:
         process.env.SYMBOLS_APP_GITHUB_CLIENT_ID || envConfig.githubClientId,
-      // Grafana Faro telemetry: SDK posts events to the server proxy at
-      // ${apiUrl}/telemetry/faro. The server holds the actual collector URL
-      // + token in its .env (GRAFANA_FARO_URL). Direct override honored for
-      // self-hosted/dev scenarios via SYMBOLS_APP_GRAFANA_URL.
-      grafanaUrl: process.env.SYMBOLS_APP_GRAFANA_URL || `${apiUrl}/telemetry/faro`,
+      // Telemetry: TrackingService routes through @symbo.ls/analyzing →
+      // workspace-project worker → analyzed_* tables in the workspace
+      // Supabase. `grafanaUrl` is kept as a legacy escape hatch — when set,
+      // TrackingService can be configured with `tracking.transport` to ship
+      // to a Grafana Faro receiver instead. Default is empty so the SDK-
+      // routed transport wins.
+      grafanaUrl: process.env.SYMBOLS_APP_GRAFANA_URL || null,
       dnsWorkerUrl: process.env.SYMBOLS_DNS_WORKER_URL || envConfig.dnsWorkerUrl,
       dnsApiKey: process.env.SYMBOLS_DNS_API_KEY || '',
       // Typesense docs search: SDK calls the server proxy at
