@@ -1031,6 +1031,10 @@ export class ProjectService extends BaseService {
         methodName: 'applyProjectChanges'
       })
 
+      // _request returns null for HTTP 204 (BaseService.js:185). The
+      // /projects/:id/changes endpoint returns 204 for no-op change sets
+      // (no JSON body to echo). Treat as success-no-payload.
+      if (response == null) return null
       if (response.success) {
         return response.data
       }
