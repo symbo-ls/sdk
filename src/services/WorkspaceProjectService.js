@@ -212,8 +212,14 @@ export class WorkspaceProjectService extends BaseService {
 
   // --- Tickets ----------------------------------------------------------------
   tickets = {
+    // SERVER-WP-TICKETS-POST-AMBIGUOUS — `POST /tickets` is the canonical
+    // create route; list uses the dedicated `/tickets/list` to avoid the
+    // body-shape ambiguity that previously caused 500s on cold-load
+    // (insert handler would read `body.payload` as undefined and Postgres
+    // rejected the NULL "title"). The server still accepts `POST /tickets`
+    // with `{filter, options}` as a legacy fallback for older SDK builds.
     list: (filter, options) =>
-      this._ws('tickets.list', '/tickets', { method: 'POST', body: { filter, options } }),
+      this._ws('tickets.list', '/tickets/list', { method: 'POST', body: { filter, options } }),
     get: (number) => this._ws('tickets.get', `/tickets/${encodeURIComponent(number)}`),
     create: (payload) =>
       this._ws('tickets.create', '/tickets', { method: 'POST', body: { payload } }),
