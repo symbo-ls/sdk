@@ -376,11 +376,28 @@ export class AuthService extends BaseService {
 
   async getMe(options = {}) {
     this._requireReady('getMe')
+    const session = this._resolvePluginSession(options.session)
+    // In-flight dedup: multiple consumers calling getMe() in the same
+    // tick (workspace boot has bootShell, analyzing, AppHeader, app.js, data.js
+    // all firing in parallel) used to each pay a network round-trip. Now the
+    // first caller starts the fetch and every concurrent caller awaits the
+    // SAME promise. After resolution a 50ms TTL keeps the dedup window open
+    // long enough to absorb the boot burst, then clears so fresh callers
+    // (post setActiveOrganization, after a few RAFs, etc.) get fresh data.
+    // Keyed by session string so different `?session=` snapshots don't
+    // collide with the default-session lane.
+    const inflightKey = session || '__default__'
+    this._getMeInflight ||= new Map()
+    if (this._getMeInflight.has(inflightKey)) {
+      return this._getMeInflight.get(inflightKey)
+    }
+    const promise = this._fetchMe(session, inflightKey)
+    this._getMeInflight.set(inflightKey, promise)
+    return promise
+  }
+
+  async _fetchMe(session, inflightKey) {
     try {
-      const session = this._resolvePluginSession(options.session)
-      // Literals inlined at each _request call site so the drift analyzer
-      // can match them against the server route (it can't see through a
-      // variable-typed `endpoint`).
       const response = session
         ? await this._request(`/auth/me?session=${encodeURIComponent(session)}`, {
           method: 'GET',
@@ -391,15 +408,22 @@ export class AuthService extends BaseService {
           methodName: 'getMe'
         })
       if (response.success) {
-        // Cache the user record so getSession() can return it without an
-        // additional /auth/me round-trip, and emit USER_UPDATED so live
-        // subscribers (sdk.onAuthStateChange) re-render.
         this._currentUser = response.data?.user || response.data || null
         this._emitAuth?.('USER_UPDATED')
+        // Schedule cache clear so a follow-up call after the boot burst
+        // can fetch fresh. 50ms is wide enough to catch every mount-time
+        // caller in workspace, narrow enough that subsequent intentional
+        // refreshes (e.g., after PATCH /auth/me/active-org) re-fetch.
+        setTimeout(() => {
+          this._getMeInflight?.delete(inflightKey)
+        }, 50)
         return response.data
       }
       throw new Error(response.message)
     } catch (error) {
+      // On error, clear immediately so callers can retry without waiting
+      // out the TTL. Don't swallow — propagate with the original wrap.
+      this._getMeInflight?.delete(inflightKey)
       throw new Error(`Failed to get user profile: ${error.message}`, { cause: error })
     }
   }
