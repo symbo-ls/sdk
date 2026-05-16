@@ -656,9 +656,9 @@ export class WorkspaceProjectService extends BaseService {
       this._sb('analyzed.listEvents', 'analyzed_events', 'list',
         { filter, options: { order: 'ts.asc', limit: 500, ...(options || {}) } }),
 
-    clusters: ({ workspaceId, appKey, since, limit = 200 } = {}) =>
+    clusters: ({ workspaceId, appKey, since, limit = 200, offset = 0 } = {}) =>
       this._sb('analyzed.clusters', 'fn_analyzed_bug_clusters', 'rpc',
-        { payload: { p_workspace: workspaceId, p_app_key: appKey || null, p_since: since || null, p_max_rows: limit } }),
+        { payload: { p_workspace: workspaceId, p_app_key: appKey || null, p_since: since || null, p_max_rows: limit, p_offset: offset } }),
   }
 
   // Single-row org metadata — companyInfo (key/value pairs) + companySettings

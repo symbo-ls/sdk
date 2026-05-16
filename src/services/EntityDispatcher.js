@@ -529,6 +529,7 @@ const ENTITY_ROUTES = {
         appKey:      a?.appKey      ?? a?.filter?.appKey      ?? a?.params?.appKey,
         since:       a?.since       ?? a?.filter?.since       ?? a?.params?.since,
         limit:       a?.limit       ?? a?.filter?.limit       ?? a?.params?.limit ?? 200,
+        offset:      a?.offset      ?? a?.filter?.offset      ?? a?.params?.offset ?? 0,
       }],
     },
   },
