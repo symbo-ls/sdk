@@ -1,6 +1,6 @@
 {
   "name": "@symbo.ls/sdk",
-  "version": "3.14.12",
+  "version": "3.14.13",
   "type": "module",
   "module": "./dist/esm/src/index.js",
   "workspaces": [
@@ -69,9 +69,9 @@
     "test:bridges": "tape packages/sdk-bridge/tests/*.test.js packages/sdk-supabase-bridge/tests/*.test.js | tap-spec"
   },
   "dependencies": {
-    "@symbo.ls/channels": "^3.14.14",
-    "@symbo.ls/utils": "^3.14.15",
-    "@symbo.ls/analyzing": "^3.14.1",
+    "@symbo.ls/channels": "^3.14.19",
+    "@symbo.ls/utils": "^3.14.16",
+    "@symbo.ls/analyzing": "^3.14.4",
     "acorn": "^8.14.0",
     "acorn-walk": "^8.3.4",
     "chalk": "^5.4.1",
@@ -86,8 +86,8 @@
   },
   "peerDependencies": {
     "@supabase/supabase-js": "^2.0.0",
-    "@symbo.ls/sdk-bridge": "^3.14.8",
-    "@symbo.ls/sdk-supabase-bridge": "^3.14.8"
+    "@symbo.ls/sdk-bridge": "^3.14.9",
+    "@symbo.ls/sdk-supabase-bridge": "^3.14.12"
   },
   "peerDependenciesMeta": {
     "@supabase/supabase-js": {

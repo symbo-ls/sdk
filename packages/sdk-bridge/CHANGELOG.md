@@ -1,5 +1,13 @@
 # @symbo.ls/sdk-bridge
 
+## 3.14.9
+
+### Patch Changes
+
+- Manual patch bump triggered via workflow_dispatch (scope: all).
+  No source change behind this bump — released to refresh dist or
+  coordinate a cross-package version line.
+
 ## 3.14.8
 
 ### Patch Changes

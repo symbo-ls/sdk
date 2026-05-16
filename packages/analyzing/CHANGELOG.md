@@ -1,5 +1,15 @@
 # @symbo.ls/analyzing
 
+## 3.14.4
+
+### Patch Changes
+
+- Manual patch bump triggered via workflow_dispatch (scope: all).
+  No source change behind this bump — released to refresh dist or
+  coordinate a cross-package version line.
+- Updated dependencies
+  - @symbo.ls/analyze@3.14.13
+
 ## 3.14.3
 
 ### Patch Changes
