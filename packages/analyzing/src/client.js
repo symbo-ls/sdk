@@ -101,15 +101,62 @@ export const createAnalyzing = (opts = {}) => {
   if (!resolvedTransport && sdk) {
     const _resolveSdk = () =>
       typeof sdk === 'function' ? sdk() : sdk
-    resolvedTransport = async (envelope) => {
+
+    // Fallback POST when sdk.execute can't dispatch the entity. The
+    // workspace-shell SDK may finish booting BEFORE service proxies are
+    // hydrated (canvas/studio routes hit this — _services stays empty,
+    // sdk.execute throws "Unknown entity"). Without this fallback every
+    // event drops on the floor; the dashboard never sees the session.
+    //
+    // Reads apiUrl + auth from the SDK context that IS initialized
+    // (ctx.apiUrl + ctx.workspaceProjectTokenProvider fallback to the
+    // legacy Mongo getAuthToken). Same wire shape the workspace-project
+    // worker's /analyzed/ingest route accepts, so the server-side write
+    // path is unchanged.
+    const _directIngest = async (live, envelope) => {
       try {
-        const live = _resolveSdk()
-        if (!live || typeof live.execute !== 'function') return { ok: false }
-        const res = await live.execute('workspaceProject.analyzed', 'ingest', envelope)
-        return { ok: !res?.error }
-      } catch (_) {
-        return { ok: false }
+        const ctx = live?._context || {}
+        const apiBase = ctx.workspaceApiUrl || ctx.apiUrl
+        if (!apiBase) return { ok: false, reason: 'no-api-base' }
+        let token = null
+        if (typeof ctx.workspaceProjectTokenProvider === 'function') {
+          try {
+            const t = await ctx.workspaceProjectTokenProvider()
+            token = typeof t === 'string' ? t : (t?.token || t?.access_token || null)
+          } catch (_) { /* fall through */ }
+        }
+        if (!token && typeof live.getAuthToken === 'function') {
+          try { token = live.getAuthToken() || null } catch (_) {}
+        }
+        const url = `${String(apiBase).replace(/\/+$/, '')}/workspace-project/analyzed/ingest`
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify(envelope),
+          keepalive: true,
+        })
+        return { ok: res.ok, status: res.status }
+      } catch (e) {
+        return { ok: false, reason: e?.message || 'fetch-failed' }
       }
+    }
+
+    resolvedTransport = async (envelope) => {
+      const live = _resolveSdk()
+      if (!live) return { ok: false }
+      // Prefer the typed dispatcher when services are wired — that path
+      // benefits from the SDK's retry/backoff + token refresh hooks.
+      if (typeof live.execute === 'function') {
+        try {
+          const res = await live.execute('workspaceProject.analyzed', 'ingest', envelope)
+          if (!res?.error) return { ok: true }
+          // "Unknown entity" surfaces here too — fall through to direct fetch.
+        } catch (_) { /* fall through */ }
+      }
+      return _directIngest(live, envelope)
     }
   }
   if (!endpoint && !resolvedTransport) {
