@@ -41,10 +41,19 @@ export class WorkspaceProjectService extends BaseService {
     if (this._tokenProvider) {
       try {
         const result = await this._tokenProvider()
-        if (!result) return null
-        if (typeof result === 'string') return `Bearer ${result}`
-        if (result.token) return `Bearer ${result.token}`
-        if (result.access_token) return `Bearer ${result.access_token}`
+        // Only short-circuit when the provider produced a usable token.
+        // A null/empty result means the federated path isn't ready (e.g.
+        // governance Supabase JWT missing, sdk_only diagnostic) — in that
+        // case fall through to _tokenManager so the SDK Mongo token still
+        // authenticates the request via the wrapper's userResolver path.
+        // Returning null here would send the request with no Authorization
+        // header and 401 the user, even though they have a perfectly valid
+        // session token.
+        if (result) {
+          if (typeof result === 'string') return `Bearer ${result}`
+          if (result.token) return `Bearer ${result.token}`
+          if (result.access_token) return `Bearer ${result.access_token}`
+        }
       } catch {}
     }
     if (this._tokenManager) {
