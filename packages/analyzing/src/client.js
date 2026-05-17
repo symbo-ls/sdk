@@ -113,21 +113,34 @@ export const createAnalyzing = (opts = {}) => {
     // legacy Mongo getAuthToken). Same wire shape the workspace-project
     // worker's /analyzed/ingest route accepts, so the server-side write
     // path is unchanged.
+    // Resolve the workspace-project bearer token from the SDK context. Used
+    // by BOTH the typed-dispatcher gate below AND the _directIngest fallback,
+    // so neither path posts to /analyzed/ingest without an Authorization
+    // header (the server rejects unauthenticated callers with 401, and
+    // every anonymous visitor / signed-out user would otherwise see a
+    // stream of "POST .../analyzed/ingest 401" errors in DevTools).
+    const _resolveIngestToken = async (live) => {
+      const ctx = live?._context || {}
+      if (typeof ctx.workspaceProjectTokenProvider === 'function') {
+        try {
+          const t = await ctx.workspaceProjectTokenProvider()
+          const token = typeof t === 'string' ? t : (t?.token || t?.access_token || null)
+          if (token) return token
+        } catch (_) { /* fall through */ }
+      }
+      if (typeof live.getAuthToken === 'function') {
+        try { return live.getAuthToken() || null } catch (_) {}
+      }
+      return null
+    }
+
     const _directIngest = async (live, envelope) => {
       try {
         const ctx = live?._context || {}
         const apiBase = ctx.workspaceApiUrl || ctx.apiUrl
         if (!apiBase) return { ok: false, reason: 'no-api-base' }
-        let token = null
-        if (typeof ctx.workspaceProjectTokenProvider === 'function') {
-          try {
-            const t = await ctx.workspaceProjectTokenProvider()
-            token = typeof t === 'string' ? t : (t?.token || t?.access_token || null)
-          } catch (_) { /* fall through */ }
-        }
-        if (!token && typeof live.getAuthToken === 'function') {
-          try { token = live.getAuthToken() || null } catch (_) {}
-        }
+        const token = await _resolveIngestToken(live)
+        if (!token) return { ok: false, reason: 'no-auth' }
         const url = `${String(apiBase).replace(/\/+$/, '')}/workspace-project/analyzed/ingest`
         const res = await fetch(url, {
           method: 'POST',
@@ -147,6 +160,13 @@ export const createAnalyzing = (opts = {}) => {
     resolvedTransport = async (envelope) => {
       const live = _resolveSdk()
       if (!live) return { ok: false }
+      // Auth gate: server rejects unauthenticated /analyzed/ingest with 401.
+      // Drop the envelope silently when no token is resolvable instead of
+      // generating 401-per-event noise in every signed-out user's DevTools.
+      // Telemetry is best-effort by contract — silent drop is preferable to
+      // breaking the page-load logs.
+      const _token = await _resolveIngestToken(live)
+      if (!_token) return { ok: false, reason: 'no-auth' }
       // Prefer the typed dispatcher when services are wired — that path
       // benefits from the SDK's retry/backoff + token refresh hooks.
       if (typeof live.execute === 'function') {
