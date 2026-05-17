@@ -20,9 +20,14 @@ import { logger } from '../utils/logger.js'
 const CONFIG = {
   // Common defaults for all environments
   common: {
-    // NOTE: Google client id for google auth, need to configure URLs for each environment in Google console
+    // Google OAuth Web client. Hosted in symbols-main (project number
+    // 93720420804). Public identifier — no secret embedded; the matching
+    // Client Secret lives in Infisical (GOOGLE_OAUTH_CLIENT_SECRET) and
+    // is only used server-side by AuthOAuthController during the
+    // code-for-token exchange. Authorized origins + redirect URIs are
+    // configured in Console (Credentials → this client) per env.
     googleClientId:
-      '686286207466-bvd2fqs31rlm64fgich7rtpnc8ns2tqg.apps.googleusercontent.com',
+      '93720420804-eaafvil4gpj2mnpqpo1he5el0ph6ekhc.apps.googleusercontent.com',
     // Feature toggles that apply across all environments by default
     features: {
       newUserOnboarding: true,
