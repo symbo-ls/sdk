@@ -287,14 +287,31 @@ export const createAnalyzing = (opts = {}) => {
     }))
   }
 
+  // Dedup signature for the last identify() call. Workspace boot has 3+
+  // consumers (bootShell, analyzing.js init, app.js identifyFromSdk) each
+  // calling identify() on mount with the same { userId, traits } — without
+  // dedup that's 3 redundant envelopes per nav. Signature compares userId +
+  // stable-stringified traits; matching call no-ops. Sign-out (input == null)
+  // resets the signature so the next sign-in always fires.
+  let _lastIdentitySig = null
+  const _stableTraitsSig = (traits) => {
+    if (!traits || typeof traits !== 'object') return ''
+    const keys = Object.keys(traits).sort()
+    return keys.map((k) => `${k}=${String(traits[k])}`).join('|')
+  }
+
   const identify = (input) => {
     if (input == null) {
       contextStore.user = null
       contextStore.traits = {}
+      _lastIdentitySig = null
       return
     }
     const userId = typeof input === 'string' ? input : input.userId || input.id || null
     const traits = typeof input === 'object' ? (input.traits || {}) : {}
+    const sig = `${userId || ''}|${_stableTraitsSig(traits)}`
+    if (sig === _lastIdentitySig) return
+    _lastIdentitySig = sig
     contextStore.user = userId ? { id: userId } : null
     contextStore.traits = { ...traits }
     emit(makeEvent('identify', 'info', {

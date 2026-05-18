@@ -159,19 +159,58 @@ export class TokenManager {
   }
 
   /**
+   * Decode `exp` (seconds since epoch) from a JWT access token without
+   * verifying the signature. Returns null when the token is not a JWT or
+   * the payload can't be parsed. Used as a fallback when `expiresAt` was
+   * never persisted alongside the token — e.g. an external auth flow
+   * dropped `symbols_access_token` into localStorage directly, or a stale
+   * session lingers from a previous build.
+   */
+  _decodeJwtExpMs () {
+    const token = this.tokens.accessToken
+    if (!token || typeof token !== 'string') return null
+    const parts = token.split('.')
+    if (parts.length !== 3) return null
+    try {
+      let payload = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+      while (payload.length % 4) payload += '='
+      const json = typeof atob === 'function'
+        ? atob(payload)
+        : Buffer.from(payload, 'base64').toString('utf8')
+      const claims = JSON.parse(json)
+      const exp = typeof claims?.exp === 'number' ? claims.exp : null
+      return exp != null ? exp * 1000 : null
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Resolve the effective access-token expiry in ms. Prefers the stored
+   * `expiresAt` (set via setTokens from `expires_in`); falls back to the
+   * JWT `exp` claim when stored expiry is missing. Returns null when no
+   * expiry info is available from either source.
+   */
+  _resolveAccessTokenExpiryMs () {
+    if (this.tokens.expiresAt) return this.tokens.expiresAt
+    return this._decodeJwtExpMs()
+  }
+
+  /**
    * Check if access token is valid and not expired
    */
   isAccessTokenValid () {
     if (!this.tokens.accessToken) {return false}
-    if (!this.tokens.expiresAt) {return true} // No expiry info, assume valid
+    const expiresAt = this._resolveAccessTokenExpiryMs()
+    if (!expiresAt) {return true} // No expiry info anywhere, assume valid
 
     const now = Date.now()
-    const isValid = now < (this.tokens.expiresAt - this.config.refreshBuffer)
+    const isValid = now < (expiresAt - this.config.refreshBuffer)
 
     if (!isValid) {
       logger.log('[TokenManager] Access token is expired or near expiry:', {
         now: new Date(now).toISOString(),
-        expiresAt: new Date(this.tokens.expiresAt).toISOString(),
+        expiresAt: new Date(expiresAt).toISOString(),
         refreshBuffer: this.config.refreshBuffer
       })
     }
@@ -184,10 +223,11 @@ export class TokenManager {
    */
   isAccessTokenActuallyValid () {
     if (!this.tokens.accessToken) {return false}
-    if (!this.tokens.expiresAt) {return true} // No expiry info, assume valid
+    const expiresAt = this._resolveAccessTokenExpiryMs()
+    if (!expiresAt) {return true} // No expiry info anywhere, assume valid
 
     const now = Date.now()
-    return now < this.tokens.expiresAt
+    return now < expiresAt
   }
 
   /**
@@ -437,15 +477,38 @@ export class TokenManager {
   }
 
   /**
-   * Get token status information
+   * Get token status information.
+   *
+   * The `status` field is the high-level summary the workspace shell uses
+   * to decide between "render data" / "render expired-banner" / "render
+   * sign-in form". Three states:
+   *  - `'missing'`  — no access token at all
+   *  - `'expired'`  — token exists but JWT `exp` is in the past AND no
+   *                   refresh token is available to recover
+   *  - `'valid'`    — token exists and isAccessTokenValid() agrees
+   *                   (covers "refresh-token present, will auto-rotate"
+   *                   as well as "long-lived token still in window")
    */
   getTokenStatus () {
     const hasTokens = this.hasTokens()
     const isValid = this.isAccessTokenValid()
-    const {expiresAt} = this.tokens
+    const expiresAt = this._resolveAccessTokenExpiryMs()
     const timeToExpiry = expiresAt ? expiresAt - Date.now() : null
+    let status = 'missing'
+    if (hasTokens) {
+      if (isValid) {
+        status = 'valid'
+      } else if (this.hasRefreshToken()) {
+        // Expired but recoverable — treat as valid for UI purposes; the
+        // next request will trigger refreshTokens() automatically.
+        status = 'valid'
+      } else {
+        status = 'expired'
+      }
+    }
 
     return {
+      status,
       hasTokens,
       isValid,
       hasRefreshToken: this.hasRefreshToken(),

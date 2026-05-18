@@ -93,6 +93,62 @@ test('identify stamps user onto subsequent envelopes', async () => {
   assert.equal(env.traits.plan, 'pro')
 })
 
+test('identify is idempotent — same { userId, traits } emits once', async () => {
+  const calls = []
+  const a = createAnalyzing({
+    appKey: 'app',
+    transport: (envelope) => { calls.push(envelope); return { ok: true } },
+    level: 'trace',
+    batchMs: 5,
+    maxBatch: 1
+  })
+  a.state.activate(null)
+  a.identify({ userId: 'u_1', traits: { plan: 'pro' } })
+  a.identify({ userId: 'u_1', traits: { plan: 'pro' } })
+  a.identify({ userId: 'u_1', traits: { plan: 'pro' } })
+  await new Promise((r) => setTimeout(r, 20))
+  const identifyEnvs = calls.filter((c) => c.events.some((e) => e.hook === 'sdk.identify'))
+  const identifyEvents = identifyEnvs.flatMap((c) => c.events.filter((e) => e.hook === 'sdk.identify'))
+  assert.equal(identifyEvents.length, 1, 'three same-signature identify calls produce 1 event')
+})
+
+test('identify re-emits when traits change', async () => {
+  const calls = []
+  const a = createAnalyzing({
+    appKey: 'app',
+    transport: (envelope) => { calls.push(envelope); return { ok: true } },
+    level: 'trace',
+    batchMs: 5,
+    maxBatch: 1
+  })
+  a.state.activate(null)
+  a.identify({ userId: 'u_1', traits: { plan: 'pro' } })
+  a.identify({ userId: 'u_1', traits: { plan: 'enterprise' } })
+  await new Promise((r) => setTimeout(r, 20))
+  const identifyEvents = calls
+    .flatMap((c) => c.events.filter((e) => e.hook === 'sdk.identify'))
+  assert.equal(identifyEvents.length, 2, 'changed traits trigger a new identify')
+})
+
+test('identify(null) resets dedup so next sign-in fires', async () => {
+  const calls = []
+  const a = createAnalyzing({
+    appKey: 'app',
+    transport: (envelope) => { calls.push(envelope); return { ok: true } },
+    level: 'trace',
+    batchMs: 5,
+    maxBatch: 1
+  })
+  a.state.activate(null)
+  a.identify({ userId: 'u_1', traits: { plan: 'pro' } })
+  a.identify(null)
+  a.identify({ userId: 'u_1', traits: { plan: 'pro' } })
+  await new Promise((r) => setTimeout(r, 20))
+  const identifyEvents = calls
+    .flatMap((c) => c.events.filter((e) => e.hook === 'sdk.identify'))
+  assert.equal(identifyEvents.length, 2, 'sign-out clears the dedup signature')
+})
+
 test('classifyEnvelope mirrors plugin classifyEvent', () => {
   assert.deepEqual(LOG_TYPES, ['bug', 'network', 'log', 'verbose'])
   assert.equal(classifyEnvelope({ type: 'error', level: 'error' }), 'bug')
