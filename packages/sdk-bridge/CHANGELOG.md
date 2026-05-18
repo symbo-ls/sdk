@@ -1,5 +1,7 @@
 # @symbo.ls/sdk-bridge
 
+## 3.14.100
+
 ## 3.14.9
 
 ### Patch Changes
