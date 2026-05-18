@@ -80,11 +80,52 @@ export const createAnalyzing = (opts = {}) => {
     maxBatch,
     maxRetries,
     backoffMs,
-    queueLimit
+    queueLimit,
+    // Public mode (mermaid-injected visitor analytics): there's no SDK token —
+    // visitors are anonymous, workspace_id is pre-resolved server-side. The
+    // ingest URL is mermaid's analytics proxy; mermaid validates by Origin.
+    mode = 'authenticated',
+    workspaceId,
+    projectId,
+    projectEnv,
+    domain,
+    ingestUrl
   } = opts
 
   if (!appKey) {
     throw new Error('[@symbo.ls/analyzing] appKey is required')
+  }
+
+  // Public mode short-circuits the SDK-derived transport entirely. No token
+  // resolution, no SDK execute() dispatch — just POST envelopes to the
+  // provided ingestUrl with the four scope fields stamped on each one.
+  let resolvedTransport = transport
+  if (!resolvedTransport && mode === 'public') {
+    if (!ingestUrl) {
+      throw new Error('[@symbo.ls/analyzing] public mode requires ingestUrl')
+    }
+    if (!workspaceId) {
+      throw new Error('[@symbo.ls/analyzing] public mode requires workspaceId')
+    }
+    resolvedTransport = async (envelope) => {
+      try {
+        const res = await fetch(ingestUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...envelope,
+            workspace_id: workspaceId,
+            project_id: projectId,
+            project_env: projectEnv,
+            domain
+          }),
+          keepalive: true
+        })
+        return { ok: res.ok, status: res.status }
+      } catch (e) {
+        return { ok: false, reason: e?.message || 'fetch-failed' }
+      }
+    }
   }
 
   // Default transport — routes the envelope through the workspace-project
@@ -97,7 +138,6 @@ export const createAnalyzing = (opts = {}) => {
   // sdk can be: an SDK instance, a function returning the SDK (lazy), or
   // null. Resolution happens at EACH call so a not-yet-hydrated SDK passed
   // at boot time still produces a working transport once the SDK lands.
-  let resolvedTransport = transport
   if (!resolvedTransport && sdk) {
     const _resolveSdk = () =>
       typeof sdk === 'function' ? sdk() : sdk
@@ -180,7 +220,7 @@ export const createAnalyzing = (opts = {}) => {
     }
   }
   if (!endpoint && !resolvedTransport) {
-    throw new Error('[@symbo.ls/analyzing] one of { sdk, endpoint, transport } is required')
+    throw new Error('[@symbo.ls/analyzing] one of { sdk, endpoint, transport, mode: "public" + ingestUrl } is required')
   }
 
   // Legacy bearer resolver — only used when shipping straight to `endpoint`
