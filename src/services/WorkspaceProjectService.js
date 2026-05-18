@@ -671,6 +671,13 @@ export class WorkspaceProjectService extends BaseService {
       this._sb('analyzed.listEvents', 'analyzed_events', 'list',
         { filter, options: { order: 'ts.asc', limit: 500, ...(options || {}) } }),
 
+    // Per-user aggregate view (server@9d207d98 migration 0133) — one row
+    // per (workspace_id, project_id, user_id). Backs the by-user paginated
+    // /logs view (WORKSPACE-LOGS-USERS-PAGINATED).
+    listUsers: (filter, options) =>
+      this._sb('analyzed.listUsers', 'analyzed_user_summaries', 'list',
+        { filter, options: { order: 'last_seen.desc', limit: 20, ...(options || {}) } }),
+
     clusters: ({ workspaceId, appKey, since, limit = 200, offset = 0 } = {}) =>
       this._sb('analyzed.clusters', 'fn_analyzed_bug_clusters', 'rpc',
         { payload: { p_workspace: workspaceId, p_app_key: appKey || null, p_since: since || null, p_max_rows: limit, p_offset: offset } }),

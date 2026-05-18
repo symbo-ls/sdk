@@ -518,6 +518,13 @@ const ENTITY_ROUTES = {
     methods: { list: 'analyzed.listEvents' },
     argMap: { list: argMaps.filterOptions },
   },
+  // Per-user aggregate (server@9d207d98 / analyzed_user_summaries view).
+  // Backs the by-user paginated /logs view — WORKSPACE-LOGS-USERS-PAGINATED.
+  'workspaceProject.analyzedUserSummaries': {
+    service: 'workspaceProject',
+    methods: { list: 'analyzed.listUsers' },
+    argMap: { list: argMaps.filterOptions },
+  },
   'workspaceProject.analyzedBugs': {
     service: 'workspaceProject',
     methods: { list: 'analyzed.clusters' },
