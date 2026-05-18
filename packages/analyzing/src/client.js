@@ -98,26 +98,44 @@ export const createAnalyzing = (opts = {}) => {
 
   // Public mode short-circuits the SDK-derived transport entirely. No token
   // resolution, no SDK execute() dispatch — just POST envelopes to the
-  // provided ingestUrl with the four scope fields stamped on each one.
+  // mermaid ingest endpoint. workspaceId / projectId / domain are ADVISORY
+  // here, not authoritative: mermaid re-resolves them server-side from the
+  // request Origin header on every envelope. The page can't lie about which
+  // project it belongs to (CORS-enforced), so it doesn't need to know
+  // — missing/empty values are fine. See ticket
+  // SDK-ANALYZING-PUBLIC-TOLERATE-MISSING-WORKSPACE-ID and
+  // architecture/MODEL.md §"Per-org visitor telemetry" → "No client-side scope".
   let resolvedTransport = transport
   if (!resolvedTransport && mode === 'public') {
-    if (!ingestUrl) {
-      throw new Error('[@symbo.ls/analyzing] public mode requires ingestUrl')
-    }
-    if (!workspaceId) {
-      throw new Error('[@symbo.ls/analyzing] public mode requires workspaceId')
+    // Same-origin default so mermaid's HTMLRewriter can inject the tracker
+    // stub without having to know an absolute ingest URL. Mermaid's /v1/
+    // analytics/ingest route is the canonical endpoint per
+    // architecture/MODEL.md §"Per-org visitor telemetry".
+    const resolvedIngestUrl = ingestUrl || '/v1/analytics/ingest'
+    // Dev-mode visibility: warn (don't throw) when scope is missing so the
+    // developer can see the gap without breaking prod traffic.
+    if (projectEnv === 'development' && typeof console !== 'undefined') {
+      if (!workspaceId) {
+        try { console.warn('[analyzing] no workspaceId provided; mermaid will resolve from Origin') } catch {}
+      }
+      if (!ingestUrl) {
+        try { console.warn(`[analyzing] no ingestUrl provided; defaulting to ${resolvedIngestUrl}`) } catch {}
+      }
     }
     resolvedTransport = async (envelope) => {
       try {
-        const res = await fetch(ingestUrl, {
+        const res = await fetch(resolvedIngestUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             ...envelope,
-            workspace_id: workspaceId,
-            project_id: projectId,
-            project_env: projectEnv,
-            domain
+            // Advisory scope — mermaid re-resolves authoritative values
+            // server-side. Send what we have; let omitted fields be undefined
+            // so JSON.stringify drops them rather than POSTing `null`.
+            workspace_id: workspaceId || undefined,
+            project_id: projectId || undefined,
+            project_env: projectEnv || undefined,
+            domain: domain || undefined
           }),
           keepalive: true
         })
@@ -220,7 +238,7 @@ export const createAnalyzing = (opts = {}) => {
     }
   }
   if (!endpoint && !resolvedTransport) {
-    throw new Error('[@symbo.ls/analyzing] one of { sdk, endpoint, transport, mode: "public" + ingestUrl } is required')
+    throw new Error('[@symbo.ls/analyzing] one of { sdk, endpoint, transport, mode: "public" } is required')
   }
 
   // Legacy bearer resolver — only used when shipping straight to `endpoint`

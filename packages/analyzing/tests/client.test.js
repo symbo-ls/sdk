@@ -189,18 +189,110 @@ test('public mode — POSTs to ingestUrl with scope fields, no auth header', asy
   }
 })
 
-test('public mode — missing ingestUrl throws', () => {
-  assert.throws(
-    () => createAnalyzing({ appKey: 'x', mode: 'public', workspaceId: 'ws_1' }),
-    /public mode requires ingestUrl/
+test('public mode — boots WITHOUT workspaceId (mermaid resolves from Origin)', async () => {
+  // Mermaid is the source of truth for workspace_id (resolved server-side from
+  // Origin). The client doesn't need to know — empty workspaceId must not
+  // crash the page. See SDK-ANALYZING-PUBLIC-TOLERATE-MISSING-WORKSPACE-ID.
+  const fetchCalls = []
+  const realFetch = globalThis.fetch
+  globalThis.fetch = async (url, init) => {
+    fetchCalls.push({ url, init })
+    return { ok: true, status: 200 }
+  }
+  try {
+    const a = createAnalyzing({
+      appKey: 'visitor-site',
+      mode: 'public',
+      // workspaceId omitted on purpose
+      ingestUrl: 'https://mermaid.example/v1/analytics/ingest',
+      level: 'trace',
+      batchMs: 5,
+      maxBatch: 1
+    })
+    a.state.activate(null)
+    a.captureMessage('visit', 'info')
+    await new Promise((r) => setTimeout(r, 20))
+    assert.ok(fetchCalls.length >= 1, 'fetch fired without throwing')
+    const body = JSON.parse(fetchCalls[0].init.body)
+    assert.equal(body.workspace_id, undefined, 'missing workspaceId is omitted, not sent as null/empty')
+  } finally {
+    globalThis.fetch = realFetch
+  }
+})
+
+test('public mode — empty-string workspaceId is treated as missing', () => {
+  // Mermaid's HTMLRewriter currently injects `data-workspace-id=""` until
+  // the server-side resolve API ships. Empty string must NOT throw — it
+  // gets normalized to undefined so the envelope omits the field.
+  assert.doesNotThrow(() =>
+    createAnalyzing({
+      appKey: 'x',
+      mode: 'public',
+      workspaceId: '',
+      ingestUrl: 'https://x/ingest'
+    })
   )
 })
 
-test('public mode — missing workspaceId throws', () => {
-  assert.throws(
-    () => createAnalyzing({ appKey: 'x', mode: 'public', ingestUrl: 'https://x/ingest' }),
-    /public mode requires workspaceId/
-  )
+test('public mode — ingestUrl defaults to /v1/analytics/ingest (same-origin)', async () => {
+  const fetchCalls = []
+  const realFetch = globalThis.fetch
+  globalThis.fetch = async (url, init) => {
+    fetchCalls.push({ url, init })
+    return { ok: true, status: 200 }
+  }
+  try {
+    const a = createAnalyzing({
+      appKey: 'x',
+      mode: 'public',
+      // both workspaceId AND ingestUrl omitted
+      level: 'trace',
+      batchMs: 5,
+      maxBatch: 1
+    })
+    a.state.activate(null)
+    a.captureMessage('visit', 'info')
+    await new Promise((r) => setTimeout(r, 20))
+    assert.ok(fetchCalls.length >= 1, 'fetch fired with default URL')
+    assert.equal(fetchCalls[0].url, '/v1/analytics/ingest', 'defaulted to same-origin path')
+  } finally {
+    globalThis.fetch = realFetch
+  }
+})
+
+test('public mode + projectEnv=development — warns (does not throw) on missing scope', async () => {
+  const warnings = []
+  const realWarn = console.warn
+  console.warn = (...args) => warnings.push(args.join(' '))
+  try {
+    createAnalyzing({
+      appKey: 'x',
+      mode: 'public',
+      projectEnv: 'development'
+      // workspaceId + ingestUrl omitted
+    })
+    const joined = warnings.join('\n')
+    assert.match(joined, /no workspaceId/i, 'warns on missing workspaceId in dev')
+    assert.match(joined, /no ingestUrl/i, 'warns on missing ingestUrl in dev')
+  } finally {
+    console.warn = realWarn
+  }
+})
+
+test('public mode + projectEnv=production — silent on missing scope', () => {
+  const warnings = []
+  const realWarn = console.warn
+  console.warn = (...args) => warnings.push(args.join(' '))
+  try {
+    createAnalyzing({
+      appKey: 'x',
+      mode: 'public',
+      projectEnv: 'production'
+    })
+    assert.equal(warnings.length, 0, 'no warnings in production')
+  } finally {
+    console.warn = realWarn
+  }
 })
 
 test('authenticated mode — public-mode opts ignored, classic transport wins', async () => {
