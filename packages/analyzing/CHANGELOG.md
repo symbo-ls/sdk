@@ -1,5 +1,11 @@
 # @symbo.ls/analyzing
 
+## 3.14.104
+
+### Patch Changes
+
+- @symbo.ls/analyze@3.14.104
+
 ## 3.14.103
 
 ### Patch Changes

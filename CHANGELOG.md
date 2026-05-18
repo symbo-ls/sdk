@@ -1,5 +1,15 @@
 # @symbo.ls/sdk
 
+## 3.14.104
+
+### Patch Changes
+
+- @symbo.ls/analyzing@3.14.104
+- @symbo.ls/sdk-bridge@3.14.104
+- @symbo.ls/sdk-supabase-bridge@3.14.104
+- @symbo.ls/channels@3.14.104
+- @symbo.ls/utils@3.14.104
+
 ## 3.14.103
 
 ### Patch Changes
