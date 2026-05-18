@@ -432,6 +432,68 @@ export const createAnalyzing = (opts = {}) => {
     })
   }
 
+  // Public-mode auto-identify from tenant Supabase auth (the canonical
+  // `@symbo.ls/db` adapter every hosted project uses). Detects sign-in by
+  // reading any `sb-*-auth-token` localStorage entry, parses the user
+  // object out of the Supabase session blob, and calls identify({ userId,
+  // traits: { email } }) so the by-user /logs view attributes visitor
+  // events to a real user instead of bucketing them as Anonymous.
+  //
+  // Targeted to the Symbols-first-party auth path (db.adapter = 'supabase'
+  // with the standard storageKey shape) — does NOT crawl every tenant's
+  // ad-hoc auth scheme. Safe by construction: if the project doesn't use
+  // Supabase auth, no detection happens and existing identify() calls from
+  // the tenant project (or workspace dogfood via identifyFromSdk) still
+  // take precedence — _lastIdentitySig dedup makes re-identify a no-op.
+  //
+  // Watches `storage` events so signing in / out mid-session retroactively
+  // attributes the rest of the session correctly. Sign-out (token cleared)
+  // calls identify(null) to reset.
+  if (mode === 'public' && typeof window !== 'undefined') {
+    const _detectSupabaseIdentity = () => {
+      try {
+        if (typeof localStorage === 'undefined') return null
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i)
+          if (!key || !/^sb-.*-auth-token$/.test(key)) continue
+          const raw = localStorage.getItem(key)
+          if (!raw) continue
+          const parsed = JSON.parse(raw)
+          // Supabase session shape: { access_token, refresh_token, user: { id, email, ... } }
+          // Older clients sometimes serialize as a 4-tuple array — accept both.
+          const user = parsed?.user || (Array.isArray(parsed) && parsed[5])
+          if (user?.id) return { userId: user.id, email: user.email || null }
+        }
+      } catch {
+        /* tenant auth shape we don't recognize — skip silently */
+      }
+      return null
+    }
+
+    const _applyDetected = () => {
+      const detected = _detectSupabaseIdentity()
+      if (detected) {
+        identify({
+          userId: detected.userId,
+          traits: detected.email ? { email: detected.email } : {}
+        })
+      } else if (contextStore.user) {
+        // Token cleared mid-session → sign-out. Reset identity so the rest
+        // of the session attributes to Anonymous correctly.
+        identify(null)
+      }
+    }
+
+    try { _applyDetected() } catch { /* never block boot on auth detect */ }
+
+    const _onStorage = (e) => {
+      if (!e?.key || !/^sb-.*-auth-token$/.test(e.key)) return
+      try { _applyDetected() } catch {}
+    }
+    window.addEventListener('storage', _onStorage, { passive: true })
+    state.__teardown.push(() => window.removeEventListener('storage', _onStorage))
+  }
+
   return {
     plugin: analyzePlugin,
     // Expose the *expanded* config (preset → flat capture map). The raw input
