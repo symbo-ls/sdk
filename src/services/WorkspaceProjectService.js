@@ -796,8 +796,12 @@ export class WorkspaceProjectService extends BaseService {
     update: (id, payload) =>
       this._sb('standups.update', 'standup_activity', 'update', { id, payload }),
     upsert: (payload) =>
+      // SDK-WORKSPACE-STANDUPS-UPSERT-WRONG-CONFLICT-COL — table is keyed
+      // on `(author, date)` per migration 0033_standup_activity.sql:13-25.
+      // The legacy `author_email` token caused PostgREST to reject every
+      // upsert with `column "author_email" does not exist` (/logs id=77428).
       this._sb('standups.upsert', 'standup_activity', 'create',
-        { payload, options: { upsertOnConflict: 'author_email,date' } }),
+        { payload, options: { upsertOnConflict: 'author,date' } }),
   }
 
   // Audit log — backend table is `activity_events`. Filter shape passes
