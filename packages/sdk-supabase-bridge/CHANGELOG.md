@@ -1,5 +1,11 @@
 # @symbo.ls/sdk-supabase-bridge
 
+## 3.14.102
+
+### Patch Changes
+
+- @symbo.ls/sdk-bridge@3.14.102
+
 ## 3.14.101
 
 ### Patch Changes
