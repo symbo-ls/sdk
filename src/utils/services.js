@@ -411,6 +411,7 @@ export const SERVICE_METHODS = {
   getCreditBalance: 'workspace',
   getCreditLedger: 'workspace',
   getWorkspaceUsage: 'workspace',
+  createCreditTopupCheckout: 'workspace',
   getSpendControls: 'workspace',
   updateSpendControls: 'workspace',
 

@@ -144,6 +144,32 @@ export class WorkspaceService extends BaseService {
     return this._call('getWorkspaceUsage', `/workspaces/${workspaceId}/usage${qs}`)
   }
 
+  /**
+   * Start a Stripe Checkout session for a workspace-level credit top-up
+   * pack. Mirrors POST /workspaces/:workspaceId/billing/topups/checkout
+   * (WorkspaceController.createCreditTopupCheckout, server PR #349).
+   * Server validates that `credits` equals the configured TOPUP_PACK_SIZE
+   * (1000 by default); other quantities are rejected.
+   *
+   * Owner/admin only on the workspace.
+   *
+   * @param {string} workspaceId
+   * @param {{ successUrl?: string, cancelUrl?: string, credits?: number }} [options]
+   * @returns {Promise<{ type: 'checkout_required', url: string, sessionId: string }>}
+   */
+  async createCreditTopupCheckout (workspaceId, { successUrl, cancelUrl, credits } = {}) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    const body = {}
+    if (credits != null) body.credits = credits
+    if (successUrl) body.successUrl = successUrl
+    if (cancelUrl) body.cancelUrl = cancelUrl
+    return this._call(
+      'createCreditTopupCheckout',
+      `/workspaces/${workspaceId}/billing/topups/checkout`,
+      { method: 'POST', body }
+    )
+  }
+
   // ==================== SPEND CONTROLS ====================
 
   async getSpendControls (workspaceId) {
