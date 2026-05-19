@@ -1,4 +1,5 @@
 import { AuthService } from './AuthService.js'
+import { TicketService } from './TicketService.js'
 import { CollabService } from './CollabService.js'
 import { ProjectService } from './ProjectService.js'
 import { PlanService } from './PlanService.js'
@@ -98,6 +99,9 @@ export const createWorkspaceService = config =>
 export const createWorkspaceProjectService = config =>
   createService(WorkspaceProjectService, config)
 
+export const createTicketService = config =>
+  createService(TicketService, config)
+
 export const createAllocationRuleService = config =>
   createService(AllocationRuleService, config)
 
@@ -132,6 +136,7 @@ export {
   createSupabasePassthroughConfig,
   workspaceProjectEdgeFunctionUrl,
   governanceSessionAccessToken,
+  TicketService,
   AllocationRuleService,
   SharedAssetService,
   CreditsService
