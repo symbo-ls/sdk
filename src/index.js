@@ -19,6 +19,7 @@ import {
   createOrganizationService,
   createWorkspaceService,
   createWorkspaceProjectService,
+  createTicketService,
   createAllocationRuleService,
   createSharedAssetService,
   createCreditsService
@@ -216,6 +217,13 @@ export class SDK {
       this._initService(
         'workspaceProject',
         createWorkspaceProjectService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      this._initService(
+        'tickets',
+        createTicketService({
           context: this._context,
           options: this._options
         })
@@ -521,6 +529,21 @@ export class SDK {
     }
   }
 
+  // ==================== DEPRECATED BACK-COMPAT ALIASES ====================
+  // These are one-cutover-cycle aliases retained while the workspace UI
+  // migrates from `sdk.workspaceProject.tickets.*` / `sdk.subscribeTickets`
+  // to `sdk.tickets.*` / `sdk.tickets.subscribe`. Remove in Phase 4 once
+  // the workspace UI has been updated.
+
+  /**
+   * @deprecated Use sdk.tickets.subscribe(filter, cb) instead.
+   * Delegates to TicketService.subscribe so existing workspace-UI call sites
+   * keep working through the Phase 3 → Phase 4 cutover.
+   */
+  get subscribeTickets () {
+    return this.getService('tickets').subscribe.bind(this.getService('tickets'))
+  }
+
   /**
    * Destroys all services and cleans up resources
    * @returns {Promise<boolean>} Returns true when cleanup is complete
@@ -572,6 +595,7 @@ export {
   createOrganizationService,
   createWorkspaceService,
   createWorkspaceProjectService,
+  createTicketService,
   createAllocationRuleService,
   createSharedAssetService,
   createCreditsService,
