@@ -22,6 +22,7 @@ import {
   createDocService,
   createResourceLinkService,
   createTicketService,
+  createAnalyzedService,
   createAllocationRuleService,
   createSharedAssetService,
   createCreditsService
@@ -233,6 +234,13 @@ export class SDK {
       this._initService(
         'tickets',
         createTicketService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      this._initService(
+        'analyzed',
+        createAnalyzedService({
           context: this._context,
           options: this._options
         })
@@ -599,6 +607,7 @@ export {
   createDocService,
   createResourceLinkService,
   createTicketService,
+  createAnalyzedService,
   createAllocationRuleService,
   createSharedAssetService,
   createCreditsService,

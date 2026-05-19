@@ -231,6 +231,32 @@ const ENTITY_ROUTES = {
       folders: () => [],
     },
   },
+
+  // ─── Analyzed (AnalyzedService — Mongo-backed visitor telemetry) ────────────
+  // /core/analyzed/* on the main API server. Peer to sdk.docs / sdk.tickets.
+  // Replaces the workspaceProject.analyzed* Supabase surface — see
+  // architecture/MODEL.md §"Visitor telemetry — Mongo migration".
+  'analyzed': {
+    service: 'analyzed',
+    methods: {
+      ingest: 'ingest',
+      ingestPublic: 'ingestPublic',
+      listSessions: 'listSessions',
+      getSession: 'getSession',
+      listEvents: 'listEvents',
+      listUsers: 'listUsers',
+      listBugs: 'listBugs',
+    },
+    argMap: {
+      ingest: (a) => [a],
+      ingestPublic: (a) => [a?.envelope ?? a, a?.signature],
+      listSessions: (a) => [a?.filter ?? {}, a?.options ?? {}],
+      getSession: argMaps.id,
+      listEvents: (a) => [a?.filter ?? {}, a?.options ?? {}],
+      listUsers: (a) => [a?.filter ?? {}, a?.options ?? {}],
+      listBugs: (a) => [a?.filter ?? {}, a?.options ?? {}],
+    },
+  },
   'docs.documents': {
     service: 'docs',
     methods: {
