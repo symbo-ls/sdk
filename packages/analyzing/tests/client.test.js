@@ -333,6 +333,56 @@ test('authenticated mode — public-mode opts ignored, classic transport wins', 
   }
 })
 
+test('auth mode — circuit-breaker suspends after 401, buffers further envelopes', async () => {
+  // Simulate a token/channel mismatch: the SDK has a token, dispatcher fails
+  // (no execute), _directIngest does the POST and the server returns 401.
+  // After the first 401, no further fetches should fire even as more events
+  // pour in.
+  const fetchCalls = []
+  const realFetch = globalThis.fetch
+  globalThis.fetch = async (url, init) => {
+    fetchCalls.push({ url, init })
+    return { ok: false, status: 401 }
+  }
+  const warnings = []
+  const realWarn = console.warn
+  console.warn = (...args) => warnings.push(args.join(' '))
+  try {
+    const fakeSdk = {
+      _context: {
+        apiUrl: 'http://localhost:8080',
+        workspaceProjectTokenProvider: () => 'tok_mismatched'
+      }
+      // No execute() — forces fall-through to _directIngest.
+    }
+    const a = createAnalyzing({
+      appKey: 'app',
+      sdk: fakeSdk,
+      level: 'trace',
+      batchMs: 5,
+      maxBatch: 1
+    })
+    a.state.activate(null)
+    // First event → fetch fires, gets 401, suspended flag flips.
+    a.captureMessage('first', 'info')
+    await new Promise((r) => setTimeout(r, 20))
+    const fetchesAfterFirst = fetchCalls.length
+    assert.ok(fetchesAfterFirst >= 1, 'first event posted')
+    // Subsequent events should NOT fire fetch.
+    a.captureMessage('second', 'info')
+    a.captureMessage('third', 'info')
+    a.captureMessage('fourth', 'info')
+    await new Promise((r) => setTimeout(r, 20))
+    assert.equal(fetchCalls.length, fetchesAfterFirst, 'no further fetches after 401')
+    // Exactly one warn line on suspend, no spam.
+    const suspendWarns = warnings.filter((w) => /ingest suspended after 401/i.test(w))
+    assert.equal(suspendWarns.length, 1, 'exactly one suspend warning')
+  } finally {
+    globalThis.fetch = realFetch
+    console.warn = realWarn
+  }
+})
+
 test('classifyEnvelope mirrors plugin classifyEvent', () => {
   assert.deepEqual(LOG_TYPES, ['bug', 'network', 'log', 'verbose'])
   assert.equal(classifyEnvelope({ type: 'error', level: 'error' }), 'bug')

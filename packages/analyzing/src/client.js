@@ -215,7 +215,73 @@ export const createAnalyzing = (opts = {}) => {
       }
     }
 
+    // Circuit-breaker state. The token in localStorage may be issued by a
+    // different channel than the API the workspace is currently pinned to
+    // (e.g. user signed in via dev.api.symbols.app but workspace.localhost
+    // forces channel='local'). Every ingest then 401s. After the FIRST 401
+    // we stop hitting the wire — capture() still runs, envelopes pile into a
+    // bounded ring buffer, and we drain on the next storage event that
+    // mutates `symbols_access_token` (i.e. fresh sign-in). See ticket
+    // SDK-ANALYZING-401-CIRCUIT-BREAKER.
+    const BUFFER_CAP = 100
+    let _ingestSuspended = false
+    let _suspendWarned = false
+    const _buffer = []
+    const _bufferPush = (envelope) => {
+      _buffer.push(envelope)
+      // FIFO drop-oldest — bound memory under sustained suspension.
+      if (_buffer.length > BUFFER_CAP) _buffer.shift()
+    }
+    const _tryDeliver = async (envelope) => {
+      const live = _resolveSdk()
+      if (!live) return { ok: false, reason: 'no-sdk' }
+      const _token = await _resolveIngestToken(live)
+      if (!_token) return { ok: false, reason: 'no-auth' }
+      if (typeof live.execute === 'function') {
+        try {
+          const res = await live.execute('workspaceProject.analyzed', 'ingest', envelope)
+          if (!res?.error) return { ok: true }
+          // Detect 401 via either the result.status or the error message
+          // shape the dispatcher surfaces — fall through to _directIngest
+          // for both so the same 401-check path applies.
+        } catch (_) { /* fall through */ }
+      }
+      return _directIngest(live, envelope)
+    }
+    const _drainBuffer = async () => {
+      if (!_buffer.length) return
+      const pending = _buffer.splice(0)
+      for (const env of pending) {
+        const res = await _tryDeliver(env)
+        if (res?.status === 401) {
+          // Still 401 — re-suspend, requeue this and remaining envelopes.
+          _ingestSuspended = true
+          _bufferPush(env)
+          return
+        }
+      }
+    }
+    // Listen for cross-tab + same-tab token rotation. The `storage` event
+    // fires on the `symbols_access_token` key when localStorage.setItem
+    // happens in ANOTHER tab; we also flip on the next ingest after a
+    // local sign-in because resolvedTransport is called per-event.
+    if (isBrowser) {
+      try {
+        window.addEventListener('storage', (e) => {
+          if (e?.key === 'symbols_access_token' && e.newValue && e.newValue !== e.oldValue) {
+            _ingestSuspended = false
+            _suspendWarned = false
+            _drainBuffer().catch(() => {})
+          }
+        }, { passive: true })
+      } catch {}
+    }
+
     resolvedTransport = async (envelope) => {
+      if (_ingestSuspended) {
+        _bufferPush(envelope)
+        return { ok: false, reason: 'suspended' }
+      }
       const live = _resolveSdk()
       if (!live) return { ok: false }
       // Auth gate: server rejects unauthenticated /analyzed/ingest with 401.
@@ -234,7 +300,16 @@ export const createAnalyzing = (opts = {}) => {
           // "Unknown entity" surfaces here too — fall through to direct fetch.
         } catch (_) { /* fall through */ }
       }
-      return _directIngest(live, envelope)
+      const result = await _directIngest(live, envelope)
+      if (result?.status === 401) {
+        _ingestSuspended = true
+        if (!_suspendWarned && typeof console !== 'undefined') {
+          _suspendWarned = true
+          try { console.warn('[analyzing] ingest suspended after 401; will resume on next sign-in') } catch {}
+        }
+        _bufferPush(envelope)
+      }
+      return result
     }
   }
   if (!endpoint && !resolvedTransport) {
