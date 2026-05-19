@@ -563,49 +563,57 @@ const ENTITY_ROUTES = {
   // analyzed_* tables. Writes use the curated POST /analyzed/ingest route
   // (server-stamps workspace_id from the JWT); reads use the PostgREST
   // passthrough with RLS gating by app_metadata.workspace_id.
+  // SERVER-LOGS-MONGO-MIGRATION Phase 5 — legacy `workspaceProject.analyzed*`
+  // entities are deprecated aliases that delegate to the new top-level
+  // `sdk.analyzed.*` service (main API server, Mongo-backed). Same pattern
+  // sdk.docs / sdk.tickets used. UI code stays untouched during the rolling
+  // deploy; each call site migrates from the alias to canonical
+  // `sdk.execute('analyzed', 'listSessions', …)` at its own pace. Drop these
+  // entries entirely once all callers have migrated.
   'workspaceProject.analyzed': {
-    service: 'workspaceProject',
-    methods: { ingest: 'analyzed.ingest' },
-    // Browser SDK packs a single envelope `{ session, app, events, … }`.
-    // Pass it straight through as the first positional arg.
+    service: 'analyzed',
+    methods: { ingest: 'ingest' },
     argMap: { ingest: (a) => [a] },
   },
   'workspaceProject.analyzedSessions': {
-    service: 'workspaceProject',
+    service: 'analyzed',
     methods: {
-      list: 'analyzed.listSessions',
-      get:  'analyzed.getSession',
+      list: 'listSessions',
+      get:  'getSession',
     },
     argMap: {
-      list: argMaps.filterOptions,
+      list: (a) => [a?.filter ?? {}, a?.options ?? a ?? {}],
       get:  argMaps.id,
     },
   },
   'workspaceProject.analyzedEvents': {
-    service: 'workspaceProject',
-    methods: { list: 'analyzed.listEvents' },
-    argMap: { list: argMaps.filterOptions },
+    service: 'analyzed',
+    methods: { list: 'listEvents' },
+    argMap: { list: (a) => [a?.filter ?? {}, a?.options ?? a ?? {}] },
   },
-  // Per-user aggregate (server@9d207d98 / analyzed_user_summaries view).
-  // Backs the by-user paginated /logs view — WORKSPACE-LOGS-USERS-PAGINATED.
   'workspaceProject.analyzedUserSummaries': {
-    service: 'workspaceProject',
-    methods: { list: 'analyzed.listUsers' },
-    argMap: { list: argMaps.filterOptions },
+    service: 'analyzed',
+    methods: { list: 'listUsers' },
+    argMap: { list: (a) => [a?.filter ?? {}, a?.options ?? a ?? {}] },
   },
   'workspaceProject.analyzedBugs': {
-    service: 'workspaceProject',
-    methods: { list: 'analyzed.clusters' },
+    service: 'analyzed',
+    methods: { list: 'listBugs' },
     argMap: {
-      // Bug clusters live in an RPC, not a table — adapt the adapter's
-      // params/filter bag into named args fn_analyzed_bug_clusters expects.
-      list: (a) => [{
-        workspaceId: a?.workspaceId ?? a?.filter?.workspaceId ?? a?.params?.workspaceId,
-        appKey:      a?.appKey      ?? a?.filter?.appKey      ?? a?.params?.appKey,
-        since:       a?.since       ?? a?.filter?.since       ?? a?.params?.since,
-        limit:       a?.limit       ?? a?.filter?.limit       ?? a?.params?.limit ?? 200,
-        offset:      a?.offset      ?? a?.filter?.offset      ?? a?.params?.offset ?? 0,
-      }],
+      // Legacy callers send a flat bag (workspaceId/appKey/since/limit/offset).
+      // The new server-side bugs route reads filter.{projectId,since} +
+      // options.{limit,offset} from the query string; workspaceId/appKey
+      // are derived from the auth context. Normalize the legacy shape.
+      list: (a) => [
+        {
+          projectId: a?.appKey ?? a?.filter?.appKey ?? a?.params?.appKey,
+          since:     a?.since  ?? a?.filter?.since  ?? a?.params?.since,
+        },
+        {
+          limit:  a?.limit  ?? a?.filter?.limit  ?? a?.params?.limit  ?? 200,
+          offset: a?.offset ?? a?.filter?.offset ?? a?.params?.offset ?? 0,
+        },
+      ],
     },
   },
 
