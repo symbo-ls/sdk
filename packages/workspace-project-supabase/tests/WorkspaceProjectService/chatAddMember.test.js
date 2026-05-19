@@ -1,6 +1,6 @@
 import test from 'tape'
 import sinon from 'sinon'
-import { WorkspaceProjectService } from '../../WorkspaceProjectService.js'
+import { WorkspaceProjectService } from '../../src/WorkspaceProjectService.js'
 
 const sandbox = sinon.createSandbox()
 

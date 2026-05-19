@@ -20,15 +20,18 @@ import { IntegrationService } from './IntegrationService.js'
 import { FeatureFlagService } from './FeatureFlagService.js'
 import { OrganizationService } from './OrganizationService.js'
 import { WorkspaceService } from './WorkspaceService.js'
+// WorkspaceProjectService + the Supabase passthrough helpers live in
+// the sibling @symbo.ls/workspace-project-supabase package — we re-export
+// them through ./index.js so the historic import shape
+// (`import { WorkspaceProjectService, createSupabasePassthroughConfig }
+// from '@symbo.ls/sdk'`) keeps working.
 import {
   WorkspaceProjectService,
   workspaceProjectBaseUrl,
-} from './WorkspaceProjectService.js'
-import {
   createSupabasePassthroughConfig,
   workspaceProjectEdgeFunctionUrl,
   governanceSessionAccessToken,
-} from './supabasePassthrough.js'
+} from '@symbo.ls/workspace-project-supabase'
 import { AllocationRuleService } from './AllocationRuleService.js'
 import { SharedAssetService } from './SharedAssetService.js'
 import { CreditsService } from './CreditsService.js'

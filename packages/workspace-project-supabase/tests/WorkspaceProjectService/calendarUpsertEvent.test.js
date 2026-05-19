@@ -1,7 +1,7 @@
 import test from 'tape'
 import sinon from 'sinon'
-import { WorkspaceProjectService } from '../../WorkspaceProjectService.js'
-import { createEntityDispatcher } from '../../EntityDispatcher.js'
+import { WorkspaceProjectService } from '../../src/WorkspaceProjectService.js'
+import { createEntityDispatcher } from '../../../../src/services/EntityDispatcher.js'
 
 // The dispatcher's getRoute introspector is the only public way to read
 // route config — used here to verify the calendar entity exposes upsert.

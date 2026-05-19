@@ -1,4 +1,15 @@
-import { BaseService } from './BaseService.js'
+// BaseService is the shared service base class in @symbo.ls/sdk. We use a
+// monorepo-relative import (NOT `from '@symbo.ls/sdk'`) on purpose:
+//   - At dev time the path resolves directly to the source file, so there
+//     is no circular-dep boot order trap (SDK → this package → SDK …).
+//   - At publish time esbuild follows the path and inlines BaseService
+//     into this package's dist, so the published artifact is
+//     self-contained and consumers don't pay a runtime cycle either.
+//   - BaseService is small (~160 lines); duplicating it across two
+//     packages' dists is cheaper than coordinating a third
+//     `@symbo.ls/sdk-core` shared package and is acceptable for the
+//     bundle-size budget (browser consumers tree-shake the duplicate).
+import { BaseService } from '../../../src/services/BaseService.js'
 
 const WORKSPACE_PROJECT_PREFIX = '/workspace-project'
 

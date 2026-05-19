@@ -1,0 +1,43 @@
+{
+  "name": "@symbo.ls/workspace-project-supabase",
+  "version": "3.14.123",
+  "type": "module",
+  "description": "Workspace-project Supabase-backed surface for @symbo.ls/sdk — the curated /workspace-project/* REST wrapper + PostgREST passthrough adapter for tenant tables that haven't been migrated to Mongo yet. WorkspaceProjectService + supabasePassthrough live here so the SDK core stays Mongo-only.",
+  "main": "./dist/cjs/src/index.cjs",
+  "exports": {
+    ".": {
+      "development": "./src/index.js",
+      "import": "./dist/esm/src/index.js",
+      "require": "./dist/cjs/src/index.cjs",
+      "default": "./dist/esm/src/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "*.md",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "tape tests/*.test.js | tap-spec",
+    "build:esm": "esbuild ./src/index.js --bundle --keep-names --target=es2022 --format=esm --outfile=dist/esm/src/index.js --minify --log-level=warning",
+    "build:cjs": "esbuild ./src/index.js --bundle --keep-names --target=node20 --format=cjs --outfile=dist/cjs/src/index.cjs --minify --log-level=warning",
+    "build": "rimraf dist && npm run build:esm && npm run build:cjs",
+    "prepublishOnly": "npm run build"
+  },
+  "peerDependencies": {
+    "@symbo.ls/sdk": "^3.14.123"
+  },
+  "peerDependenciesMeta": {
+    "@supabase/supabase-js": {
+      "optional": true
+    }
+  },
+  "license": "CC-BY-NC-4.0",
+  "repository": "https://github.com/symbo-ls/sdk",
+  "publishConfig": {
+    "access": "restricted"
+  },
+  "module": "./dist/esm/src/index.js"
+}

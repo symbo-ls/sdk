@@ -1,7 +1,7 @@
 import test from 'tape'
 import sinon from 'sinon'
 import { DocService } from '../../DocService.js'
-import { WorkspaceProjectService } from '../../WorkspaceProjectService.js'
+import { WorkspaceProjectService } from '@symbo.ls/workspace-project-supabase'
 
 const sandbox = sinon.createSandbox()
 
