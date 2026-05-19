@@ -189,6 +189,73 @@ const ENTITY_ROUTES = {
     argMap: CRUD_ARG_MAP,
   },
 
+  // ─── Docs (DocService — Mongo-backed, SSE realtime) ─────────────────────────
+  // The docs surface lives on its own service. UI calls go through
+  // `sdk.execute('docs', 'list')` / `sdk.docs.*`. The legacy
+  // `workspaceProject.documents.*` dispatcher routes and back-compat aliases
+  // on WorkspaceProjectService delegate here for one cutover cycle (Phase 2).
+  'docs': {
+    service: 'docs',
+    methods: {
+      list: 'list',
+      get: 'get',
+      create: 'create',
+      update: 'update',
+      remove: 'remove',
+      tree: 'tree',
+      folders: 'folders',
+    },
+    argMap: {
+      ...CRUD_ARG_MAP,
+      tree: argMaps.id,
+      folders: () => [],
+    },
+  },
+  'docs.documents': {
+    service: 'docs',
+    methods: {
+      list: 'documents.list',
+      get: 'documents.get',
+      create: 'documents.create',
+      update: 'documents.update',
+    },
+    argMap: CRUD_ARG_MAP,
+  },
+  'docs.kbArticles': {
+    service: 'docs',
+    methods: {
+      list: 'kbArticles.list',
+      get: 'kbArticles.get',
+      create: 'kbArticles.create',
+      update: 'kbArticles.update',
+      children: 'kbArticles.children',
+    },
+    argMap: {
+      ...CRUD_ARG_MAP,
+      children: argMaps.id,
+    },
+  },
+  'docs.notes': {
+    service: 'docs',
+    methods: {
+      list: 'notes.list',
+      get: 'notes.get',
+      create: 'notes.create',
+      update: 'notes.update',
+    },
+    argMap: CRUD_ARG_MAP,
+  },
+  'docs.userDocs': {
+    service: 'docs',
+    methods: {
+      list: 'userDocs.list',
+      get: 'userDocs.get',
+      create: 'userDocs.create',
+      update: 'userDocs.update',
+    },
+    argMap: CRUD_ARG_MAP,
+  },
+
   // ─── Workspace Project (activity — chat, calendar, etc.) ─────────
   // Each workspaceProject service method takes positional args
   // (filter, options) / (id) / (id, payload) etc., so every route below
