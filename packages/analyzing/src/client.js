@@ -195,11 +195,15 @@ export const createAnalyzing = (opts = {}) => {
     const _directIngest = async (live, envelope) => {
       try {
         const ctx = live?._context || {}
-        const apiBase = ctx.workspaceApiUrl || ctx.apiUrl
+        // The analyzed surface migrated from the workspace-project Supabase
+        // worker to the main API server's Mongo-backed /core/analyzed/* routes
+        // (SERVER-LOGS-MONGO-MIGRATION Phases 1–4). Hit the main apiUrl, NOT
+        // workspaceApiUrl — the worker route was retired.
+        const apiBase = ctx.apiUrl
         if (!apiBase) return { ok: false, reason: 'no-api-base' }
         const token = await _resolveIngestToken(live)
         if (!token) return { ok: false, reason: 'no-auth' }
-        const url = `${String(apiBase).replace(/\/+$/, '')}/workspace-project/analyzed/ingest`
+        const url = `${String(apiBase).replace(/\/+$/, '')}/core/analyzed/ingest`
         const res = await fetch(url, {
           method: 'POST',
           headers: {
@@ -239,7 +243,7 @@ export const createAnalyzing = (opts = {}) => {
       if (!_token) return { ok: false, reason: 'no-auth' }
       if (typeof live.execute === 'function') {
         try {
-          const res = await live.execute('workspaceProject.analyzed', 'ingest', envelope)
+          const res = await live.execute('analyzed', 'ingest', envelope)
           if (!res?.error) return { ok: true }
           // Detect 401 via either the result.status or the error message
           // shape the dispatcher surfaces — fall through to _directIngest
@@ -295,7 +299,7 @@ export const createAnalyzing = (opts = {}) => {
       // benefits from the SDK's retry/backoff + token refresh hooks.
       if (typeof live.execute === 'function') {
         try {
-          const res = await live.execute('workspaceProject.analyzed', 'ingest', envelope)
+          const res = await live.execute('analyzed', 'ingest', envelope)
           if (!res?.error) return { ok: true }
           // "Unknown entity" surfaces here too — fall through to direct fetch.
         } catch (_) { /* fall through */ }

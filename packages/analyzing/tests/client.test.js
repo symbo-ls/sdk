@@ -10,8 +10,12 @@ test('createAnalyzing requires appKey + one of sdk/endpoint/transport', () => {
 })
 
 test('createAnalyzing builds a default transport from a passed sdk', async () => {
+  // The transport's auth gate calls _resolveIngestToken before dispatching;
+  // without a token it silently drops the envelope. Provide one via the
+  // context token provider so the dispatch actually runs.
   const captured = []
   const fakeSdk = {
+    _context: { workspaceProjectTokenProvider: () => 'tok_test' },
     execute: async (from, op, envelope) => {
       captured.push({ from, op, envelope })
       return { data: { ok: true } }
@@ -28,7 +32,11 @@ test('createAnalyzing builds a default transport from a passed sdk', async () =>
   a.captureMessage('hello', 'info')
   await new Promise((r) => setTimeout(r, 20))
   assert.ok(captured.length >= 1, 'sdk.execute received the envelope')
-  assert.equal(captured[0].from, 'workspaceProject.analyzed')
+  // Migrated 2026-05-19 (SERVER-LOGS-MONGO-MIGRATION): the analyzed surface
+  // moved from the workspace-project Supabase worker to the main API
+  // server's Mongo-backed /core/analyzed/* routes. Dispatcher entity name
+  // is now 'analyzed' (peer to 'tickets'/'docs'), op stays 'ingest'.
+  assert.equal(captured[0].from, 'analyzed')
   assert.equal(captured[0].op, 'ingest')
   assert.ok(Array.isArray(captured[0].envelope.events))
 })
