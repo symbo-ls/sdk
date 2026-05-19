@@ -323,76 +323,8 @@ test('docs.userDocs.create merges type=user_document into payload', async t => {
   t.end()
 })
 
-// ─── WorkspaceProjectService back-compat alias ───────────────────────────────
-
-test('workspaceProject.documents getter delegates list to sdk.docs.list', async t => {
-  t.plan(1)
-  // Build a real WPS with a fake docs service injected via context.services
-  const wps = new WorkspaceProjectService()
-  const fakeDocs = {
-    list: sinon.stub().resolves({ data: [], count: 0 }),
-    get: sinon.stub(),
-    create: sinon.stub(),
-    update: sinon.stub(),
-    remove: sinon.stub(),
-    kbArticles: { list: sinon.stub(), create: sinon.stub(), update: sinon.stub() },
-    notes: { list: sinon.stub(), create: sinon.stub() },
-    userDocs: { list: sinon.stub(), create: sinon.stub(), update: sinon.stub() }
-  }
-  wps._context = { services: { docs: fakeDocs } }
-
-  await wps.documents.list()
-  t.ok(fakeDocs.list.calledOnce, 'docs.list called once')
-  t.end()
-})
-
-test('workspaceProject.documents getter delegates listKb to sdk.docs.kbArticles.list', async t => {
-  t.plan(1)
-  const wps = new WorkspaceProjectService()
-  const fakeDocs = {
-    list: sinon.stub(),
-    kbArticles: { list: sinon.stub().resolves([]), create: sinon.stub(), update: sinon.stub() },
-    notes: { list: sinon.stub(), create: sinon.stub() },
-    userDocs: { list: sinon.stub(), create: sinon.stub(), update: sinon.stub() }
-  }
-  wps._context = { services: { docs: fakeDocs } }
-
-  await wps.documents.listKb()
-  t.ok(fakeDocs.kbArticles.list.calledOnce, 'kbArticles.list called once')
-  t.end()
-})
-
-test('workspaceProject.documents getter delegates listNotes to sdk.docs.notes.list', async t => {
-  t.plan(1)
-  const wps = new WorkspaceProjectService()
-  const fakeDocs = {
-    list: sinon.stub(),
-    kbArticles: { list: sinon.stub(), create: sinon.stub(), update: sinon.stub() },
-    notes: { list: sinon.stub().resolves([]), create: sinon.stub() },
-    userDocs: { list: sinon.stub(), create: sinon.stub(), update: sinon.stub() }
-  }
-  wps._context = { services: { docs: fakeDocs } }
-
-  await wps.documents.listNotes()
-  t.ok(fakeDocs.notes.list.calledOnce, 'notes.list called once')
-  t.end()
-})
-
-test('workspaceProject.documents resource-links methods throw with migration error', t => {
-  t.plan(5)
-  const wps = new WorkspaceProjectService()
-  const fakeDocs = {
-    list: sinon.stub(),
-    kbArticles: { list: sinon.stub(), create: sinon.stub(), update: sinon.stub() },
-    notes: { list: sinon.stub(), create: sinon.stub() },
-    userDocs: { list: sinon.stub(), create: sinon.stub(), update: sinon.stub() }
-  }
-  wps._context = { services: { docs: fakeDocs } }
-
-  t.throws(() => wps.documents.listResourceLinks(), /resource-links not migrated/, 'listResourceLinks throws')
-  t.throws(() => wps.documents.addResourceLink(), /resource-links not migrated/, 'addResourceLink throws')
-  t.throws(() => wps.documents.updateResourceLink(), /resource-links not migrated/, 'updateResourceLink throws')
-  t.throws(() => wps.documents.removeResourceLink(), /resource-links not migrated/, 'removeResourceLink throws')
-  t.throws(() => wps.documents.removeResourceLinkByPair(), /resource-links not migrated/, 'removeResourceLinkByPair throws')
-  t.end()
-})
+// `workspaceProject.documents` getter + its delegate methods (list, listKb,
+// listNotes, listResourceLinks, …) were removed when the docs surface
+// migrated to Mongo-backed DocService. The corresponding dispatcher routes
+// (`workspaceProject.documents*`) were dropped in the same wave. Consumers
+// now go through `sdk.docs.*` or `sdk.execute('docs', ...)`.

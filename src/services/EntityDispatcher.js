@@ -385,81 +385,14 @@ const ENTITY_ROUTES = {
       upsert: (a) => [a?.payload ?? a?.data ?? a, a?.onConflict],
     },
   },
-  'workspaceProject.documents': {
-    service: 'workspaceProject',
-    methods: {
-      list: 'documents.list',
-      get: 'documents.get',
-      create: 'documents.create',
-      update: 'documents.update',
-      remove: 'documents.remove',
-    },
-    argMap: {
-      list: () => [],
-      get: argMaps.id,
-      create: argMaps.payload,
-      update: argMaps.idPayload,
-      remove: argMaps.id,
-    },
-  },
-  'workspaceProject.documents.kb': {
-    service: 'workspaceProject',
-    methods: {
-      list: 'documents.listKb',
-      create: 'documents.createKbArticle',
-      update: 'documents.updateKbArticle',
-    },
-    argMap: {
-      list: () => [],
-      create: argMaps.payload,
-      update: argMaps.idPayload,
-    },
-  },
-  'workspaceProject.documents.notes': {
-    service: 'workspaceProject',
-    methods: {
-      list: 'documents.listNotes',
-      create: 'documents.createNote',
-    },
-    argMap: {
-      list: () => [],
-      create: argMaps.payload,
-    },
-  },
-  'workspaceProject.documents.userDocuments': {
-    service: 'workspaceProject',
-    methods: {
-      list: 'documents.listUserDocuments',
-      create: 'documents.createUserDocument',
-      update: 'documents.updateUserDocument',
-      remove: 'documents.removeUserDocument',
-    },
-    argMap: {
-      list: (a) => [a?.userId ?? a?.filter?.user_id ?? a?.params?.user_id],
-      create: argMaps.payload,
-      update: argMaps.idPayload,
-      remove: argMaps.id,
-    },
-  },
-  'workspaceProject.documents.resourceLinks': {
-    service: 'workspaceProject',
-    methods: {
-      list: 'documents.listResourceLinks',
-      create: 'documents.addResourceLink',
-      update: 'documents.updateResourceLink',
-      remove: 'documents.removeResourceLink',
-      // removeByPair — composite-key delete on (a_type, a_id, b_type, b_id)
-      // for unlink paths that don't carry a row id.
-      removeByPair: 'documents.removeResourceLinkByPair',
-    },
-    argMap: {
-      list: () => [],
-      create: argMaps.payload,
-      update: argMaps.idPayload,
-      remove: argMaps.id,
-      removeByPair: (a) => [a?.filter ?? a],
-    },
-  },
+  // workspaceProject.documents{,.kb,.notes,.userDocuments,.resourceLinks}
+  // were removed 2026-05-19. The docs surface migrated from
+  // workspace-project's Supabase passthrough to Mongo-backed DocService.
+  // Consumers route through the canonical `docs.*` entities
+  // (`docs`, `docs.documents`, `docs.kbArticles`, `docs.notes`,
+  // `docs.userDocs`) + `resourceLinks` standalone. Workspace UI was
+  // verified migrated before drop (grep workspace/packages — only
+  // historical "Migrated ..." comments remained).
   'workspaceProject.notifications': {
     service: 'workspaceProject',
     methods: {
