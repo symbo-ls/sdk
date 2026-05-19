@@ -1,6 +1,7 @@
 import { AuthService } from './AuthService.js'
 import { DocService } from './DocService.js'
 import { TicketService } from './TicketService.js'
+import { ResourceLinkService } from './ResourceLinkService.js'
 import { CollabService } from './CollabService.js'
 import { ProjectService } from './ProjectService.js'
 import { PlanService } from './PlanService.js'
@@ -106,6 +107,9 @@ export const createDocService = config =>
 export const createTicketService = config =>
   createService(TicketService, config)
 
+export const createResourceLinkService = config =>
+  createService(ResourceLinkService, config)
+
 export const createAllocationRuleService = config =>
   createService(AllocationRuleService, config)
 
@@ -142,6 +146,7 @@ export {
   governanceSessionAccessToken,
   DocService,
   TicketService,
+  ResourceLinkService,
   AllocationRuleService,
   SharedAssetService,
   CreditsService

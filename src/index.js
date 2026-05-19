@@ -20,6 +20,7 @@ import {
   createWorkspaceService,
   createWorkspaceProjectService,
   createDocService,
+  createResourceLinkService,
   createTicketService,
   createAllocationRuleService,
   createSharedAssetService,
@@ -232,6 +233,13 @@ export class SDK {
       this._initService(
         'tickets',
         createTicketService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      this._initService(
+        'resourceLinks',
+        createResourceLinkService({
           context: this._context,
           options: this._options
         })
@@ -589,6 +597,7 @@ export {
   createWorkspaceService,
   createWorkspaceProjectService,
   createDocService,
+  createResourceLinkService,
   createTicketService,
   createAllocationRuleService,
   createSharedAssetService,

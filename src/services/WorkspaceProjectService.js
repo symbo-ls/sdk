@@ -443,11 +443,14 @@ export class WorkspaceProjectService extends BaseService {
       updateKbArticle: (id, p) => docs.kbArticles.update(id, p?.payload || p),
       listNotes: () => docs.notes.list(),
       createNote: (p) => docs.notes.create(p?.payload || p),
-      listResourceLinks: () => { throw new Error('[sdk] resource-links not migrated to docs — separate concern, file follow-up') },
-      addResourceLink: () => { throw new Error('[sdk] resource-links not migrated to docs — separate concern, file follow-up') },
-      updateResourceLink: () => { throw new Error('[sdk] resource-links not migrated to docs — separate concern, file follow-up') },
-      removeResourceLink: () => { throw new Error('[sdk] resource-links not migrated to docs — separate concern, file follow-up') },
-      removeResourceLinkByPair: () => { throw new Error('[sdk] resource-links not migrated to docs — separate concern, file follow-up') },
+      // resource-links migrated to Mongo at /resource-links/*. New canonical
+      // surface: sdk.resourceLinks.{list, create, remove, removeByPair}.
+      // Aliases delegate for back-compat; drop in next cutover cycle.
+      listResourceLinks: (filter) => this._context?.services?.resourceLinks?.list(filter),
+      addResourceLink: (p) => this._context?.services?.resourceLinks?.create(p?.payload || p),
+      updateResourceLink: () => { throw new Error('[sdk] resource-links update is not supported — links are content-free junction rows; remove + recreate the pair instead') },
+      removeResourceLink: (id) => this._context?.services?.resourceLinks?.remove(id),
+      removeResourceLinkByPair: (p) => this._context?.services?.resourceLinks?.removeByPair(p?.payload || p),
       listUserDocuments: (opts) => docs.userDocs.list(opts),
       createUserDocument: (p) => docs.userDocs.create(p?.payload || p),
       updateUserDocument: (id, p) => docs.userDocs.update(id, p?.payload || p),
