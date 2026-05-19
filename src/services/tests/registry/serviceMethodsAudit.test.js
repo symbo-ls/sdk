@@ -3,6 +3,7 @@ import { SERVICE_METHODS } from '../../../utils/services.js'
 import {
   AuthService,
   CollabService,
+  DocService,
   ProjectService,
   PlanService,
   SubscriptionService,
@@ -33,6 +34,7 @@ import {
 const SERVICES = {
   auth: AuthService,
   collab: CollabService,
+  docs: DocService,
   project: ProjectService,
   plan: PlanService,
   subscription: SubscriptionService,
@@ -86,7 +88,12 @@ const INTENTIONALLY_NOT_FLAT_EXPOSED = new Set([
   // etc.), NOT as top-level flat proxy methods. Flat-exposing them would cause
   // collisions with same-name methods on other services (e.g. `list`, `get`,
   // `create`, `update`, `remove`, `assign`, `subscribe`).
-  'TicketService:*'
+  'TicketService:*',
+  // DocService methods are accessed via sdk.docs.* (sdk.getService('docs').list()
+  // etc.), NOT as top-level flat proxy methods. Flat-exposing them would cause
+  // collisions with same-name methods on other services (e.g. `list`, `get`,
+  // `create`, `update`, `remove`, `subscribe`, `tree`, `folders`).
+  'DocService:*'
 ])
 
 // Pre-existing drift captured 2026-05-18 when this audit first ran. Each
