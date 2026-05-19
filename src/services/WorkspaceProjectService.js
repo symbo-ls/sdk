@@ -423,87 +423,36 @@ export class WorkspaceProjectService extends BaseService {
         }),
   }
 
-  // --- Documents --------------------------------------------------------------
-  documents = {
-    list: () => this._ws('documents.list', '/documents'),
-    create: (payload) =>
-      this._ws('documents.create', '/documents', { method: 'POST', body: { payload } }),
-    get: (id) => this._ws('documents.get', `/documents/${encodeURIComponent(id)}`),
-    update: (id, payload) =>
-      this._ws('documents.update', `/documents/${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        body: { payload },
-      }),
-    remove: (id) =>
-      this._ws('documents.remove', `/documents/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-
-    listKb: () => this._ws('documents.listKb', '/documents/kb'),
-    // Create a knowledge-base article. Wraps the `kb_articles` table insert
-    // so consumers (KnowledgeBase UI, AI auto-generated KB entries) can route
-    // through the SDK rather than direct supabase.from('kb_articles').insert().
-    createKbArticle: (payload) =>
-      this._ws('documents.createKbArticle', '/documents/kb', {
-        method: 'POST',
-        body: { payload },
-      }),
-    // Update a knowledge-base article in-place (used by KB editor save +
-    // saveKbArticle helper).
-    updateKbArticle: (id, payload) =>
-      this._ws('documents.updateKbArticle', `/documents/kb/${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        body: { payload },
-      }),
-
-    // Documents-adjacent notes (separate `notes` table — distinct from
-    // activity.listNotes which targets activity_log style entries).
-    listNotes: () => this._ws('documents.listNotes', '/documents/notes'),
-    // Create a personal/team note. Wraps the `notes` table insert so
-    // consumers (Notes UI, "Save as note" buttons) can route through the
-    // SDK rather than direct supabase.from('notes').insert().
-    createNote: (payload) =>
-      this._ws('documents.createNote', '/documents/notes', {
-        method: 'POST',
-        body: { payload },
-      }),
-
-    listResourceLinks: () => this._ws('documents.listResourceLinks', '/documents/resource-links'),
-    addResourceLink: (payload) =>
-      this._ws('documents.addResourceLink', '/documents/resource-links', {
-        method: 'POST',
-        body: { payload },
-      }),
-    updateResourceLink: (id, payload) =>
-      this._ws('documents.updateResourceLink', `/documents/resource-links/${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        body: { payload },
-      }),
-    removeResourceLink: (id) =>
-      this._ws('documents.removeResourceLink', `/documents/resource-links/${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-      }),
-    // Composite-key delete — unlink paths don't carry the row id, only the
-    // (a_type, a_id, b_type, b_id) tuple. Kept distinct from
-    // removeResourceLink(id) so callers express intent at the call site.
-    removeResourceLinkByPair: (filter) =>
-      this._ws('documents.removeResourceLinkByPair', '/documents/resource-links', {
-        method: 'DELETE',
-        body: { filter },
-      }),
-
-    // User-scoped personal documents (was sb().from('user_documents'))
-    listUserDocuments: (userId) =>
-      this._ws('documents.listUserDocuments', `/documents/users/${encodeURIComponent(userId || 'me')}`),
-    createUserDocument: (payload) =>
-      this._ws('documents.createUserDocument', '/documents/users', { method: 'POST', body: { payload } }),
-    updateUserDocument: (id, payload) =>
-      this._ws('documents.updateUserDocument', `/documents/users/${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        body: { payload },
-      }),
-    removeUserDocument: (id) =>
-      this._ws('documents.removeUserDocument', `/documents/users/${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-      }),
+  // --- Documents (DEPRECATED — delegates to sdk.docs.*) ----------------------
+  // Phase 2 back-compat alias. Callers should migrate to sdk.docs.* directly.
+  // This getter will be removed in Phase 3 once workspace UI is repointed.
+  //
+  // resource-links are NOT migrated to docs — they are a separate concern and
+  // require a follow-up ticket to determine the correct new home.
+  /** @deprecated Use sdk.docs.list / sdk.docs.kbArticles.list / sdk.docs.notes.list */
+  get documents () {
+    const docs = this._context?.services?.docs
+    return {
+      list: (...a) => docs.list(...a),
+      get: (...a) => docs.get(...a),
+      create: (p) => docs.create(p?.payload || p),
+      update: (id, p) => docs.update(id, p?.payload || p),
+      remove: (id) => docs.remove(id),
+      listKb: () => docs.kbArticles.list(),
+      createKbArticle: (p) => docs.kbArticles.create(p?.payload || p),
+      updateKbArticle: (id, p) => docs.kbArticles.update(id, p?.payload || p),
+      listNotes: () => docs.notes.list(),
+      createNote: (p) => docs.notes.create(p?.payload || p),
+      listResourceLinks: () => { throw new Error('[sdk] resource-links not migrated to docs — separate concern, file follow-up') },
+      addResourceLink: () => { throw new Error('[sdk] resource-links not migrated to docs — separate concern, file follow-up') },
+      updateResourceLink: () => { throw new Error('[sdk] resource-links not migrated to docs — separate concern, file follow-up') },
+      removeResourceLink: () => { throw new Error('[sdk] resource-links not migrated to docs — separate concern, file follow-up') },
+      removeResourceLinkByPair: () => { throw new Error('[sdk] resource-links not migrated to docs — separate concern, file follow-up') },
+      listUserDocuments: (opts) => docs.userDocs.list(opts),
+      createUserDocument: (p) => docs.userDocs.create(p?.payload || p),
+      updateUserDocument: (id, p) => docs.userDocs.update(id, p?.payload || p),
+      removeUserDocument: (id) => docs.remove(id),
+    }
   }
 
   // --- Presence ---------------------------------------------------------------
