@@ -219,37 +219,6 @@ export class WorkspaceProjectService extends BaseService {
     }
   }
 
-  // --- Tickets (DEPRECATED — delegated to TicketService) ---------------------
-  // The tickets surface migrated to TicketService (Phase 3). These accessors
-  // delegate to sdk.tickets.* so call sites that go through
-  // sdk.workspaceProject.tickets.* keep working through the cutover cycle.
-  // Drop in Phase 4 once the workspace UI uses sdk.tickets.* directly.
-  //
-  // @deprecated Use sdk.tickets.* instead.
-  get tickets () {
-    return this._context?.services?.tickets || null
-  }
-
-  // @deprecated Use sdk.ticketColumns.* from TicketService instead.
-  get ticketColumns () {
-    return this._context?.services?.tickets?.columns || null
-  }
-
-  // ticketDependencies has no direct equivalent in TicketService — relations
-  // now live as ticket.refs.dependsOn array on the Mongo ticket document.
-  // @deprecated Ticket dependencies moved to ticket.refs.dependsOn (Mongo).
-  get ticketDependencies () {
-    throw new Error(
-      '[sdk.workspaceProject.ticketDependencies] moved to ticket.refs.dependsOn. ' +
-      'Read the ticket document and inspect ticket.refs.dependsOn instead.'
-    )
-  }
-
-  // @deprecated Use sdk.tickets.comments.* instead.
-  get ticketComments () {
-    return this._context?.services?.tickets?.comments || null
-  }
-
   // --- Chat -------------------------------------------------------------------
   chat = {
     listChannels: () => this._ws('chat.listChannels', '/chat/channels'),
@@ -961,10 +930,6 @@ export class WorkspaceProjectService extends BaseService {
     // chat_mentions — fired on @-mention insert addressed to userEmail.
     subscribeMentions: ({ userEmail } = {}, cb) =>
       this._realtimeSubscribe('chat.mentions', { userEmail }, cb),
-    // tickets — @deprecated Use sdk.tickets.subscribe(filter, cb) instead.
-    // Delegates to TicketService.subscribe (SSE-based, Mongo-backed).
-    subscribeTickets: (filter = {}, cb) =>
-      this._context?.services?.tickets?.subscribe(filter, cb) || (() => {}),
     // notifications — fired on notification INSERT for the caller.
     subscribeNotifications: ({ userEmail } = {}, cb) =>
       this._realtimeSubscribe('notifications', { userEmail }, cb),

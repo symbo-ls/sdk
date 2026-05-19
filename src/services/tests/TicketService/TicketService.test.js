@@ -286,59 +286,7 @@ test('tickets.subscribe calls _sseSubscribe with /tickets/stream', t => {
   t.end()
 })
 
-// ─── WorkspaceProjectService back-compat aliases ─────────────────────────────
-
-test('WorkspaceProjectService.tickets delegates to context.services.tickets', t => {
-  t.plan(1)
-  const wps = new WorkspaceProjectService()
-  const ticketSvc = new TicketService()
-  // Simulate post-init context with tickets service populated.
-  wps._context = { services: { tickets: ticketSvc } }
-  t.equal(wps.tickets, ticketSvc, 'get tickets returns TicketService from context')
-  t.end()
-})
-
-test('WorkspaceProjectService.ticketComments delegates to tickets.comments', t => {
-  t.plan(1)
-  const wps = new WorkspaceProjectService()
-  const ticketSvc = new TicketService()
-  wps._context = { services: { tickets: ticketSvc } }
-  t.equal(wps.ticketComments, ticketSvc.comments, 'ticketComments → tickets.comments')
-  t.end()
-})
-
-test('WorkspaceProjectService.ticketColumns delegates to tickets.columns', t => {
-  t.plan(1)
-  const wps = new WorkspaceProjectService()
-  const ticketSvc = new TicketService()
-  wps._context = { services: { tickets: ticketSvc } }
-  t.equal(wps.ticketColumns, ticketSvc.columns, 'ticketColumns → tickets.columns')
-  t.end()
-})
-
-test('WorkspaceProjectService.ticketDependencies throws with migration message', t => {
-  t.plan(1)
-  const wps = new WorkspaceProjectService()
-  wps._context = { services: {} }
-  t.throws(
-    () => wps.ticketDependencies,
-    /moved to ticket\.refs\.dependsOn/,
-    'throws migration error'
-  )
-  t.end()
-})
-
-test('WorkspaceProjectService.realtime.subscribeTickets delegates to tickets.subscribe', t => {
-  t.plan(1)
-  const wps = new WorkspaceProjectService()
-  const unsubMock = () => {}
-  const subscribeSpy = sinon.stub().returns(unsubMock)
-  wps._context = {
-    services: {
-      tickets: { subscribe: subscribeSpy }
-    }
-  }
-  const unsub = wps.realtime.subscribeTickets({ ownerOrganization: 'org-1' }, () => {})
-  t.equal(subscribeSpy.calledOnce, true, 'delegates to tickets.subscribe')
-  t.end()
-})
+// WorkspaceProjectService back-compat aliases (get tickets / ticketColumns /
+// ticketComments / ticketDependencies / realtime.subscribeTickets) were
+// dropped in Phase 4 — see SDK-TICKETS-BACKCOMPAT-DROP in tickets/sdk.md.
+// Callers route through sdk.tickets.* or sdk.execute('tickets', ...) now.

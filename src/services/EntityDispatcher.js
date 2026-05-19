@@ -1,6 +1,6 @@
 // EntityDispatcher — single SDK entry point for the fetch plugin's 'sdk' adapter.
 //
-// Maps dotted entity paths (e.g. 'workspaceProject.tickets', 'organization.members')
+// Maps dotted entity paths (e.g. 'tickets', 'organization.members')
 // to existing service method calls. The fetch plugin (smbls/plugins/fetch) calls
 // sdk.execute(from, op, args, cb) for declarative `fetch:` props on DOMQL elements.
 //
@@ -147,23 +147,22 @@ const ENTITY_ROUTES = {
     methods: { list: 'listWorkspaceMembers', create: 'addWorkspaceMember' },
   },
 
-  // ─── Workspace Project (activity — tickets, chat, calendar, etc.) ─────────
-  // Each workspaceProject service method takes positional args
-  // (filter, options) / (id) / (id, payload) etc., so every route below
-  // gets a CRUD argMap so sdk.execute() can fan adapter args out correctly.
-  'workspaceProject.tickets': {
-    service: 'workspaceProject',
+  // ─── Tickets (TicketService — Mongo-backed, SSE realtime) ────────────────
+  // The tickets surface lives on its own service. Workspace UI calls go
+  // through `sdk.execute('tickets', 'list')` / `sdk.tickets.*`. The legacy
+  // `workspaceProject.tickets*` and `workspaceProject.realtime.tickets`
+  // dispatcher routes were dropped in Phase 4 (SDK-TICKETS-BACKCOMPAT-DROP);
+  // every consumer now talks to TicketService directly.
+  'tickets': {
+    service: 'tickets',
     methods: {
-      list: 'tickets.list',
-      get: 'tickets.get',
-      create: 'tickets.create',
-      update: 'tickets.update',
-      remove: 'tickets.remove',
-      // tickets.assign(id, assigneeEmail) — separate op so callers can
-      // route through sdk.execute('workspaceProject.tickets', 'assign',
-      // { id, assignee }) instead of importing the service directly.
-      assign: 'tickets.assign',
-      epicCounts: 'tickets.epicCounts',
+      list: 'list',
+      get: 'get',
+      create: 'create',
+      update: 'update',
+      remove: 'remove',
+      assign: 'assign',
+      epicCounts: 'epicCounts',
     },
     argMap: {
       ...CRUD_ARG_MAP,
@@ -171,6 +170,29 @@ const ENTITY_ROUTES = {
       epicCounts: () => [],
     },
   },
+  'tickets.columns': {
+    service: 'tickets',
+    methods: {
+      list: 'columns.list',
+      update: 'columns.update',
+    },
+    argMap: { list: () => [], update: argMaps.idPayload },
+  },
+  'tickets.comments': {
+    service: 'tickets',
+    methods: {
+      list: 'comments.list',
+      create: 'comments.create',
+      update: 'comments.update',
+      remove: 'comments.remove',
+    },
+    argMap: CRUD_ARG_MAP,
+  },
+
+  // ─── Workspace Project (activity — chat, calendar, etc.) ─────────
+  // Each workspaceProject service method takes positional args
+  // (filter, options) / (id) / (id, payload) etc., so every route below
+  // gets a CRUD argMap so sdk.execute() can fan adapter args out correctly.
   'workspaceProject.chat': {
     service: 'workspaceProject',
     methods: {
@@ -613,44 +635,6 @@ const ENTITY_ROUTES = {
     },
     argMap: { list: () => [], get: argMaps.id, update: argMaps.idPayload },
   },
-  'workspaceProject.ticketColumns': {
-    service: 'workspaceProject',
-    methods: {
-      list: 'ticketColumns.list',
-      update: 'ticketColumns.update',
-    },
-    argMap: { list: () => [], update: argMaps.idPayload },
-  },
-  'workspaceProject.ticketDependencies': {
-    service: 'workspaceProject',
-    methods: {
-      list: 'ticketDependencies.list',
-      create: 'ticketDependencies.create',
-      remove: 'ticketDependencies.remove',
-    },
-    argMap: {
-      list: (a) => [a?.ticketId ?? a?.filter?.ticket_id ?? a?.params?.ticket_id],
-      create: argMaps.payload,
-      remove: argMaps.id,
-    },
-  },
-  'workspaceProject.ticketComments': {
-    service: 'workspaceProject',
-    methods: {
-      list: 'ticketComments.list',
-      create: 'ticketComments.create',
-      update: 'ticketComments.update',
-      remove: 'ticketComments.remove',
-    },
-    argMap: {
-      list: (a) => [a?.ticketId ?? a?.filter?.ticket_id ?? a?.params?.ticket_id, {
-        order: a?.order, limit: a?.limit, ...(a?.options || {})
-      }],
-      create: (a) => [a?.ticketId ?? a?.filter?.ticket_id, a?.payload ?? a?.data ?? a],
-      update: argMaps.idPayload,
-      remove: argMaps.id,
-    },
-  },
   'workspaceProject.meet.rooms': {
     service: 'workspaceProject',
     methods: {
@@ -783,11 +767,6 @@ const ENTITY_ROUTES = {
     service: 'workspaceProject',
     methods: { subscribe: 'realtime.subscribeMentions' },
     argMap: { subscribe: (a) => [{ userEmail: a?.userEmail ?? a?.filter?.userEmail }] },
-  },
-  'workspaceProject.realtime.tickets': {
-    service: 'workspaceProject',
-    methods: { subscribe: 'realtime.subscribeTickets' },
-    argMap: { subscribe: (a) => [a?.filter ?? a ?? {}] },
   },
   'workspaceProject.realtime.notifications': {
     service: 'workspaceProject',

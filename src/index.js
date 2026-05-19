@@ -65,8 +65,8 @@ export class SDK {
     this._createServiceProxies()
 
     // Single dispatcher entry point for the fetch plugin's 'sdk' adapter.
-    // Maps dotted entity paths (e.g. 'workspaceProject.tickets') to existing
-    // service methods. See services/EntityDispatcher.js.
+    // Maps dotted entity paths (e.g. 'tickets', 'organization.members') to
+    // existing service methods. See services/EntityDispatcher.js.
     this.execute = createEntityDispatcher(this)
   }
 
@@ -527,21 +527,6 @@ export class SDK {
         }
       }
     }
-  }
-
-  // ==================== DEPRECATED BACK-COMPAT ALIASES ====================
-  // These are one-cutover-cycle aliases retained while the workspace UI
-  // migrates from `sdk.workspaceProject.tickets.*` / `sdk.subscribeTickets`
-  // to `sdk.tickets.*` / `sdk.tickets.subscribe`. Remove in Phase 4 once
-  // the workspace UI has been updated.
-
-  /**
-   * @deprecated Use sdk.tickets.subscribe(filter, cb) instead.
-   * Delegates to TicketService.subscribe so existing workspace-UI call sites
-   * keep working through the Phase 3 → Phase 4 cutover.
-   */
-  get subscribeTickets () {
-    return this.getService('tickets').subscribe.bind(this.getService('tickets'))
   }
 
   /**
