@@ -1,6 +1,6 @@
 {
   "name": "@symbo.ls/sdk",
-  "version": "3.14.114",
+  "version": "3.14.117",
   "type": "module",
   "module": "./dist/esm/src/index.js",
   "workspaces": [
