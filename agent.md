@@ -102,7 +102,7 @@ export API_URL="${SYMBOLS_APP_API_URL:-https://dev.api.symbols.app}"
 
 **Flow:** read queue → validate scope → claim → implement → ship.
 
-If the ticket has `labels` containing `needs-qa`, ship to `ready_to_test` (not `done`). If you find conflicting Nika directives in comments, stop and file an ASK-USER decision ticket (`type='decision'`, `labels=['ASK-USER']`, `assignee_email='nika.tomadze@gmail.com'`) — most-recent Nika comment wins.
+If the ticket has `labels` containing `needs-qa`, ship to `ready_to_test` (not `done`). If you find conflicting Nika directives in comments, stop and file an ASK-USER decision ticket (`type='decision'`, `labels=['ASK-USER']`, `assignee_email='nika@symbols.app'`) — most-recent Nika comment wins.
 
 For the full contract — claim-race semantics, full resolution payload shape, QA gate handoff, prod-deploy gate, ASK-USER flow, retry helper with backoff — install `@symbo.ls/agent-skills` and read its `EPIC_AGENT_CONTRACT.md`. The summary above is enough to ship most work.
 
