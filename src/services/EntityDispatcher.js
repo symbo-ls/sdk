@@ -189,12 +189,10 @@ const ENTITY_ROUTES = {
     argMap: CRUD_ARG_MAP,
   },
 
-  // ─── Docs (DocService — Mongo-backed, SSE realtime) ─────────────────────────
-  // The docs surface lives on its own service. UI calls go through
-  // `sdk.execute('docs', 'list')` / `sdk.docs.*`. The legacy
-  // resource-links — junction table for cross-resource associations
-  // between chat_channel / meet_room / calendar_event. Pure flat shape,
-  // canonical ordering enforced server-side.
+  // ─── ResourceLinks (junction table, Mongo-backed) ───────────────────────────
+  // Cross-resource associations between chat_channel / meet_room /
+  // calendar_event rows. Pure flat shape; canonical ordering enforced
+  // server-side. UI calls go through `sdk.execute('resourceLinks', 'list')`.
   'resourceLinks': {
     service: 'resourceLinks',
     methods: {
@@ -210,6 +208,10 @@ const ENTITY_ROUTES = {
       removeByPair: (a) => [a?.payload ?? a],
     },
   },
+
+  // ─── Docs (DocService — Mongo-backed, SSE realtime) ─────────────────────────
+  // The docs surface lives on its own service. UI calls go through
+  // `sdk.execute('docs', 'list')` / `sdk.docs.*`.
   // `workspaceProject.documents.*` dispatcher routes and back-compat aliases
   // on WorkspaceProjectService delegate here for one cutover cycle (Phase 2).
   'docs': {
