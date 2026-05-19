@@ -318,6 +318,126 @@ export class BaseService {
     return resp.json()
   }
 
+  // SSE subscription helper for streaming endpoints (e.g. /tickets/stream).
+  //
+  // Constructs the full URL as:
+  //   ${apiUrl}/core${path}?access_token=<jwt>[&filter[key]=val...]
+  //
+  // EventSource does not support custom headers, so the auth token is passed
+  // as `access_token` query param. The main server's SSE handler must accept
+  // either Authorization header OR access_token query param.
+  //
+  // Browser: uses native EventSource.
+  // Node.js: dynamically imports the optional `eventsource` package. If it is
+  // not installed, _sseSubscribe throws a clear error message.
+  //
+  // Event naming conventions from server:
+  //   tickets.snapshot → { type: 'snapshot', tickets: [...] }
+  //   tickets.insert   → { type: 'tickets.insert', ticket: {} }
+  //   tickets.update   → { type: 'tickets.update', ticket: {} }
+  //   tickets.delete   → { type: 'tickets.delete', ticket: {} }
+  //
+  // Returns an unsubscribe() function that closes the EventSource and
+  // cancels any pending reconnect timers.
+  _sseSubscribe (path, filter = {}, onEvent) {
+    if (typeof onEvent !== 'function') {
+      throw new Error(`_sseSubscribe: onEvent must be a function`)
+    }
+
+    let es = null
+    let reconnectTimer = null
+    let destroyed = false
+    let attempt = 0
+    const MAX_BACKOFF_MS = 8000
+
+    const _buildUrl = () => {
+      const params = new URLSearchParams()
+      // Auth token as query param — EventSource cannot set headers.
+      if (this._tokenManager) {
+        const token = this._tokenManager.getAccessToken?.()
+        if (token) params.set('access_token', token)
+      }
+      // Serialize filter as filter[key]=value query params.
+      for (const [k, v] of Object.entries(filter || {})) {
+        if (v !== undefined && v !== null) {
+          params.set(`filter[${k}]`, String(v))
+        }
+      }
+      const qs = params.toString()
+      return `${this._apiUrl}/core${path}${qs ? `?${qs}` : ''}`
+    }
+
+    const _connect = async () => {
+      if (destroyed) return
+
+      let EventSourceImpl
+      if (typeof EventSource !== 'undefined') {
+        EventSourceImpl = EventSource
+      } else {
+        // Node.js: try optional eventsource package.
+        try {
+          const mod = await import('eventsource')
+          EventSourceImpl = mod.default || mod.EventSource || mod
+        } catch {
+          throw new Error(
+            '[sdk._sseSubscribe] EventSource is not available in this environment. ' +
+            'In Node.js, install the optional `eventsource` npm package: ' +
+            '`bun add eventsource` or `npm install eventsource`.'
+          )
+        }
+      }
+
+      const url = _buildUrl()
+      es = new EventSourceImpl(url)
+
+      es.addEventListener('tickets.snapshot', (evt) => {
+        try {
+          const data = JSON.parse(evt.data)
+          onEvent({ type: 'snapshot', tickets: data.tickets || data })
+        } catch {}
+      })
+
+      const _ticketEvent = (type) => (evt) => {
+        try {
+          const data = JSON.parse(evt.data)
+          onEvent({ type, ticket: data.ticket || data })
+        } catch {}
+      }
+      es.addEventListener('tickets.insert', _ticketEvent('tickets.insert'))
+      es.addEventListener('tickets.update', _ticketEvent('tickets.update'))
+      es.addEventListener('tickets.delete', _ticketEvent('tickets.delete'))
+
+      es.addEventListener('error', () => {
+        if (destroyed) return
+        // Close current source before reconnecting.
+        try { es.close() } catch {}
+        es = null
+        attempt += 1
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), MAX_BACKOFF_MS)
+        reconnectTimer = setTimeout(() => {
+          if (!destroyed) _connect()
+        }, delay)
+      })
+
+      // Reset backoff on first successful message.
+      es.addEventListener('open', () => { attempt = 0 })
+    }
+
+    _connect()
+
+    return function unsubscribe () {
+      destroyed = true
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer)
+        reconnectTimer = null
+      }
+      if (es) {
+        try { es.close() } catch {}
+        es = null
+      }
+    }
+  }
+
   // Cleanup method
   destroy () {
     if (this._tokenManager) {
