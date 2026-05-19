@@ -19,6 +19,7 @@ import {
   createOrganizationService,
   createWorkspaceService,
   createWorkspaceProjectService,
+  createDocService,
   createTicketService,
   createAllocationRuleService,
   createSharedAssetService,
@@ -217,6 +218,13 @@ export class SDK {
       this._initService(
         'workspaceProject',
         createWorkspaceProjectService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      this._initService(
+        'docs',
+        createDocService({
           context: this._context,
           options: this._options
         })
@@ -580,6 +588,7 @@ export {
   createOrganizationService,
   createWorkspaceService,
   createWorkspaceProjectService,
+  createDocService,
   createTicketService,
   createAllocationRuleService,
   createSharedAssetService,
