@@ -21,6 +21,7 @@ import {
   OrganizationService,
   WorkspaceService,
   WorkspaceProjectService,
+  TicketService,
   AllocationRuleService,
   SharedAssetService,
   CreditsService
@@ -50,6 +51,7 @@ const SERVICES = {
   organization: OrganizationService,
   workspace: WorkspaceService,
   workspaceProject: WorkspaceProjectService,
+  tickets: TicketService,
   allocationRule: AllocationRuleService,
   sharedAsset: SharedAssetService,
   credits: CreditsService
@@ -79,7 +81,12 @@ const INTENTIONALLY_NOT_FLAT_EXPOSED = new Set([
   // rather than flat methods. Flat-exposing every workspace-project method
   // would double the SDK surface area and conflict with same-name methods
   // on other services (e.g. `chat`, `calendar`).
-  'WorkspaceProjectService:*'
+  'WorkspaceProjectService:*',
+  // TicketService methods are accessed via sdk.tickets.* (sdk.getService('tickets').list()
+  // etc.), NOT as top-level flat proxy methods. Flat-exposing them would cause
+  // collisions with same-name methods on other services (e.g. `list`, `get`,
+  // `create`, `update`, `remove`, `assign`, `subscribe`).
+  'TicketService:*'
 ])
 
 // Pre-existing drift captured 2026-05-18 when this audit first ran. Each
