@@ -222,6 +222,71 @@ export class TicketService extends BaseService {
       })
   }
 
+  // ==================== TYPE-SPECIFIC SUGAR ====================
+  //
+  // All discriminator types live in the same physical `tickets` collection
+  // on the server (Mongoose discriminators). These namespaces are pure
+  // ergonomic sugar around `list`/`get`/`create` with the `type` pre-filled.
+  // Type-specific schema validation happens server-side.
+
+  /**
+   * Walk the parent-child tree starting from any ticket.
+   * Returns { root, descendants[] } via server-side $graphLookup over
+   * refs.parent. Works at any depth: epic → story → task → subtask.
+   */
+  tree (ticketId) {
+    return this._call('tickets.tree', `/tickets/${encodeURIComponent(ticketId)}/tree`)
+  }
+
+  epics = {
+    list: (options) => this.list({ type: 'epic' }, options),
+    get: (ticketId) => this.get(ticketId),
+    create: (payload) => this.create({ ...payload, type: 'epic' }),
+    update: (ticketId, payload, opts) => this.update(ticketId, payload, opts),
+    tree: (ticketId) => this.tree(ticketId),
+    /** Direct children of an epic (user stories). */
+    stories: (ticketId) =>
+      this.list({ type: 'user_story', 'refs.parent': ticketId })
+  }
+
+  stories = {
+    list: (options) => this.list({ type: 'user_story' }, options),
+    get: (ticketId) => this.get(ticketId),
+    create: (payload) => this.create({ ...payload, type: 'user_story' }),
+    update: (ticketId, payload, opts) => this.update(ticketId, payload, opts),
+    /** Direct children of a user story (tasks + bugs). */
+    children: (ticketId) =>
+      this.list({ type: { $in: ['task', 'bug'] }, 'refs.parent': ticketId })
+  }
+
+  tasks = {
+    list: (options) => this.list({ type: 'task' }, options),
+    get: (ticketId) => this.get(ticketId),
+    create: (payload) => this.create({ ...payload, type: 'task' }),
+    update: (ticketId, payload, opts) => this.update(ticketId, payload, opts)
+  }
+
+  bugs = {
+    list: (options) => this.list({ type: 'bug' }, options),
+    get: (ticketId) => this.get(ticketId),
+    create: (payload) => this.create({ ...payload, type: 'bug' }),
+    update: (ticketId, payload, opts) => this.update(ticketId, payload, opts)
+  }
+
+  spikes = {
+    list: (options) => this.list({ type: 'spike' }, options),
+    get: (ticketId) => this.get(ticketId),
+    create: (payload) => this.create({ ...payload, type: 'spike' }),
+    update: (ticketId, payload, opts) => this.update(ticketId, payload, opts)
+  }
+
+  decisions = {
+    list: (options) => this.list({ type: 'decision' }, options),
+    get: (ticketId) => this.get(ticketId),
+    create: (payload) => this.create({ ...payload, type: 'decision' }),
+    update: (ticketId, payload, opts) => this.update(ticketId, payload, opts)
+  }
+
   // ==================== REALTIME / SSE SUBSCRIPTION ====================
 
   /**
