@@ -374,9 +374,15 @@ export class BaseService {
       if (typeof EventSource !== 'undefined') {
         EventSourceImpl = EventSource
       } else {
-        // Node.js: try optional eventsource package.
+        // Node.js: try optional `eventsource` npm package.
+        // The specifier is held in a variable so static-analysis bundlers
+        // (Parcel/Webpack/Vite) don't try to resolve it at build time —
+        // browser bundles short-circuit on `typeof EventSource !== 'undefined'`
+        // and never reach this branch, so they shouldn't pay a bundle cost
+        // (or a missing-module build error) for a Node-only fallback.
+        const _esPkg = 'eventsource'
         try {
-          const mod = await import('eventsource')
+          const mod = await import(/* @vite-ignore */ _esPkg)
           EventSourceImpl = mod.default || mod.EventSource || mod
         } catch {
           throw new Error(
