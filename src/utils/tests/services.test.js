@@ -24,6 +24,8 @@ import * as services from '../../services/index.js'
 
 const STRICT = process.env.STRICT_SERVICE_METHODS === '1'
 
+// Global exemptions — lifecycle hooks that every BaseService-derived class
+// inherits. Always counted as private regardless of which class declares them.
 const INTENTIONALLY_PRIVATE = new Set([
   'getStatus',
   'destroy',
@@ -32,16 +34,73 @@ const INTENTIONALLY_PRIVATE = new Set([
   'getConfig'
 ])
 
+// Per-class exemptions — methods that exist on the service for a reason
+// OTHER than flat sdk.X(...) access. Verified by walking the codebase:
+//
+//   CollabService          — session-bound; consumers use
+//                            sdk.getService('collab').connect() and then
+//                            session-specific calls. See sdk_usage.md.
+//
+//   DocService             — entity-routed via
+//                            sdk.execute('workspaceProject.documents.*', op).
+//                            See EntityDispatcher.js L215+.
+//
+//   TicketService          — entity-routed via
+//                            sdk.execute('workspaceProject.tickets', op).
+//                            See EntityDispatcher.js L153+.
+//
+//   ResourceLinkService    — entity-routed via
+//                            sdk.execute('workspaceProject.documents.resourceLinks', op).
+//
+//   WorkspaceProjectService.setRealtimeProvider — internal SDK boot hook,
+//                            called by bootShell once at init. Not user-facing.
+const INTENTIONALLY_PRIVATE_PER_CLASS = {
+  CollabService: new Set([
+    'canRedo',
+    'canUndo',
+    'clearUndoHistory',
+    'getConnectionInfo',
+    'getRedoStackSize',
+    'getUndoStackSize'
+  ]),
+  DocService: new Set([
+    'create',
+    'folders',
+    'get',
+    'list',
+    'remove',
+    'subscribe',
+    'tree',
+    'update'
+  ]),
+  TicketService: new Set([
+    'agentQueue',
+    'assign',
+    'create',
+    'epicCounts',
+    'get',
+    'list',
+    'remove',
+    'subscribe',
+    'tree',
+    'update'
+  ]),
+  ResourceLinkService: new Set(['create', 'list', 'remove', 'removeByPair']),
+  WorkspaceProjectService: new Set(['setRealtimeProvider'])
+}
+
 let BASE_METHODS = new Set()
 
 const _publicMethods = (Class) => {
   const proto = Class.prototype
   if (!proto) return []
+  const perClass = INTENTIONALLY_PRIVATE_PER_CLASS[Class.name] || null
   return Object.getOwnPropertyNames(proto).filter((name) => {
     if (name === 'constructor') return false
     if (name.startsWith('_')) return false
     if (BASE_METHODS.has(name)) return false
     if (INTENTIONALLY_PRIVATE.has(name)) return false
+    if (perClass?.has(name)) return false
     const desc = Object.getOwnPropertyDescriptor(proto, name)
     return typeof desc?.value === 'function'
   })

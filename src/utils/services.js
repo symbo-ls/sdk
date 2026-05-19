@@ -420,6 +420,28 @@ export const SERVICE_METHODS = {
   // overview. Without this entry sdk.getRates is undefined.
   getRates: 'credits',
 
+  // Project-scoped credit/billing surface — parallels the workspace-scoped
+  // methods above so the admin/project-edit screens can read credits +
+  // spend controls + run top-ups for a single project (legacy billing
+  // path) without going through sdk.getService('credits').X(...).
+  getProjectBalance: 'credits',
+  getProjectLedger: 'credits',
+  getProjectSpendControls: 'credits',
+  updateProjectSpendControls: 'credits',
+  topupProjectCredits: 'credits',
+
+  // Subscription feature gates — project-feature gating + pricing options.
+  getPricingOptions: 'subscription',
+  canAccessProjectFeature: 'subscription',
+  grantProjectFeature: 'subscription',
+  revokeProjectFeature: 'subscription',
+
+  // Tracking config/flush — paired with trackEvent (already registered
+  // above). Admin tools that drain the analytics queue or reconfigure
+  // the tracker call these directly.
+  configure: 'tracking',
+  flush: 'tracking',
+
   // Workspace permissions & project management
   getWorkspacePermissions: 'workspace',
   createWorkspaceProject: 'workspace',
