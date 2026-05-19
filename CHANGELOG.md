@@ -1,5 +1,19 @@
 # @symbo.ls/sdk
 
+## 3.14.105
+
+### Patch Changes
+
+- Manual patch bump triggered via workflow_dispatch (scope: all).
+  No source change behind this bump — released to refresh dist or
+  coordinate a cross-package version line.
+- Updated dependencies
+  - @symbo.ls/analyzing@3.14.105
+  - @symbo.ls/channels@3.14.105
+  - @symbo.ls/sdk-bridge@3.14.105
+  - @symbo.ls/sdk-supabase-bridge@3.14.105
+  - @symbo.ls/utils@3.14.105
+
 ## 3.14.104
 
 ### Patch Changes
