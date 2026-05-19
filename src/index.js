@@ -19,13 +19,18 @@ import {
   createOrganizationService,
   createWorkspaceService,
   createWorkspaceProjectService,
+  createAiChatService,
   createDocService,
   createResourceLinkService,
   createTicketService,
   createAnalyzedService,
   createAllocationRuleService,
   createSharedAssetService,
-  createCreditsService
+  createCreditsService,
+  workspaceProjectBaseUrl,
+  createSupabasePassthroughConfig,
+  workspaceProjectEdgeFunctionUrl,
+  governanceSessionAccessToken
 } from './services/index.js'
 
 import { SERVICE_METHODS } from './utils/services.js'
@@ -220,6 +225,13 @@ export class SDK {
       this._initService(
         'workspaceProject',
         createWorkspaceProjectService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      this._initService(
+        'aiChat',
+        createAiChatService({
           context: this._context,
           options: this._options
         })

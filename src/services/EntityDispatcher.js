@@ -232,6 +232,41 @@ const ENTITY_ROUTES = {
     },
   },
 
+  // ─── AI Chat (AiChatService — Mongo-backed assistant) ─────────────────────
+  // Replaces the workspaceProject.aiChat Supabase edge-function surface.
+  // /core/ai-chat/* on the main API server. Threads + messages persist in
+  // ai_chat_threads / ai_chat_messages collections.
+  'aiChat.threads': {
+    service: 'aiChat',
+    methods: {
+      list: 'threads.list',
+      get: 'threads.get',
+      create: 'threads.create',
+      remove: 'threads.remove',
+    },
+    argMap: {
+      list: (a) => [{ includeArchived: a?.includeArchived ?? a?.filter?.includeArchived ?? false }],
+      get: argMaps.id,
+      create: argMaps.payload,
+      remove: argMaps.id,
+    },
+  },
+  'aiChat.messages': {
+    service: 'aiChat',
+    methods: { list: 'messages.list' },
+    argMap: {
+      list: (a) => [a?.threadId ?? a?.id ?? a?.filter?.threadId, {
+        limit: a?.limit ?? a?.options?.limit,
+        beforeId: a?.beforeId ?? a?.options?.beforeId,
+      }],
+    },
+  },
+  'aiChat.completion': {
+    service: 'aiChat',
+    methods: { rpc: 'completion' },
+    argMap: { rpc: argMaps.payload },
+  },
+
   // ─── Analyzed (AnalyzedService — Mongo-backed visitor telemetry) ────────────
   // /core/analyzed/* on the main API server. Peer to sdk.docs / sdk.tickets.
   // Replaces the workspaceProject.analyzed* Supabase surface — see

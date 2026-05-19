@@ -444,6 +444,85 @@ export class BaseService {
     }
   }
 
+  // Streaming POST helper — for endpoints that POST a body and respond with
+  // SSE-framed deltas (`data: {"text": "..."}\n\n` style). Used by
+  // ChatService.stream() to wire the Mongo-backed AI chat into the same
+  // wire format the legacy Supabase ai-chat edge function emitted.
+  //
+  // The callbacks fire as deltas arrive:
+  //   onChunk(deltaText)       — for each `data: {"text": "<delta>"}` frame
+  //   onDone(donePayload)      — for the trailing `data: {"done": true, ...}` frame
+  //                              (payload includes action, assistantMessageId, thread)
+  //   onError(err)             — on transport error or `data: {"error": ...}` frame
+  //
+  // Returns a cancel() function that aborts the in-flight request.
+  _streamPost (path, body, { onChunk, onDone, onError } = {}) {
+    this._requireReady('_streamPost')
+    const url = `${this._apiUrl}/core${path}`
+    const controller = new AbortController()
+
+    const headers = { 'Content-Type': 'application/json', Accept: 'text/event-stream' }
+    if (this._tokenManager) {
+      const token = this._tokenManager.getAccessToken?.()
+      if (token) headers.Authorization = `Bearer ${token}`
+    }
+
+    const safe = (fn, arg) => {
+      if (typeof fn !== 'function') return
+      try { fn(arg) } catch (_) { /* swallow downstream */ }
+    }
+
+    ;(async () => {
+      let res
+      try {
+        res = await fetch(url, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body || {}),
+          signal: controller.signal
+        })
+      } catch (err) {
+        if (err?.name !== 'AbortError') safe(onError, err)
+        return
+      }
+      if (!res.ok || !res.body) {
+        const text = await res.text().catch(() => '')
+        safe(onError, new Error(`stream HTTP ${res.status}: ${text.slice(0, 200)}`))
+        return
+      }
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue
+            const json = line.slice(6).trim()
+            if (!json || json === '[DONE]') continue
+            let parsed
+            try { parsed = JSON.parse(json) } catch { continue }
+            if (parsed.error) { safe(onError, new Error(parsed.error)); continue }
+            if (parsed.done) { safe(onDone, parsed); continue }
+            if (typeof parsed.text === 'string') safe(onChunk, parsed.text)
+          }
+        }
+      } catch (err) {
+        if (err?.name !== 'AbortError') safe(onError, err)
+      } finally {
+        try { reader.cancel() } catch {}
+      }
+    })()
+
+    return () => {
+      try { controller.abort() } catch {}
+    }
+  }
+
   // Cleanup method
   destroy () {
     if (this._tokenManager) {

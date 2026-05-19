@@ -1,4 +1,5 @@
 import { AuthService } from './AuthService.js'
+import { AiChatService } from './AiChatService.js'
 import { DocService } from './DocService.js'
 import { TicketService } from './TicketService.js'
 import { AnalyzedService } from './AnalyzedService.js'
@@ -105,6 +106,9 @@ export const createWorkspaceService = config =>
 export const createWorkspaceProjectService = config =>
   createService(WorkspaceProjectService, config)
 
+export const createAiChatService = config =>
+  createService(AiChatService, config)
+
 export const createDocService = config =>
   createService(DocService, config)
 
@@ -151,6 +155,7 @@ export {
   createSupabasePassthroughConfig,
   workspaceProjectEdgeFunctionUrl,
   governanceSessionAccessToken,
+  AiChatService,
   DocService,
   TicketService,
   AnalyzedService,
