@@ -1,5 +1,11 @@
 # @symbo.ls/analyzing
 
+## 3.14.130
+
+### Patch Changes
+
+- Auto-generated cross-repo patch release.
+
 ## 3.14.120
 
 ### Patch Changes
