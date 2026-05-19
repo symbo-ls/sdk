@@ -219,32 +219,35 @@ export class WorkspaceProjectService extends BaseService {
     }
   }
 
-  // --- Tickets ----------------------------------------------------------------
-  tickets = {
-    // SERVER-WP-TICKETS-POST-AMBIGUOUS — `POST /tickets` is the canonical
-    // create route; list uses the dedicated `/tickets/list` to avoid the
-    // body-shape ambiguity that previously caused 500s on cold-load
-    // (insert handler would read `body.payload` as undefined and Postgres
-    // rejected the NULL "title"). The server still accepts `POST /tickets`
-    // with `{filter, options}` as a legacy fallback for older SDK builds.
-    list: (filter, options) =>
-      this._ws('tickets.list', '/tickets/list', { method: 'POST', body: { filter, options } }),
-    get: (number) => this._ws('tickets.get', `/tickets/${encodeURIComponent(number)}`),
-    create: (payload) =>
-      this._ws('tickets.create', '/tickets', { method: 'POST', body: { payload } }),
-    update: (number, payload) =>
-      this._ws('tickets.update', `/tickets/${encodeURIComponent(number)}`, {
-        method: 'PATCH',
-        body: { payload },
-      }),
-    remove: (number) =>
-      this._ws('tickets.remove', `/tickets/${encodeURIComponent(number)}`, { method: 'DELETE' }),
-    epicCounts: () => this._ws('tickets.epicCounts', '/tickets/epic-counts'),
-    assign: (id, assigneeEmail) =>
-      this._ws('tickets.assign', `/tickets/${encodeURIComponent(id)}/assign`, {
-        method: 'POST',
-        body: { assigneeEmail },
-      }),
+  // --- Tickets (DEPRECATED — delegated to TicketService) ---------------------
+  // The tickets surface migrated to TicketService (Phase 3). These accessors
+  // delegate to sdk.tickets.* so call sites that go through
+  // sdk.workspaceProject.tickets.* keep working through the cutover cycle.
+  // Drop in Phase 4 once the workspace UI uses sdk.tickets.* directly.
+  //
+  // @deprecated Use sdk.tickets.* instead.
+  get tickets () {
+    return this._context?.services?.tickets || null
+  }
+
+  // @deprecated Use sdk.ticketColumns.* from TicketService instead.
+  get ticketColumns () {
+    return this._context?.services?.tickets?.columns || null
+  }
+
+  // ticketDependencies has no direct equivalent in TicketService — relations
+  // now live as ticket.refs.dependsOn array on the Mongo ticket document.
+  // @deprecated Ticket dependencies moved to ticket.refs.dependsOn (Mongo).
+  get ticketDependencies () {
+    throw new Error(
+      '[sdk.workspaceProject.ticketDependencies] moved to ticket.refs.dependsOn. ' +
+      'Read the ticket document and inspect ticket.refs.dependsOn instead.'
+    )
+  }
+
+  // @deprecated Use sdk.tickets.comments.* instead.
+  get ticketComments () {
+    return this._context?.services?.tickets?.comments || null
   }
 
   // --- Chat -------------------------------------------------------------------
@@ -755,42 +758,6 @@ export class WorkspaceProjectService extends BaseService {
         { filter: { user_id: userId }, payload }),
   }
 
-  ticketColumns = {
-    list: (filter, options) =>
-      this._sb('ticketColumns.list', 'ticket_columns', 'list',
-        { filter, options: { order: 'position.asc', ...(options || {}) } }),
-    update: (id, payload) =>
-      this._sb('ticketColumns.update', 'ticket_columns', 'update', { id, payload }),
-  }
-
-  // ticket_dependencies has a composite key (ticket_id + depends_on_ticket_id);
-  // expose list scoped to a single ticket plus the standard create/remove.
-  ticketDependencies = {
-    list: (ticketId) =>
-      this._sb('ticketDependencies.list', 'ticket_dependencies', 'list',
-        { filter: { ticket_id: ticketId } }),
-    create: (payload) =>
-      this._sb('ticketDependencies.create', 'ticket_dependencies', 'create', { payload }),
-    remove: (id) =>
-      this._sb('ticketDependencies.remove', 'ticket_dependencies', 'remove', { id }),
-  }
-
-  // ticket_comments is per-ticket; .list takes a ticketId, others take id.
-  ticketComments = {
-    list: (ticketId, options) =>
-      this._sb('ticketComments.list', 'ticket_comments', 'list', {
-        filter: { ticket_id: ticketId },
-        options: { order: 'created_at.asc', ...(options || {}) },
-      }),
-    create: (ticketId, payload) =>
-      this._sb('ticketComments.create', 'ticket_comments', 'create',
-        { payload: { ticket_id: ticketId, ...(payload || {}) } }),
-    update: (id, payload) =>
-      this._sb('ticketComments.update', 'ticket_comments', 'update', { id, payload }),
-    remove: (id) =>
-      this._sb('ticketComments.remove', 'ticket_comments', 'remove', { id }),
-  }
-
   // Daily standup rows — one per (author_email, date). Upsert merges on
   // the unique index from migration 0033 so idempotent re-submits replace.
   standups = {
@@ -994,9 +961,10 @@ export class WorkspaceProjectService extends BaseService {
     // chat_mentions — fired on @-mention insert addressed to userEmail.
     subscribeMentions: ({ userEmail } = {}, cb) =>
       this._realtimeSubscribe('chat.mentions', { userEmail }, cb),
-    // tickets — fired on ticket INSERT/UPDATE within the active workspace.
+    // tickets — @deprecated Use sdk.tickets.subscribe(filter, cb) instead.
+    // Delegates to TicketService.subscribe (SSE-based, Mongo-backed).
     subscribeTickets: (filter = {}, cb) =>
-      this._realtimeSubscribe('tickets', filter, cb),
+      this._context?.services?.tickets?.subscribe(filter, cb) || (() => {}),
     // notifications — fired on notification INSERT for the caller.
     subscribeNotifications: ({ userEmail } = {}, cb) =>
       this._realtimeSubscribe('notifications', { userEmail }, cb),
