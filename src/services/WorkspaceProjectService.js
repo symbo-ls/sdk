@@ -423,40 +423,11 @@ export class WorkspaceProjectService extends BaseService {
         }),
   }
 
-  // --- Documents (DEPRECATED — delegates to sdk.docs.*) ----------------------
-  // Phase 2 back-compat alias. Callers should migrate to sdk.docs.* directly.
-  // This getter will be removed in Phase 3 once workspace UI is repointed.
-  //
-  // resource-links are NOT migrated to docs — they are a separate concern and
-  // require a follow-up ticket to determine the correct new home.
-  /** @deprecated Use sdk.docs.list / sdk.docs.kbArticles.list / sdk.docs.notes.list */
-  get documents () {
-    const docs = this._context?.services?.docs
-    return {
-      list: (...a) => docs.list(...a),
-      get: (...a) => docs.get(...a),
-      create: (p) => docs.create(p?.payload || p),
-      update: (id, p) => docs.update(id, p?.payload || p),
-      remove: (id) => docs.remove(id),
-      listKb: () => docs.kbArticles.list(),
-      createKbArticle: (p) => docs.kbArticles.create(p?.payload || p),
-      updateKbArticle: (id, p) => docs.kbArticles.update(id, p?.payload || p),
-      listNotes: () => docs.notes.list(),
-      createNote: (p) => docs.notes.create(p?.payload || p),
-      // resource-links migrated to Mongo at /resource-links/*. New canonical
-      // surface: sdk.resourceLinks.{list, create, remove, removeByPair}.
-      // Aliases delegate for back-compat; drop in next cutover cycle.
-      listResourceLinks: (filter) => this._context?.services?.resourceLinks?.list(filter),
-      addResourceLink: (p) => this._context?.services?.resourceLinks?.create(p?.payload || p),
-      updateResourceLink: () => { throw new Error('[sdk] resource-links update is not supported — links are content-free junction rows; remove + recreate the pair instead') },
-      removeResourceLink: (id) => this._context?.services?.resourceLinks?.remove(id),
-      removeResourceLinkByPair: (p) => this._context?.services?.resourceLinks?.removeByPair(p?.payload || p),
-      listUserDocuments: (opts) => docs.userDocs.list(opts),
-      createUserDocument: (p) => docs.userDocs.create(p?.payload || p),
-      updateUserDocument: (id, p) => docs.userDocs.update(id, p?.payload || p),
-      removeUserDocument: (id) => docs.remove(id),
-    }
-  }
+  // Documents alias dropped — canonical surfaces are:
+  //   sdk.docs.{list,get,create,update,remove}
+  //   sdk.docs.{documents,kbArticles,notes,userDocs}.* — type-specific sugar
+  //   sdk.resourceLinks.{list,create,remove,removeByPair}
+  // workspace-project Supabase docs wrappers are gone; no back-compat alias.
 
   // --- Presence ---------------------------------------------------------------
   presence = {
