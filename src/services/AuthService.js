@@ -737,7 +737,7 @@ export class AuthService extends BaseService {
   async listMembers() {
     this._requireReady('listMembers')
     try {
-      const response = await this._request('/users/people', {
+      const response = await this._request('/users/members', {
         method: 'GET',
         methodName: 'listMembers'
       })
