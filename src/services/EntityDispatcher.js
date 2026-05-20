@@ -199,6 +199,23 @@ const ENTITY_ROUTES = {
     argMap: CRUD_ARG_MAP,
   },
 
+  // Release coordination (workspace + server + sdk) — the /tickets/release
+  // UI calls list/listUnreleased/create. No identifier args; `create` takes
+  // a payload that the server normalises (repos[], owner, notes).
+  'tickets.release': {
+    service: 'tickets',
+    methods: {
+      list: 'release.list',
+      listUnreleased: 'release.listUnreleased',
+      create: 'release.create',
+    },
+    argMap: {
+      list: (a) => [a || {}],
+      listUnreleased: (a) => [a || {}],
+      create: (a) => [a || {}],
+    },
+  },
+
   // ─── ResourceLinks (junction table, Mongo-backed) ───────────────────────────
   // Cross-resource associations between chat_channel / meet_room /
   // calendar_event rows. Pure flat shape; canonical ordering enforced

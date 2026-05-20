@@ -197,6 +197,46 @@ export class TicketService extends BaseService {
       })
   }
 
+  // ==================== RELEASE SUB-NAMESPACE ====================
+  //
+  // Cross-repo (workspace + server + sdk) GitHub Release coordination from
+  // the /tickets/release UI. The server route mints a github-sync App
+  // installation token, hits the GitHub Releases API for each repo, and
+  // stamps every shipped ticket with releaseId + releasedAt.
+
+  release = {
+    /**
+     * List tickets staged for the next release — state ∈ {done, ready_to_test}
+     * with no releaseId yet. Newest first.
+     */
+    listUnreleased: ({ limit } = {}) => {
+      const qs = limit ? `?limit=${encodeURIComponent(limit)}` : ''
+      return this._call('tickets.release.unreleased', `/tickets/release/unreleased${qs}`)
+    },
+
+    /**
+     * List past releases ordered by createdAt desc.
+     */
+    list: ({ limit, skip } = {}) => {
+      const params = new URLSearchParams()
+      if (limit) params.set('limit', String(limit))
+      if (skip) params.set('skip', String(skip))
+      const qs = params.toString()
+      return this._call('tickets.release.list', `/tickets/release${qs ? `?${qs}` : ''}`)
+    },
+
+    /**
+     * Cut a new release. The server reads each repo's package.json version,
+     * creates a GitHub Release at `v${version}`, and stamps every staged
+     * ticket with the new releaseId.
+     */
+    create: (payload = {}) =>
+      this._call('tickets.release.create', '/tickets/release', {
+        method: 'POST',
+        body: payload || {}
+      })
+  }
+
   // ==================== COLUMNS SUB-NAMESPACE ====================
 
   columns = {
