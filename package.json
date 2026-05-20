@@ -1,6 +1,6 @@
 {
   "name": "@symbo.ls/sdk",
-  "version": "3.14.137",
+  "version": "3.14.142",
   "type": "module",
   "source": "./src/index.js",
   "module": "./dist/esm/src/index.js",
@@ -76,8 +76,8 @@
   "dependencies": {
     "@symbo.ls/channels": "^3.14.105",
     "@symbo.ls/utils": "^3.14.105",
-    "@symbo.ls/analyzing": "^3.14.120",
-    "@symbo.ls/workspace-project-supabase": "^3.14.137",
+    "@symbo.ls/analyzing": "^3.14.142",
+    "@symbo.ls/workspace-project-supabase": "^3.14.142",
     "acorn": "^8.14.0",
     "acorn-walk": "^8.3.4",
     "chalk": "^5.4.1",
@@ -92,8 +92,8 @@
   },
   "peerDependencies": {
     "@supabase/supabase-js": "^2.0.0",
-    "@symbo.ls/sdk-bridge": "^3.14.105",
-    "@symbo.ls/sdk-supabase-bridge": "^3.14.105"
+    "@symbo.ls/sdk-bridge": "^3.14.142",
+    "@symbo.ls/sdk-supabase-bridge": "^3.14.142"
   },
   "peerDependenciesMeta": {
     "@supabase/supabase-js": {

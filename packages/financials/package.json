@@ -1,6 +1,6 @@
 {
   "name": "@symbo.ls/sdk-financials",
-  "version": "0.1.0",
+  "version": "3.14.142",
   "type": "module",
   "description": "Financials extension for @symbo.ls/sdk — equity grants, compensation, investor profiles, valuations. Opt-in per tenant via Organization.enabledExtensions[]. Backed by the separate financials Supabase project (bxhdvzwmvptgksqfkgqp) — accessed only through the main API at /core/financials/*; the SDK never speaks to Supabase directly.",
   "main": "./dist/cjs/src/index.cjs",
@@ -24,7 +24,7 @@
     "build": "rimraf dist && npm run build:esm && npm run build:cjs"
   },
   "peerDependencies": {
-    "@symbo.ls/sdk": "^3.14.137"
+    "@symbo.ls/sdk": "^3.14.142"
   },
   "publishConfig": {
     "access": "restricted"
