@@ -13,17 +13,21 @@
     },
     "./package.json": "./package.json"
   },
+  "types": "./dist/types/index.d.ts",
   "files": [
     "dist",
+    "tsconfig.json",
     "*.md",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "dist/**/*.d.ts"
   ],
   "scripts": {
     "test": "tape tests/*.test.js | tap-spec",
     "build:esm": "esbuild ./src/index.js --bundle --keep-names --target=es2022 --format=esm --outfile=dist/esm/src/index.js --minify --log-level=warning --external:@symbo.ls/* --external:@symbo-ls/* --external:@supabase/*",
     "build:cjs": "esbuild ./src/index.js --bundle --keep-names --target=node20 --format=cjs --outfile=dist/cjs/src/index.cjs --minify --log-level=warning --external:@symbo.ls/* --external:@symbo-ls/* --external:@supabase/*",
-    "build": "rimraf dist && npm run build:esm && npm run build:cjs",
+    "build:types": "tsc -p tsconfig.json",
+    "build": "rimraf dist && npm run build:esm && npm run build:cjs && npm run build:types",
     "prepublishOnly": "npm run build"
   },
   "peerDependencies": {

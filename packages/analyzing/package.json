@@ -13,17 +13,21 @@
     },
     "./package.json": "./package.json"
   },
+  "types": "./dist/types/index.d.ts",
   "files": [
     "dist",
+    "tsconfig.json",
     "*.md",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "dist/**/*.d.ts"
   ],
   "scripts": {
     "test": "node --test tests/*.test.js",
     "build:esm": "esbuild $(find . -type f -name \"*.js\" -not -path \"*/dist/*\" -not -path \"*/node_modules/*\" -not -path \"*/tests/*\" -not -name \"*.test.js\") --target=es2022 --format=esm --outbase=. --outdir=dist/esm --minify --log-level=warning",
     "build:cjs": "esbuild $(find . -type f -name \"*.js\" -not -path \"*/dist/*\" -not -path \"*/node_modules/*\" -not -path \"*/tests/*\" -not -name \"*.test.js\") --target=node20 --format=cjs --outbase=. --outdir=dist/cjs --out-extension:.js=.cjs --minify --log-level=warning",
-    "build": "rimraf dist && npm run build:esm && npm run build:cjs",
+    "build:types": "tsc -p tsconfig.json",
+    "build": "rimraf dist && npm run build:esm && npm run build:cjs && npm run build:types",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
