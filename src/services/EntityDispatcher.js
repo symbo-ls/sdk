@@ -816,11 +816,12 @@ const ENTITY_ROUTES = {
       reject: argMaps.id,
     },
   },
-  'workspaceProject.aiChat': {
-    service: 'workspaceProject',
-    methods: { rpc: 'ai.chat' },
-    argMap: { rpc: argMaps.payload },
-  },
+  // workspaceProject.aiChat retired 2026-05-20 — AI chat moved off
+  // Supabase entirely. Callers use sdk.aiChat.{completion,stream}
+  // (Mongo-backed; LLM call routed through the Symbols Service Railway
+  // proxy). See sdk/src/services/AiChatService.js + the 'aiChat.*'
+  // entries above.
+  //
   // Meet-analyze AI summarization. Mapped to the dedicated server-side
   // ai.meetAnalyze method so consumers don't need to thread `kind` through
   // the generic ai.chat payload. Replaces direct fetch('/functions/v1/meet-analyze').
