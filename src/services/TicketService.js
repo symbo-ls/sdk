@@ -287,6 +287,25 @@ export class TicketService extends BaseService {
     update: (ticketId, payload, opts) => this.update(ticketId, payload, opts)
   }
 
+  // ==================== RESOLUTIONS ====================
+
+  /**
+   * List resolved tickets — done tickets with a non-null resolution blob.
+   * Server-side equivalent of the former Supabase v_resolutions view.
+   *
+   * @param {object} [opts]
+   * @param {number} [opts.limit=100]
+   * @param {number} [opts.skip=0]
+   * @returns {Promise<Array>} Array of resolution row objects
+   */
+  resolutions ({ limit = 100, skip = 0 } = {}) {
+    const params = new URLSearchParams()
+    if (limit !== 100) params.set('limit', String(limit))
+    if (skip) params.set('skip', String(skip))
+    const qs = params.toString()
+    return this._call('tickets.resolutions', `/tickets/resolutions${qs ? `?${qs}` : ''}`)
+  }
+
   // ==================== REALTIME / SSE SUBSCRIPTION ====================
 
   /**
