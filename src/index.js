@@ -30,7 +30,7 @@ import {
   workspaceProjectBaseUrl,
   createSupabasePassthroughConfig,
   workspaceProjectEdgeFunctionUrl,
-  governanceSessionAccessToken
+  workspaceExtensionSessionAccessToken
 } from './services/index.js'
 
 import { SERVICE_METHODS } from './utils/services.js'
@@ -626,12 +626,17 @@ export {
   workspaceProjectBaseUrl,
   createSupabasePassthroughConfig,
   workspaceProjectEdgeFunctionUrl,
-  governanceSessionAccessToken
+  workspaceExtensionSessionAccessToken
 } from './services/index.js'
 
 // Re-export entity dispatcher helpers so external packages (e.g. plugins
 // extending the fetch adapter) can add their own routes at boot.
 export { registerEntity, createEntityDispatcher } from './services/EntityDispatcher.js'
+
+// Re-export BaseService so opt-in extension packages (e.g.
+// @symbo.ls/sdk-financials) can subclass it without depending on the
+// SDK's internal path layout.
+export { BaseService } from './services/BaseService.js'
 
 // Export environment configuration
 export { default as environment } from './config/environment.js'

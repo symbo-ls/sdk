@@ -32,7 +32,7 @@ import {
   workspaceProjectBaseUrl,
   createSupabasePassthroughConfig,
   workspaceProjectEdgeFunctionUrl,
-  governanceSessionAccessToken,
+  workspaceExtensionSessionAccessToken,
 } from '@symbo.ls/workspace-project-supabase'
 import { AllocationRuleService } from './AllocationRuleService.js'
 import { SharedAssetService } from './SharedAssetService.js'
@@ -154,7 +154,7 @@ export {
   workspaceProjectBaseUrl,
   createSupabasePassthroughConfig,
   workspaceProjectEdgeFunctionUrl,
-  governanceSessionAccessToken,
+  workspaceExtensionSessionAccessToken,
   AiChatService,
   DocService,
   TicketService,

@@ -271,7 +271,6 @@ const ENTITY_ROUTES = {
     methods: { rpc: 'meetAnalyze' },
     argMap: { rpc: argMaps.payload },
   },
-
   // ─── Analyzed (AnalyzedService — Mongo-backed visitor telemetry) ────────────
   // /core/analyzed/* on the main API server. Peer to sdk.docs / sdk.tickets.
   // Replaces the workspaceProject.analyzed* Supabase surface — see

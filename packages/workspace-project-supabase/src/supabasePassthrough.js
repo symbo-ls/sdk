@@ -62,7 +62,7 @@ const _supabaseStorageKey = (rawSupabaseUrl) => {
 // Public — single source of truth for "is the user signed in via the
 // governance Supabase project?". Used by the workspace token provider
 // and any auth diagnostic that needs the federated JWT directly.
-export const governanceSessionAccessToken = (rawSupabaseUrl) =>
+export const workspaceExtensionSessionAccessToken = (rawSupabaseUrl) =>
   _readToken(_supabaseStorageKey(rawSupabaseUrl))
 
 const _createAdapterClient = async ({ url, anonKey, rawSupabaseUrl, getRealtimeClient }) => {

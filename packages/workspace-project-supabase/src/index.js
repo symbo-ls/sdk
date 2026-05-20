@@ -21,5 +21,5 @@ export {
 export {
   createSupabasePassthroughConfig,
   workspaceProjectEdgeFunctionUrl,
-  governanceSessionAccessToken
+  workspaceExtensionSessionAccessToken
 } from './supabasePassthrough.js'

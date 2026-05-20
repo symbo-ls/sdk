@@ -1,0 +1,42 @@
+{
+  "name": "@symbo.ls/sdk-financials",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Financials extension for @symbo.ls/sdk — equity grants, compensation, investor profiles, valuations. Opt-in per tenant via Organization.enabledExtensions[]. Backed by the separate financials Supabase project (bxhdvzwmvptgksqfkgqp) — accessed only through the main API at /core/financials/*; the SDK never speaks to Supabase directly.",
+  "main": "./dist/cjs/src/index.cjs",
+  "exports": {
+    ".": {
+      "development": "./src/index.js",
+      "import": "./dist/esm/src/index.js",
+      "require": "./dist/cjs/src/index.cjs",
+      "default": "./dist/esm/src/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build:esm": "esbuild ./src/index.js --bundle --keep-names --target=es2022 --format=esm --outfile=dist/esm/src/index.js --log-level=warning --external:@symbo.ls/*",
+    "build:cjs": "esbuild ./src/index.js --bundle --keep-names --target=node20 --format=cjs --outfile=dist/cjs/src/index.cjs --log-level=warning --external:@symbo.ls/*",
+    "build": "rimraf dist && npm run build:esm && npm run build:cjs"
+  },
+  "peerDependencies": {
+    "@symbo.ls/sdk": "^3.14.137"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "keywords": [
+    "symbols",
+    "sdk-extension",
+    "financials",
+    "equity",
+    "compensation"
+  ],
+  "author": "Symbols Inc.",
+  "license": "UNLICENSED"
+}
