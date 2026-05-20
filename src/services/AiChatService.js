@@ -82,6 +82,23 @@ export class AiChatService extends BaseService {
   stream (payload, { onChunk, onDone, onError } = {}) {
     return this._streamPost('/ai-chat/stream', { payload }, { onChunk, onDone, onError })
   }
+
+  // ==================== MEET-ANALYZE ====================
+
+  // Extract actionable items + summary from a meeting transcript.
+  // Replaces the legacy Supabase meet-analyze edge function. Returns the
+  // analysis record { room_id, workspace_id, summary, suggestions:{…},
+  // model, generated_at } OR { pending: true, reason: 'no_transcript' }
+  // when the room has no transcript yet — matches the legacy shape so
+  // analyzeTranscript.js consumers don't have to change.
+  //
+  // payload: { roomId, force? }
+  meetAnalyze (payload) {
+    return this._call('aiChat.meetAnalyze', '/ai-chat/meet-analyze', {
+      method: 'POST',
+      body: { payload }
+    })
+  }
 }
 
 export const createAiChatService = (config) => new AiChatService(config)

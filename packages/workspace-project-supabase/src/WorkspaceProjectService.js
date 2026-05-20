@@ -699,15 +699,13 @@ export class WorkspaceProjectService extends BaseService {
       }),
   }
 
-  // --- AI (workspace-scoped chat / analysis edge fns) ------------------------
-  // Replaces direct fetch(`/functions/v1/ai-chat`, …) and meet-analyze /
-  // meet-token edge calls scattered across the workspace UI.
-  ai = {
-    chat: (payload) =>
-      this._ws('ai.chat', '/ai/chat', { method: 'POST', body: { payload } }),
-    meetAnalyze: (payload) =>
-      this._ws('ai.meetAnalyze', '/ai/meet-analyze', { method: 'POST', body: { payload } }),
-  }
+  // --- AI surface retired 2026-05-20 -----------------------------------------
+  // Both ai.chat and ai.meetAnalyze moved off Supabase. All AI inference
+  // now lives on the main server at /core/ai-chat/*. Use:
+  //   sdk.aiChat.completion(payload)
+  //   sdk.aiChat.stream(payload, callbacks)
+  //   sdk.aiChat.meetAnalyze({ roomId, force })
+  // See sdk/src/services/AiChatService.js.
 
   // --- Agent walkie-talkie (Simona ↔ Chuvaka) — passthrough-routed ---------
   // Routes through /workspace/sb/rest/v1/agent_messages (RLS-scoped). Browser
