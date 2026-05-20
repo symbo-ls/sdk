@@ -27,7 +27,6 @@
     "@symbo.ls/sdk": "^3.14.137"
   },
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com",
     "access": "restricted"
   },
   "keywords": [
