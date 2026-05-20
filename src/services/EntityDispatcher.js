@@ -100,6 +100,16 @@ const ENTITY_ROUTES = {
     methods: { list: 'getPermissions' },
   },
 
+  // Intranet members list — replaces 'workspaceProject.people' (Supabase
+  // view). Joins Mongo User identity + workspace-extension/user_profiles
+  // HR fields server-side. UI consumers swap `sdk.execute('workspace
+  // Project.people', 'list')` → `sdk.execute('users.people', 'list')`.
+  'users.people': {
+    service: 'auth',
+    methods: { list: 'listPeople' },
+    argMap: { list: () => [] },
+  },
+
   // ─── Organization (top-level tenant) ──────────────────────────────────────
   'organization': {
     service: 'organization',

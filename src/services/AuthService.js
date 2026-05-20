@@ -725,6 +725,29 @@ export class AuthService extends BaseService {
     }
   }
 
+  // List intranet members (cross-tenant) with HR profile merged.
+  // Replaces the legacy `workspaceProject.people.list()` path that read
+  // from the Supabase public.people view. Identity fields (email, name,
+  // avatar, timezone, status) come from canonical Mongo User; HR fields
+  // (department, position, location, github, working_hours_*, …) come
+  // from workspace-extension/user_profiles via service-role.
+  //
+  // UI consumers should treat this as a drop-in for the legacy shape —
+  // the row shape matches the old people-view rows exactly.
+  async listPeople() {
+    this._requireReady('listPeople')
+    try {
+      const response = await this._request('/users/people', {
+        method: 'GET',
+        methodName: 'listPeople'
+      })
+      if (response?.success) return response.data
+      return response?.data || response
+    } catch (error) {
+      throw new Error(`Failed to list people: ${error.message}`, { cause: error })
+    }
+  }
+
   async getUserByEmail(email) {
     this._requireReady('getUserByEmail')
     if (!email) {
