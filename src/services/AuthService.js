@@ -734,12 +734,12 @@ export class AuthService extends BaseService {
   //
   // UI consumers should treat this as a drop-in for the legacy shape —
   // the row shape matches the old people-view rows exactly.
-  async listPeople() {
-    this._requireReady('listPeople')
+  async listMembers() {
+    this._requireReady('listMembers')
     try {
       const response = await this._request('/users/people', {
         method: 'GET',
-        methodName: 'listPeople'
+        methodName: 'listMembers'
       })
       if (response?.success) return response.data
       return response?.data || response

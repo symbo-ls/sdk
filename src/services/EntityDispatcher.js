@@ -103,10 +103,10 @@ const ENTITY_ROUTES = {
   // Intranet members list — replaces 'workspaceProject.people' (Supabase
   // view). Joins Mongo User identity + workspace-extension/user_profiles
   // HR fields server-side. UI consumers swap `sdk.execute('workspace
-  // Project.people', 'list')` → `sdk.execute('users.people', 'list')`.
-  'users.people': {
+  // Project.people', 'list')` → `sdk.execute('users.members', 'list')`.
+  'users.members': {
     service: 'auth',
-    methods: { list: 'listPeople' },
+    methods: { list: 'listMembers' },
     argMap: { list: () => [] },
   },
 
