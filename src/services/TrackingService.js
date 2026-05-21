@@ -708,11 +708,26 @@ export class TrackingService extends BaseService {
       ...contextGlobalAttributes
     })
 
+    // workspaceId identifies which tenant the telemetry attributes to —
+    // a CROSS-TENANT axis independent of the signed-in user's
+    // activeOrganization. Each consumer (workspace shell for the Symbols
+    // platform, third-party SDK consumers for their own apps) passes
+    // its own value at init time. Stamped into envelope.workspace_id by
+    // _resolveTransport so the server can route it without guessing
+    // (server-side OrgMember auto-pick would mis-attribute when the
+    // signed-in user belongs to multiple tenants).
+    const workspaceId =
+      merged.workspaceId ||
+      contextConfig.workspaceId ||
+      this._trackingOptions.workspaceId ||
+      null
+
     return {
       appName,
       appVersion,
       environment: environmentName,
       globalAttributes,
+      workspaceId,
       sessionTracking: merged.sessionTracking !== false,
       enableTracing: merged.enableTracing !== false,
       transport: typeof merged.transport === 'function' ? merged.transport : null,
@@ -736,13 +751,24 @@ export class TrackingService extends BaseService {
   // route by passing their own `tracking.transport` in options; otherwise
   // the envelope flows through the same workspace-project worker every
   // other workspace SDK call uses.
+  //
+  // Stamps `workspace_id` from runtimeConfig.workspaceId onto every
+  // outbound envelope unless the caller already set one. The server's
+  // /core/analyzed/ingest route reads this field as the scope when the
+  // request isn't authenticated (or when the signed-in user's
+  // activeOrganization is null), so the frontend is the one deciding
+  // which tenant the telemetry attributes to — never the server.
   _resolveTransport (runtimeConfig) {
     if (typeof runtimeConfig.transport === 'function') return runtimeConfig.transport
+    const stampWorkspace = (envelope) =>
+      runtimeConfig.workspaceId
+        ? { ...envelope, workspace_id: envelope?.workspace_id || runtimeConfig.workspaceId }
+        : envelope
     return async (envelope) => {
       try {
         const wp = this._context?.services?.workspaceProject
         if (!wp?.analyzed?.ingest) return { ok: false }
-        const res = await wp.analyzed.ingest(envelope)
+        const res = await wp.analyzed.ingest(stampWorkspace(envelope))
         return { ok: !res?.error }
       } catch (error) {
         logger.warn('[TrackingService] transport failed:', error?.message || error)
