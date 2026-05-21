@@ -206,12 +206,22 @@ export class TicketService extends BaseService {
 
   release = {
     /**
-     * List tickets staged for the next release — state ∈ {done, ready_to_test}
-     * with no releaseId yet. Newest first.
+     * Stage 1 — tickets queued for the next main→release promotion.
+     * state=ready_to_test (merged to main, awaiting QA on the
+     * main→release preview). Newest first.
      */
-    listUnreleased: ({ limit } = {}) => {
+    listForStaging: ({ limit } = {}) => {
       const qs = limit ? `?limit=${encodeURIComponent(limit)}` : ''
-      return this._call('tickets.release.unreleased', `/tickets/release/unreleased${qs}`)
+      return this._call('tickets.release.staging', `/tickets/release/staging${qs}`)
+    },
+
+    /**
+     * Stage 2 — tickets queued for `gh release create` (state=done,
+     * already on the release branch / live on staging, no releaseId yet).
+     */
+    listForProd: ({ limit } = {}) => {
+      const qs = limit ? `?limit=${encodeURIComponent(limit)}` : ''
+      return this._call('tickets.release.prod', `/tickets/release/prod${qs}`)
     },
 
     /**
@@ -226,9 +236,10 @@ export class TicketService extends BaseService {
     },
 
     /**
-     * Cut a new release. The server reads each repo's package.json version,
-     * creates a GitHub Release at `v${version}`, and stamps every staged
-     * ticket with the new releaseId.
+     * Cut a prod release across workspace + server + sdk. The server
+     * reads each repo's package.json version on main, creates a GitHub
+     * Release at `v${version}`, and stamps every Stage-2 ticket with
+     * releaseId + releasedAt + state→`released`.
      */
     create: (payload = {}) =>
       this._call('tickets.release.create', '/tickets/release', {

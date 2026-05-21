@@ -199,19 +199,24 @@ const ENTITY_ROUTES = {
     argMap: CRUD_ARG_MAP,
   },
 
-  // Release coordination (workspace + server + sdk) — the /tickets/release
-  // UI calls list/listUnreleased/create. No identifier args; `create` takes
-  // a payload that the server normalises (repos[], owner, notes).
+  // Release coordination (workspace + server + sdk). Two-stage flow on
+  // the /tickets/release UI:
+  //   listForStaging — tickets queued for main→release promotion
+  //   listForProd    — tickets queued for `gh release create`
+  //   list           — past releases (history)
+  //   create         — cut a prod release (payload: { repos[], owner, notes })
   'tickets.release': {
     service: 'tickets',
     methods: {
       list: 'release.list',
-      listUnreleased: 'release.listUnreleased',
+      listForStaging: 'release.listForStaging',
+      listForProd: 'release.listForProd',
       create: 'release.create',
     },
     argMap: {
       list: (a) => [a || {}],
-      listUnreleased: (a) => [a || {}],
+      listForStaging: (a) => [a || {}],
+      listForProd: (a) => [a || {}],
       create: (a) => [a || {}],
     },
   },
