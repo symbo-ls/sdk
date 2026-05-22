@@ -82,6 +82,23 @@ export class WorkspaceProjectService extends BaseService {
     const init = { method, headers: { ...(headers || {}) }, methodName }
     if (body !== undefined) init.body = JSON.stringify(body)
     init.authHeader = await this._resolveAuthHeader()
+    // Architectural gate: workspace-project routes ALWAYS require a
+    // bearer token (the wrapper's authenticate() rejects anonymous
+    // requests with 401 `missing bearer token` — there's no public
+    // surface here). When neither the federated tokenProvider NOR the
+    // SDK TokenManager has one, firing the request is guaranteed to
+    // produce a console 401 with no useful information. Surface a
+    // structured "not authenticated" rejection instead so callers can
+    // wait for auth to land, render an empty state, or retry — same
+    // shape as the wrapper's `invalid_token` envelope so error-handling
+    // doesn't have to branch on local-vs-server origin.
+    if (!init.authHeader) {
+      const err = new Error('[workspaceProject] not authenticated — no bearer token available')
+      err.code = 'invalid_token'
+      err.status = 401
+      err.local = true
+      throw err
+    }
     return this._requestExternal(url, init)
   }
 
