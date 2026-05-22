@@ -245,6 +245,22 @@ export class TicketService extends BaseService {
       this._call('tickets.release.create', '/tickets/release', {
         method: 'POST',
         body: payload || {}
+      }),
+
+    /**
+     * Stage-1 promote — open `main → release` PRs across each repo
+     * via the github-sync App installation token. Idempotent at the
+     * head/base pair; re-running returns the existing open PR per
+     * repo. Manager-gated server-side (owner / co-owner / admin /
+     * maintainer); non-managers get 403 manager_role_required.
+     *
+     * Payload: { repos?: string[], owner?: string }
+     * Returns: { repos: [{repo, owner, status, prUrl, prNumber, error?}] }
+     */
+    promoteToStaging: (payload = {}) =>
+      this._call('tickets.release.promoteToStaging', '/tickets/release/promote-staging', {
+        method: 'POST',
+        body: payload || {}
       })
   }
 

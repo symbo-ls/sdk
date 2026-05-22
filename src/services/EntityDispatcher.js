@@ -212,12 +212,14 @@ const ENTITY_ROUTES = {
       listForStaging: 'release.listForStaging',
       listForProd: 'release.listForProd',
       create: 'release.create',
+      promoteToStaging: 'release.promoteToStaging',
     },
     argMap: {
       list: (a) => [a || {}],
       listForStaging: (a) => [a || {}],
       listForProd: (a) => [a || {}],
       create: (a) => [a || {}],
+      promoteToStaging: (a) => [a || {}],
     },
   },
 
