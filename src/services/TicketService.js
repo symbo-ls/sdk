@@ -248,6 +248,72 @@ export class TicketService extends BaseService {
       })
   }
 
+  // ==================== CYCLE SUB-NAMESPACE ====================
+  //
+  // Roadmap planning groups surfaced on /tickets/roadmap. Manager-defined
+  // windows that own a set of tickets via Ticket.cycleId. Mutating calls
+  // require the caller to hold an ORG_MGMT_ROLES baseTier on the active
+  // org (enforced server-side).
+
+  cycle = {
+    /**
+     * List cycles for the active org, newest active first, then
+     * planned/released/archived. Each row carries completion stats
+     * (ticketCount, doneCount, completionPct).
+     */
+    list: ({ limit } = {}) => {
+      const qs = limit ? `?limit=${encodeURIComponent(limit)}` : ''
+      return this._call('tickets.cycle.list', `/tickets/cycle${qs}`)
+    },
+
+    /** Single cycle by id, with completion stats. */
+    get: (cycleId) =>
+      this._call('tickets.cycle.get', `/tickets/cycle/${encodeURIComponent(cycleId)}`),
+
+    /** Create a cycle. Payload: { name, slug?, description?, startsAt?, endsAt?, status? }. */
+    create: (payload = {}) =>
+      this._call('tickets.cycle.create', '/tickets/cycle', {
+        method: 'POST',
+        body: payload || {}
+      }),
+
+    /** Update cycle metadata. Payload accepts name/description/startsAt/endsAt/slug. */
+    update: (cycleId, payload = {}) =>
+      this._call('tickets.cycle.update', `/tickets/cycle/${encodeURIComponent(cycleId)}`, {
+        method: 'PUT',
+        body: payload || {}
+      }),
+
+    /** Promote cycle to `active`. Atomically demotes any other active cycle in the org. */
+    activate: (cycleId) =>
+      this._call('tickets.cycle.activate', `/tickets/cycle/${encodeURIComponent(cycleId)}/activate`, {
+        method: 'POST'
+      }),
+
+    /** Archive cycle. Tickets retain their cycleId so history is preserved. */
+    archive: (cycleId) =>
+      this._call('tickets.cycle.archive', `/tickets/cycle/${encodeURIComponent(cycleId)}/archive`, {
+        method: 'POST'
+      }),
+
+    /** List tickets attached to a cycle. */
+    listTickets: (cycleId) =>
+      this._call('tickets.cycle.tickets.list', `/tickets/cycle/${encodeURIComponent(cycleId)}/tickets`),
+
+    /** Attach a ticket to the cycle. Pass the human ticketId (e.g. 'TICKET-42'). */
+    addTicket: (cycleId, ticketId) =>
+      this._call('tickets.cycle.tickets.add', `/tickets/cycle/${encodeURIComponent(cycleId)}/tickets`, {
+        method: 'POST',
+        body: { ticketId }
+      }),
+
+    /** Detach a ticket from the cycle. */
+    removeTicket: (cycleId, ticketId) =>
+      this._call('tickets.cycle.tickets.remove', `/tickets/cycle/${encodeURIComponent(cycleId)}/tickets/${encodeURIComponent(ticketId)}`, {
+        method: 'DELETE'
+      })
+  }
+
   // ==================== COLUMNS SUB-NAMESPACE ====================
 
   columns = {

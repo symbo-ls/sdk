@@ -221,6 +221,35 @@ const ENTITY_ROUTES = {
     },
   },
 
+  // Roadmap planning cycles. Surfaced on /tickets/roadmap. Tickets attach
+  // to a cycle via Ticket.cycleId (mirrors releaseId). Mutating ops are
+  // gated server-side to ORG_MGMT_ROLES.
+  'tickets.cycle': {
+    service: 'tickets',
+    methods: {
+      list: 'cycle.list',
+      get: 'cycle.get',
+      create: 'cycle.create',
+      update: 'cycle.update',
+      activate: 'cycle.activate',
+      archive: 'cycle.archive',
+      listTickets: 'cycle.listTickets',
+      addTicket: 'cycle.addTicket',
+      removeTicket: 'cycle.removeTicket',
+    },
+    argMap: {
+      list: (a) => [a || {}],
+      get: (a) => [a?.cycleId ?? a?.id ?? a],
+      create: (a) => [a?.payload ?? a],
+      update: (a) => [a?.cycleId ?? a?.id, a?.payload ?? a],
+      activate: (a) => [a?.cycleId ?? a?.id ?? a],
+      archive: (a) => [a?.cycleId ?? a?.id ?? a],
+      listTickets: (a) => [a?.cycleId ?? a?.id ?? a],
+      addTicket: (a) => [a?.cycleId ?? a?.id, a?.ticketId],
+      removeTicket: (a) => [a?.cycleId ?? a?.id, a?.ticketId],
+    },
+  },
+
   // ─── ResourceLinks (junction table, Mongo-backed) ───────────────────────────
   // Cross-resource associations between chat_channel / meet_room /
   // calendar_event rows. Pure flat shape; canonical ordering enforced
