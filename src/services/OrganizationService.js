@@ -55,8 +55,20 @@ export class OrganizationService extends BaseService {
       // or single object (always taken).
       if (response?.success === false) return null
       const data = response?.data ?? response
-      if (Array.isArray(data)) return data.length === 0
-      if (data && (data.id || data.slug)) return false
+
+      // SERVER-ORG-SLUG-CHECK-FILTER-IGNORED — defensive: confirm the
+      // returned row(s) actually carry the slug we asked about. The
+      // /organizations endpoint historically returned the caller's full
+      // membership list regardless of `?slug=…`, which made every
+      // create-org attempt fail with "slug taken" once the user
+      // belonged to any org. Compare on the canonical lowercase slug.
+      const wanted = String(slug).toLowerCase()
+      const matches = (row) =>
+        row && typeof row === 'object' &&
+        String(row.slug || '').toLowerCase() === wanted
+
+      if (Array.isArray(data)) return !data.some(matches)
+      if (data && (data.id || data.slug)) return !matches(data)
       return true
     } catch (err) {
       // 404 → slug is free; everything else → check failed.
