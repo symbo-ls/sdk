@@ -748,6 +748,24 @@ export class AuthService extends BaseService {
     }
   }
 
+  // §unified-perms PR #10 (2026-05-23) — agent roster from Mongo.
+  // Returns User docs with kind === 'agent'. Replaces the hardcoded
+  // SEED_AGENTS array on /team-and-agents so adding/removing an agent
+  // is a server-side data op, not a client redeploy.
+  async listAgents() {
+    this._requireReady('listAgents')
+    try {
+      const response = await this._request('/users/agents', {
+        method: 'GET',
+        methodName: 'listAgents'
+      })
+      if (response?.success) return response.data
+      return response?.data || response
+    } catch (error) {
+      throw new Error(`Failed to list agents: ${error.message}`, { cause: error })
+    }
+  }
+
   async getUserByEmail(email) {
     this._requireReady('getUserByEmail')
     if (!email) {

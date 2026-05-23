@@ -65,6 +65,7 @@ export const SERVICE_METHODS = {
   getUserProjects: 'auth',
   getUser: 'auth',
   getUserByEmail: 'auth',
+  listAgents: 'auth',
 
   // Project methods (moved to project service)
   createProject: 'project',
