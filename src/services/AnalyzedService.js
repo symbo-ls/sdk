@@ -89,6 +89,34 @@ export class AnalyzedService extends BaseService {
     return this._call('analyzed.activeUsers', `/analyzed/active-users${qs ? `?${qs}` : ''}`)
   }
 
+  // GET /core/analyzed/changes?range=<filter.range>
+  // Monthly signups/activity over a range (defaults to last 12 months).
+  // Returns { monthly: [{label, count}] }.
+  changes (filter = {}) {
+    const qs = filter.range ? `?range=${encodeURIComponent(filter.range)}` : ''
+    return this._call('analyzed.changes', `/analyzed/changes${qs}`)
+  }
+
+  // GET /core/analyzed/demographics
+  // Country-level visitor breakdown. Returns { countries: [{country, count, code}] }.
+  demographics () {
+    return this._call('analyzed.demographics', '/analyzed/demographics')
+  }
+
+  // GET /core/analyzed/now
+  // Real-time dashboard snapshot. Returns { usersNow, usersToday, hourly: [{hour, count}],
+  // activeSessions: [{id, name, email, awake, browser, os, resolution, location,
+  // duration, sessionCount, path, updates, ip, referrer}] }.
+  now () {
+    return this._call('analyzed.now', '/analyzed/now')
+  }
+
+  // GET /core/analyzed/weekly
+  // Week-over-week comparison. Returns { pastWeek: [{label, count}], thisWeek: [{label, count}] }.
+  weekly () {
+    return this._call('analyzed.weekly', '/analyzed/weekly')
+  }
+
   // GET /core/analyzed/bugs?projectId=&since=&limit=&offset=
   // Bug clusters — $group by message, sorted by frequency desc.
   listBugs (filter = {}, options = {}) {
