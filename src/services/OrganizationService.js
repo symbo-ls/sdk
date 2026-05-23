@@ -340,13 +340,22 @@ export class OrganizationService extends BaseService {
     throw new Error(response.message)
   }
 
-  async updateTeamMember (orgId, teamId, teamMemberId, { role }) {
+  async updateTeamMember (orgId, teamId, teamMemberId, body = {}) {
     this._requireReady('updateTeamMember')
     if (!orgId || !teamId || !teamMemberId) throw new Error('orgId, teamId and teamMemberId are required')
 
+    // Forward whitelisted fields verbatim — server validates each.
+    // §unified-perms PR #13 — `status` ('active' | 'passive') joins
+    // `teamRole` as a mutable field. Legacy `role` key remaps to
+    // `teamRole` for back-compat with the original destructured shape.
+    const payload = {}
+    if (Object.prototype.hasOwnProperty.call(body, 'teamRole')) payload.teamRole = body.teamRole
+    else if (Object.prototype.hasOwnProperty.call(body, 'role')) payload.teamRole = body.role
+    if (Object.prototype.hasOwnProperty.call(body, 'status')) payload.status = body.status
+
     const response = await this._request(`/organizations/${orgId}/teams/${teamId}/members/${teamMemberId}`, {
       method: 'PATCH',
-      body: JSON.stringify({ role }),
+      body: JSON.stringify(payload),
       methodName: 'updateTeamMember'
     })
     if (response.success) return response.data
