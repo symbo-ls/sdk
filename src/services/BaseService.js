@@ -189,8 +189,22 @@ export class BaseService {
         endpoint,
         methodName: options.methodName
       })
-      const wrapped = new Error(`Request failed: ${error.message}`, { cause: error })
+      // Network-layer failure (`TypeError: Failed to fetch`) loses the
+      // host/endpoint context by the time it surfaces to the UI. Wrap
+      // it with a diagnostic-friendly message — most callers see
+      // "Request failed: Failed to fetch" and have no idea what URL
+      // failed or whether the issue is theirs (VPN / DNS / firewall /
+      // adblocker) vs. ours. Preserve `cause` so devtools can still
+      // walk the original TypeError chain.
+      const isNetworkFailure =
+        error instanceof TypeError &&
+        /failed to fetch|networkerror|load failed/i.test(error.message || '')
+      const msg = isNetworkFailure
+        ? `Network unreachable for ${url} — check connection / VPN / DNS / adblocker. (${error.message})`
+        : `Request failed: ${error.message}`
+      const wrapped = new Error(msg, { cause: error })
       if (error?.status) wrapped.status = error.status
+      if (isNetworkFailure) wrapped.code = 'NETWORK_UNREACHABLE'
       throw wrapped
     }
   }
@@ -247,7 +261,17 @@ export class BaseService {
     } catch (error) {
       this._trackServiceError(error, { endpoint: url, methodName })
       if (error?.status) throw error
-      const wrapped = new Error(`Request failed: ${error.message}`, { cause: error })
+      // Same network-vs-HTTP distinction as `_request` above so off-core
+      // wrappers (workspace-project, KV worker, Supabase passthrough)
+      // surface the same diagnostic on TLS/DNS/firewall failures.
+      const isNetworkFailure =
+        error instanceof TypeError &&
+        /failed to fetch|networkerror|load failed/i.test(error.message || '')
+      const msg = isNetworkFailure
+        ? `Network unreachable for ${url} — check connection / VPN / DNS / adblocker. (${error.message})`
+        : `Request failed: ${error.message}`
+      const wrapped = new Error(msg, { cause: error })
+      if (isNetworkFailure) wrapped.code = 'NETWORK_UNREACHABLE'
       throw wrapped
     }
   }
