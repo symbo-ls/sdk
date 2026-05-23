@@ -2,6 +2,28 @@ import environment from '../config/environment.js'
 import { getTokenManager } from '../utils/TokenManager.js'
 import { logger } from '../utils/logger.js'
 
+// Network-vs-HTTP distinction for fetch failures. A `TypeError: Failed
+// to fetch` (DNS / TLS / firewall / adblocker / offline) loses host
+// context by the time it surfaces to the UI. Detecting it lets us
+// surface a diagnostic-friendly message + `code: 'NETWORK_UNREACHABLE'`
+// for programmatic branching (retry-once, network-down panel, …) while
+// keeping HTTP errors on their existing path.
+export const NETWORK_UNREACHABLE = 'NETWORK_UNREACHABLE'
+const _NETWORK_RX = /failed to fetch|networkerror|load failed/i
+const _isNetworkFailure = (err) =>
+  err instanceof TypeError && _NETWORK_RX.test(err?.message || '')
+
+const _wrapRequestError = (error, url) => {
+  const network = _isNetworkFailure(error)
+  const msg = network
+    ? `Network unreachable for ${url} — check connection / VPN / DNS / adblocker. (${error.message})`
+    : `Request failed: ${error.message}`
+  const wrapped = new Error(msg, { cause: error })
+  if (error?.status) wrapped.status = error.status
+  if (network) wrapped.code = NETWORK_UNREACHABLE
+  return wrapped
+}
+
 export class BaseService {
   constructor ({ context, options } = {}) {
     this._context = context || {}
@@ -184,28 +206,8 @@ export class BaseService {
 
       return response.status === 204 ? null : response.json()
     } catch (error) {
-      // Track network/other request errors before rethrowing
-      this._trackServiceError(error, {
-        endpoint,
-        methodName: options.methodName
-      })
-      // Network-layer failure (`TypeError: Failed to fetch`) loses the
-      // host/endpoint context by the time it surfaces to the UI. Wrap
-      // it with a diagnostic-friendly message — most callers see
-      // "Request failed: Failed to fetch" and have no idea what URL
-      // failed or whether the issue is theirs (VPN / DNS / firewall /
-      // adblocker) vs. ours. Preserve `cause` so devtools can still
-      // walk the original TypeError chain.
-      const isNetworkFailure =
-        error instanceof TypeError &&
-        /failed to fetch|networkerror|load failed/i.test(error.message || '')
-      const msg = isNetworkFailure
-        ? `Network unreachable for ${url} — check connection / VPN / DNS / adblocker. (${error.message})`
-        : `Request failed: ${error.message}`
-      const wrapped = new Error(msg, { cause: error })
-      if (error?.status) wrapped.status = error.status
-      if (isNetworkFailure) wrapped.code = 'NETWORK_UNREACHABLE'
-      throw wrapped
+      this._trackServiceError(error, { endpoint, methodName: options.methodName })
+      throw _wrapRequestError(error, url)
     }
   }
 
@@ -261,18 +263,7 @@ export class BaseService {
     } catch (error) {
       this._trackServiceError(error, { endpoint: url, methodName })
       if (error?.status) throw error
-      // Same network-vs-HTTP distinction as `_request` above so off-core
-      // wrappers (workspace-project, KV worker, Supabase passthrough)
-      // surface the same diagnostic on TLS/DNS/firewall failures.
-      const isNetworkFailure =
-        error instanceof TypeError &&
-        /failed to fetch|networkerror|load failed/i.test(error.message || '')
-      const msg = isNetworkFailure
-        ? `Network unreachable for ${url} — check connection / VPN / DNS / adblocker. (${error.message})`
-        : `Request failed: ${error.message}`
-      const wrapped = new Error(msg, { cause: error })
-      if (isNetworkFailure) wrapped.code = 'NETWORK_UNREACHABLE'
-      throw wrapped
+      throw _wrapRequestError(error, url)
     }
   }
 
