@@ -473,6 +473,14 @@ export const SERVICE_METHODS = {
   listAssets: 'sharedAsset',
   getAsset: 'sharedAsset',
   updateAsset: 'sharedAsset',
-  deleteAsset: 'sharedAsset'
+  deleteAsset: 'sharedAsset',
+
+  // Canvas layout — workspace-level layout persistence
+  // GET  /workspaces/:wsId/canvas-layout  → { positions, groups, version, updatedAt }
+  // PATCH /workspaces/:wsId/canvas-layout → { version, updatedAt }
+  // Subscribe: 'canvas-layout-changed' socket event.
+  getCanvasLayout: 'canvasLayout',
+  patchCanvasLayout: 'canvasLayout',
+  subscribeWorkspaceCanvasLayout: 'canvasLayout'
 }
 

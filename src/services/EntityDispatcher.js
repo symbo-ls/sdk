@@ -1087,6 +1087,28 @@ const ENTITY_ROUTES = {
     argMap: { rpc: argMaps.payload },
   },
 
+  // ─── Canvas layout (workspace-level, Mongo-backed) ────────────────────────
+  // Replaces per-project setProjectValue(_, ['canvasPosition'], …) +
+  // getProjectData catch-up fetches with O(1) workspace-scoped reads/writes.
+  // Server contract: GET/PATCH /workspaces/:wsId/canvas-layout.
+  // Socket: 'canvas-layout-changed' on the user-socket workspace channel.
+  'canvasLayout': {
+    service: 'canvasLayout',
+    methods: {
+      get: 'getCanvasLayout',
+      patch: 'patchCanvasLayout',
+      subscribe: 'subscribeWorkspaceCanvasLayout',
+    },
+    argMap: {
+      get: (a) => [a?.workspaceId ?? a?.id ?? a],
+      patch: (a) => [a?.workspaceId ?? a?.id, a?.payload ?? (() => {
+        const { workspaceId, id, ...rest } = a || {}
+        return rest
+      })()],
+      subscribe: (a) => [a?.workspaceId ?? a?.id ?? a],
+    },
+  },
+
   // ─── Project (canvas build unit) ──────────────────────────────────────────
   'project': {
     service: 'project',

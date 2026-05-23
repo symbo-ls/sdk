@@ -25,7 +25,8 @@ import {
   TicketService,
   AllocationRuleService,
   SharedAssetService,
-  CreditsService
+  CreditsService,
+  CanvasLayoutService
 } from '../../index.js'
 
 // service-name → ServiceClass — the same wiring `_initService` does in
@@ -56,7 +57,8 @@ const SERVICES = {
   tickets: TicketService,
   allocationRule: AllocationRuleService,
   sharedAsset: SharedAssetService,
-  credits: CreditsService
+  credits: CreditsService,
+  canvasLayout: CanvasLayoutService
 }
 
 // Methods that intentionally exist on a service but are NOT flat-exposed via
@@ -113,6 +115,7 @@ const INTENTIONALLY_NOT_FLAT_EXPOSED = new Set([
 // See ticket SDK-SERVICE-METHODS-REGISTRY-DRIFT for the rationale.
 const PRE_EXISTING_DRIFT = new Set([
   'AdminService:getProjectKeyStats',
+  'AuthService:listMembers',
   'AuthService:canPerformOperation',
   'AuthService:checkProjectFeature',
   'AuthService:checkProjectPermission',

@@ -37,6 +37,7 @@ import {
 import { AllocationRuleService } from './AllocationRuleService.js'
 import { SharedAssetService } from './SharedAssetService.js'
 import { CreditsService } from './CreditsService.js'
+import { CanvasLayoutService } from './CanvasLayoutService.js'
 
 const createService = (ServiceClass, config) => new ServiceClass(config)
 
@@ -130,6 +131,9 @@ export const createSharedAssetService = config =>
 export const createCreditsService = config =>
   createService(CreditsService, config)
 
+export const createCanvasLayoutService = config =>
+  createService(CanvasLayoutService, config)
+
 export {
   AuthService,
   CollabService,
@@ -162,5 +166,6 @@ export {
   ResourceLinkService,
   AllocationRuleService,
   SharedAssetService,
-  CreditsService
+  CreditsService,
+  CanvasLayoutService
 }

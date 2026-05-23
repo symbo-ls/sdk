@@ -27,6 +27,7 @@ import {
   createAllocationRuleService,
   createSharedAssetService,
   createCreditsService,
+  createCanvasLayoutService,
   workspaceProjectBaseUrl,
   createSupabasePassthroughConfig,
   workspaceProjectEdgeFunctionUrl,
@@ -281,6 +282,13 @@ export class SDK {
       this._initService(
         'credits',
         createCreditsService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      this._initService(
+        'canvasLayout',
+        createCanvasLayoutService({
           context: this._context,
           options: this._options
         })
@@ -623,6 +631,7 @@ export {
   createAllocationRuleService,
   createSharedAssetService,
   createCreditsService,
+  createCanvasLayoutService,
   workspaceProjectBaseUrl,
   createSupabasePassthroughConfig,
   workspaceProjectEdgeFunctionUrl,
