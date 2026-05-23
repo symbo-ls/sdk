@@ -79,6 +79,16 @@ export class AnalyzedService extends BaseService {
     return this._call('analyzed.listUsers', `/analyzed/users${qs ? `?${qs}` : ''}`)
   }
 
+  // GET /core/analyzed/active-users?limit=&offset=
+  // Org-scoped active users — returns [{userId, userName, userEmail, lastSeenAt}].
+  activeUsers (filter = {}, options = {}) {
+    const params = new URLSearchParams()
+    if (options.limit != null) params.set('limit', String(options.limit))
+    if (options.offset != null) params.set('offset', String(options.offset))
+    const qs = params.toString()
+    return this._call('analyzed.activeUsers', `/analyzed/active-users${qs ? `?${qs}` : ''}`)
+  }
+
   // GET /core/analyzed/bugs?projectId=&since=&limit=&offset=
   // Bug clusters — $group by message, sorted by frequency desc.
   listBugs (filter = {}, options = {}) {
