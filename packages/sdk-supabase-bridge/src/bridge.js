@@ -183,14 +183,25 @@ export function createAuthBridge ({
     }
   }
 
-  const activateExtension = async (projectKey, { email, password }) => {
+  const activateExtension = async (projectKey, { email, password, symbolsAccessToken } = {}) => {
     const cfg = registry.getProjectConfig(projectKey)
     if (!cfg) return { ok: false, error: new Error(`unknown project ${projectKey}`) }
     if (cfg.required) return { ok: false, error: new Error(`${projectKey} is required, not an extension`) }
     const ac = new AbortController()
     const timer = setTimeout(() => ac.abort(), bridgeTimeoutMs)
+    // Mirror loginAll's mode selection: explicit token arg → localStorage
+    // token (persisted by a prior loginAll) → email+password. OAuth flows
+    // (Google / GitHub) have no password to surrender, and the workspace
+    // UI typically calls this without args after federation has already
+    // set `symbols_access_token` in localStorage. Without the token
+    // fallback, the bridge edge function 400s with
+    // "email+password or symbols_access_token required".
+    const symbolsToken = symbolsAccessToken || getSymbolsToken()
+    const body = symbolsToken
+      ? { symbols_access_token: symbolsToken }
+      : { email, password }
     try {
-      const data = await callBridge(cfg, { email, password }, ac.signal)
+      const data = await callBridge(cfg, body, ac.signal)
       const r = projectResult(projectKey, 'ok', data)
       await _setSession(r)
       return { ok: true, result: r }
