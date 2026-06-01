@@ -439,6 +439,55 @@ export class TicketService extends BaseService {
     return this._call('tickets.resolutions', `/tickets/resolutions${qs ? `?${qs}` : ''}`)
   }
 
+  // ==================== ATTACHMENTS ====================
+
+  attachments = {
+    /**
+     * Upload a file attachment to a ticket.
+     * Sends multipart/form-data; the server stores the file and appends the
+     * attachment record to the ticket's attachments array.
+     *
+     * @param {string} ticketId - The ticket's ticketId slug (e.g. 'SMBLS-42')
+     * @param {File} file - Browser File object to upload
+     * @returns {Promise<{attachments: Array}>} Updated attachments array
+     */
+    upload: (ticketId, file) => {
+      const formData = new FormData()
+      formData.append('file', file)
+      return this._call(
+        'tickets.attachments.upload',
+        `/tickets/${encodeURIComponent(ticketId)}/attachments`,
+        { method: 'POST', body: formData }
+      )
+    },
+
+    /**
+     * List attachments for a ticket.
+     *
+     * @param {string} ticketId - The ticket's ticketId slug
+     * @returns {Promise<Array>} Array of attachment documents
+     */
+    list: (ticketId) =>
+      this._call(
+        'tickets.attachments.list',
+        `/tickets/${encodeURIComponent(ticketId)}/attachments`
+      ),
+
+    /**
+     * Remove an attachment from a ticket.
+     *
+     * @param {string} ticketId - The ticket's ticketId slug
+     * @param {string} attachmentId - Attachment MongoDB _id
+     * @returns {Promise<{attachments: Array}>} Updated attachments array
+     */
+    remove: (ticketId, attachmentId) =>
+      this._call(
+        'tickets.attachments.remove',
+        `/tickets/${encodeURIComponent(ticketId)}/attachments/${encodeURIComponent(attachmentId)}`,
+        { method: 'DELETE' }
+      )
+  }
+
   // ==================== REALTIME / SSE SUBSCRIPTION ====================
 
   /**
