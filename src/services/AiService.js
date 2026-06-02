@@ -304,14 +304,26 @@ export class AiService extends BaseService {
     const text = String(payload.text || payload.content || '').trim()
     const forcedBuild = /^\/new(\s|$)/i.test(text)
     const authMode = this.getAuthMode()
+    const mode = this.getMode()
+
+    // /new prefix is a hard hint — skip the round-trip and return the
+    // build descriptor immediately so the caller can hand off to the
+    // freestyler. Strips the prefix from the text before passing to the
+    // builder so the LLM doesn't see it as part of the spec.
+    if (forcedBuild) {
+      const spec = { kind: 'page', body: text.replace(/^\/new\s*/i, '') }
+      const result = { intent: INTENT_BUILD, spec }
+      callbacks.onDone?.(result)
+      return result
+    }
 
     const requestBody = {
       payload: {
         ...payload,
         text,
-        intentMode: forcedBuild ? 'build' : 'classify',
+        intentMode: 'classify',
         authMode,
-        mode: this.getMode()
+        mode
       }
     }
 
@@ -319,9 +331,67 @@ export class AiService extends BaseService {
     // delivered through onDone. We forward both: onChunk fires when the
     // server emits assistant_delta events; onDone fires once with the
     // resolved intent + payload.
+    //
+    // Local mode bypasses /ai-chat/dispatch entirely and streams through
+    // the simone-bridge — the bridge's MCP-aware agent can run tools
+    // server-side. Intent classification stays a "best effort answer"
+    // until the bridge is taught to emit { intent, spec, actions } too.
+    if (mode === 'local') {
+      return new Promise((resolve) => {
+        let buffered = ''
+        this._streamLocal(payload, {
+          onChunk: (delta) => {
+            buffered += delta
+            callbacks.onChunk?.(delta)
+          },
+          onDone: () => {
+            const result = { intent: INTENT_ANSWER, text: buffered }
+            callbacks.onDone?.(result)
+            resolve(result)
+          },
+          onError: (err) => {
+            callbacks.onError?.(err)
+            resolve({ intent: INTENT_ANSWER, text: '', error: err?.message || String(err) })
+          }
+        })
+      })
+    }
+
+    // Server-side intent classification. Falls back to stream() if the
+    // /ai-chat/dispatch endpoint isn't deployed yet — treats the
+    // response as plain answer intent so the existing /ai-chat/stream
+    // path keeps working during the multi-PR migration.
     return new Promise((resolve, reject) => {
       let buffered = ''
       let resolved = false
+      let fellBack = false
+
+      const fallbackToStream = () => {
+        if (fellBack || resolved) return
+        fellBack = true
+        let streamBuf = ''
+        this._streamPost('/ai-chat/stream', { payload: { ...payload, text } }, {
+          onChunk: (delta) => {
+            streamBuf += delta
+            callbacks.onChunk?.(delta)
+          },
+          onDone: (donePayload) => {
+            if (resolved) return
+            resolved = true
+            const finalText = donePayload?.text || streamBuf
+            const result = { intent: INTENT_ANSWER, text: finalText, _viaFallback: true }
+            callbacks.onDone?.(result)
+            resolve(result)
+          },
+          onError: (err) => {
+            if (resolved) return
+            resolved = true
+            callbacks.onError?.(err)
+            reject(err)
+          }
+        })
+      }
+
       this._streamPost('/ai-chat/dispatch', requestBody, {
         onChunk: (delta) => {
           buffered += delta
@@ -344,6 +414,13 @@ export class AiService extends BaseService {
           resolve(result)
         },
         onError: (err) => {
+          // 404 / route-missing → graceful fallback to the existing
+          // /ai-chat/stream path. Any other error surfaces as before.
+          const msg = String(err?.message || err || '')
+          if (/404|not\s*found|cannot.*POST.*dispatch/i.test(msg)) {
+            fallbackToStream()
+            return
+          }
           if (resolved) return
           resolved = true
           callbacks.onError?.(err)
