@@ -1,5 +1,6 @@
 import { AuthService } from './AuthService.js'
 import { AiChatService } from './AiChatService.js'
+import { AiService } from './AiService.js'
 import { DocService } from './DocService.js'
 import { TicketService } from './TicketService.js'
 import { AnalyzedService } from './AnalyzedService.js'
@@ -110,6 +111,14 @@ export const createWorkspaceProjectService = config =>
 export const createAiChatService = config =>
   createService(AiChatService, config)
 
+// Unified AI surface — single entry point for every UI consumer
+// (AppAssistant, CanvasPromptTextarea, ticket standup/detail, simone
+// extension). Routes by provider mode (simone / providers / local),
+// classifies intent (build / answer / action), and respects authMode
+// (ask / auto). See AiService.js for the full contract.
+export const createAiService = config =>
+  createService(AiService, config)
+
 export const createDocService = config =>
   createService(DocService, config)
 
@@ -160,6 +169,7 @@ export {
   workspaceProjectEdgeFunctionUrl,
   workspaceExtensionSessionAccessToken,
   AiChatService,
+  AiService,
   DocService,
   TicketService,
   AnalyzedService,

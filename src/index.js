@@ -20,6 +20,7 @@ import {
   createWorkspaceService,
   createWorkspaceProjectService,
   createAiChatService,
+  createAiService,
   createDocService,
   createResourceLinkService,
   createTicketService,
@@ -233,6 +234,19 @@ export class SDK {
       this._initService(
         'aiChat',
         createAiChatService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      // Unified AI surface. Wraps aiChat's transport for HTTP modes
+      // (simone, providers), and owns the WebSocket bridge for local mode.
+      // Adds intent classification (build/answer/action) + authMode
+      // (ask/auto) on top. Every UI consumer should call sdk.ai.dispatch
+      // instead of poking aiChat directly so the mode + intent routing
+      // lives in one place.
+      this._initService(
+        'ai',
+        createAiService({
           context: this._context,
           options: this._options
         })
