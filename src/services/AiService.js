@@ -370,7 +370,20 @@ export class AiService extends BaseService {
         if (fellBack || resolved) return
         fellBack = true
         let streamBuf = ''
-        this._streamPost('/ai-chat/stream', { payload: { ...payload, text } }, {
+        // Translate dispatch's `text` → ai-chat/stream's expected
+        // `content` / `messages`. AiChatService.stream wants either
+        // `threadId + content` OR a `messages` array; dispatch
+        // callers only have `text`, so synthesize a single user
+        // message. attachedCard / appContext pass through unchanged.
+        const fallbackBody = {
+          payload: {
+            ...payload,
+            ...(payload.threadId || payload.content || payload.messages
+              ? {}
+              : { messages: [{ role: 'user', content: text }] })
+          }
+        }
+        this._streamPost('/ai-chat/stream', fallbackBody, {
           onChunk: (delta) => {
             streamBuf += delta
             callbacks.onChunk?.(delta)
