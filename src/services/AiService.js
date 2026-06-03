@@ -389,7 +389,8 @@ export class AiService extends BaseService {
         method: 'POST',
         body: {
           content: payload.content || payload.text || '',
-          modelMode: this.getModelMode()
+          modelMode: this.getModelMode(),
+          targetAgentId: (payload && (payload.targetAgentId || (payload.context && payload.context.targetAgentId))) || null
         },
         methodName: 'ai.appendMessage'
       }).then(() => {
@@ -494,9 +495,10 @@ export class AiService extends BaseService {
 
   // Create a fresh thread. Returns the conversation summary ({ id, ... }).
   async createConversation (opts = {}) {
+    const targetAgentId = (opts && (opts.targetAgentId || (opts.context && opts.context.targetAgentId))) || null
     const res = await this._requestExternal(this._conversationBase(opts), {
       method: 'POST',
-      body: { title: opts.title },
+      body: { title: opts.title, ...(targetAgentId ? { targetAgentId } : {}) },
       methodName: 'ai.createConversation'
     })
     return this._unwrap(res)
