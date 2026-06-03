@@ -224,6 +224,14 @@ export class BaseService {
     const defaultHeaders = {}
     if (init.body !== undefined && !(init.body instanceof FormData)) {
       defaultHeaders['Content-Type'] = 'application/json'
+      // fetch() does NOT serialize plain objects — an object body coerces
+      // to the string "[object Object]", which the server's body-parser
+      // rejects with 400 "Request body is not valid JSON". Every
+      // AiService caller passes plain objects, so encode them here.
+      // Strings, Blobs, streams and typed arrays pass through untouched.
+      const isPlainJson = init.body !== null && typeof init.body === 'object' &&
+        (Array.isArray(init.body) || Object.getPrototypeOf(init.body) === Object.prototype)
+      if (isPlainJson) init.body = JSON.stringify(init.body)
     }
 
     if (authHeader === undefined && this._requiresInit(methodName) && this._tokenManager) {
