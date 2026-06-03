@@ -374,6 +374,67 @@ export class OrganizationService extends BaseService {
     throw new Error(response.message)
   }
 
+  // ==================== AGENT ASSIGNMENTS ====================
+
+  async listAgentAssignments (orgId, { assigneeId } = {}) {
+    this._requireReady('listAgentAssignments')
+    if (!orgId) throw new Error('orgId is required')
+
+    // Literals at both branches so the drift analyzer can match
+    // /organizations/:orgId/agent-assignments (it can't see through a local url variable).
+    const response = assigneeId
+      ? await this._request(`/organizations/${orgId}/agent-assignments?assigneeId=${encodeURIComponent(assigneeId)}`, {
+        method: 'GET',
+        methodName: 'listAgentAssignments'
+      })
+      : await this._request(`/organizations/${orgId}/agent-assignments`, {
+        method: 'GET',
+        methodName: 'listAgentAssignments'
+      })
+    if (response.success) return response.data
+    throw new Error(response.message)
+  }
+
+  async assignAgent (orgId, { agentId, assigneeId, role = 'assignee', metadata = {} }) {
+    this._requireReady('assignAgent')
+    if (!orgId) throw new Error('orgId is required')
+    if (!agentId) throw new Error('agentId is required')
+    if (!assigneeId) throw new Error('assigneeId is required')
+
+    const response = await this._request(`/organizations/${orgId}/agent-assignments`, {
+      method: 'POST',
+      body: JSON.stringify({ agentId, assigneeId, role, metadata }),
+      methodName: 'assignAgent'
+    })
+    if (response.success) return response.data
+    throw new Error(response.message)
+  }
+
+  async updateAgentAssignment (orgId, assignmentId, updates = {}) {
+    this._requireReady('updateAgentAssignment')
+    if (!orgId || !assignmentId) throw new Error('orgId and assignmentId are required')
+
+    const response = await this._request(`/organizations/${orgId}/agent-assignments/${assignmentId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+      methodName: 'updateAgentAssignment'
+    })
+    if (response.success) return response.data
+    throw new Error(response.message)
+  }
+
+  async unassignAgent (orgId, assignmentId) {
+    this._requireReady('unassignAgent')
+    if (!orgId || !assignmentId) throw new Error('orgId and assignmentId are required')
+
+    const response = await this._request(`/organizations/${orgId}/agent-assignments/${assignmentId}`, {
+      method: 'DELETE',
+      methodName: 'unassignAgent'
+    })
+    if (response.success) return response.data
+    throw new Error(response.message)
+  }
+
   // ==================== INVITATIONS ====================
 
   async createOrgInvitation (orgId, { email, role = 'member', teams }) {
