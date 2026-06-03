@@ -453,6 +453,73 @@ export class AiService extends BaseService {
     }
   }
 
+  // ==================== CONVERSATIONS (thread history) ====================
+  // Per-member workspace conversation history (server: WorkspaceMemberConversation).
+  // Default scope is the active workspace; pass { projectId } for a project thread.
+  // Used by simone's Sessions ▾ thread selector.
+
+  // Base URL for the active scope (project when in scope, else active workspace).
+  _conversationBase (opts = {}) {
+    const projectId = opts?.projectId || this._context?.activeProjectId
+    if (projectId) {
+      return `${this._apiUrl}/core/agents/projects/${encodeURIComponent(projectId)}/conversations`
+    }
+    const wsId = this._context?.activeWorkspaceId || this._readActiveWorkspace()
+    if (!wsId) throw new Error('[sdk.ai] no active workspace or project selected')
+    return `${this._apiUrl}/core/agents/workspaces/${encodeURIComponent(wsId)}/conversations`
+  }
+
+  _unwrap (res) {
+    return res && typeof res === 'object' && 'data' in res ? res.data : res
+  }
+
+  // Thread list for the active scope → [{ id, conversationId, title,
+  // lastMessageAt, pinned, unread }].
+  async listConversations (opts = {}) {
+    const res = await this._requestExternal(this._conversationBase(opts), {
+      method: 'GET',
+      methodName: 'ai.listConversations'
+    })
+    return this._unwrap(res) || []
+  }
+
+  // Load one thread → { conversation, messages }. Side effect: marks read.
+  async getConversation (conversationId, opts = {}) {
+    const res = await this._requestExternal(
+      `${this._conversationBase(opts)}/${encodeURIComponent(conversationId)}`,
+      { method: 'GET', methodName: 'ai.getConversation' }
+    )
+    return this._unwrap(res)
+  }
+
+  // Create a fresh thread. Returns the conversation summary ({ id, ... }).
+  async createConversation (opts = {}) {
+    const res = await this._requestExternal(this._conversationBase(opts), {
+      method: 'POST',
+      body: { title: opts.title },
+      methodName: 'ai.createConversation'
+    })
+    return this._unwrap(res)
+  }
+
+  // Pin / archive / rename a thread for the current member.
+  async patchConversation (conversationId, patch = {}, opts = {}) {
+    const res = await this._requestExternal(
+      `${this._conversationBase(opts)}/${encodeURIComponent(conversationId)}`,
+      { method: 'PATCH', body: patch, methodName: 'ai.patchConversation' }
+    )
+    return this._unwrap(res)
+  }
+
+  // Soft-archive a thread for the current member (keeps the conversation).
+  async deleteConversation (conversationId, opts = {}) {
+    await this._requestExternal(
+      `${this._conversationBase(opts)}/${encodeURIComponent(conversationId)}`,
+      { method: 'DELETE', methodName: 'ai.deleteConversation' }
+    )
+    return true
+  }
+
   // ==================== COMPLETION ====================
 
   // Non-streaming turn — collects the stream into a single promise.
