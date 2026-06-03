@@ -896,6 +896,13 @@ const ENTITY_ROUTES = {
     methods: { rpc: 'meet.issueToken' },
     argMap: { rpc: argMaps.payload },
   },
+  // #2226 — owner remote-mute. mute({ roomId, participantIdentity, trackSid,
+  // muted }) → worker /meet/mute → meet-mute edge fn → LiveKit.
+  'workspaceProject.meet.mute': {
+    service: 'workspaceProject',
+    methods: { mute: 'meet.mute' },
+    argMap: { mute: argMaps.payload },
+  },
   // ─── Workspace realtime subscriptions ─────────────────────────────────────
   // Each route exposes a single `subscribe` op so callers can use the
   // standard `sdk.execute(entity, 'subscribe', filter, cb)` dispatch.

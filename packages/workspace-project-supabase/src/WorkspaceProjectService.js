@@ -433,6 +433,12 @@ export class WorkspaceProjectService extends BaseService {
       }),
     issueToken: (params) =>
       this._ws('meet.issueToken', '/meet/token', { method: 'POST', body: { params } }),
+    // #2226 — owner remote-mutes a participant's published audio. Routes
+    // through the worker → meet-mute edge fn → LiveKit
+    // RoomServiceClient.mutePublishedTrack. params: { roomId,
+    // participantIdentity, trackSid, muted }.
+    mute: (params) =>
+      this._ws('meet.mute', '/meet/mute', { method: 'POST', body: { params } }),
     // Combined transcript+analysis view — wraps the
     // `get_meet_transcript_view(uuid)` RPC. Returns
     // { utterances, analysis } in a single round-trip; replaces the
