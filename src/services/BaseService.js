@@ -537,7 +537,11 @@ export class BaseService {
       } catch (err) {
         if (err?.name !== 'AbortError') safe(onError, err)
       } finally {
-        try { reader.cancel() } catch {}
+        // reader.cancel() returns a PROMISE that rejects with AbortError
+        // ("BodyStreamBuffer was aborted") when the stream was already
+        // aborted — a bare try/catch only stops the sync throw, leaving an
+        // unhandled rejection in the console on every completed turn.
+        try { reader.cancel()?.catch?.(() => {}) } catch {}
       }
     })()
 
@@ -627,7 +631,11 @@ export class BaseService {
       } catch (err) {
         if (err?.name !== 'AbortError') safe(onError, err)
       } finally {
-        try { reader.cancel() } catch {}
+        // reader.cancel() returns a PROMISE that rejects with AbortError
+        // ("BodyStreamBuffer was aborted") when the stream was already
+        // aborted — a bare try/catch only stops the sync throw, leaving an
+        // unhandled rejection in the console on every completed turn.
+        try { reader.cancel()?.catch?.(() => {}) } catch {}
       }
     })()
 
