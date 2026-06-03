@@ -328,6 +328,7 @@ export class AiService extends BaseService {
 
     let answered = false
     let cancelled = false
+    let streamedAny = false
     let cancelStream = () => {}
     let fallbackTimer = null
 
@@ -344,7 +345,9 @@ export class AiService extends BaseService {
       if (answered || cancelled) return
       answered = true
       clearFallback()
-      onChunk?.(txt)
+      // If text deltas already streamed in, the chunks are already applied —
+      // re-emitting the full text here would double it. Just finalize.
+      if (!streamedAny) onChunk?.(txt)
       onDone?.({ text: txt })
       stopStream()
     }
@@ -373,6 +376,7 @@ export class AiService extends BaseService {
         onEvent: ({ event, data }) => {
           if (answered || cancelled) return
           if (event === 'message.delta' && data?.message) {
+            streamedAny = true
             onChunk?.(data.message)
             return
           }
