@@ -538,6 +538,96 @@ export class BaseService {
     }
   }
 
+  // Off-core GET-SSE helper — for server-sent-event streams served at a
+  // fully-qualified URL (not `${apiUrl}/core…`) that emit named frames in
+  // the `event: <name>\ndata: <json>\n\n` shape. Unlike `_sseSubscribe`
+  // (EventSource, query-param auth) this uses fetch GET so the bearer token
+  // travels in an Authorization header and the read loop is identical to
+  // `_streamPost` — only the framing (event+data) and method (GET) differ.
+  //
+  // Callbacks:
+  //   onEvent({ event, data })  — once per complete frame; `data` is parsed JSON
+  //   onError(err)              — on transport / parse error
+  //
+  // Returns a cancel() function that aborts the in-flight request.
+  _streamSSE (fullUrl, { onEvent, onError } = {}) {
+    const controller = new AbortController()
+
+    const headers = { Accept: 'text/event-stream' }
+    if (this._tokenManager) {
+      const token = this._tokenManager.getAccessToken?.()
+      if (token) headers.Authorization = `Bearer ${token}`
+    }
+
+    const safe = (fn, arg) => {
+      if (typeof fn !== 'function') return
+      try { fn(arg) } catch (_) { /* swallow downstream */ }
+    }
+
+    // Parse one complete SSE frame (lines separated by \n within the frame).
+    // A line starting `event:` sets the event name; lines starting `data:`
+    // accumulate the JSON payload. Returns null for comment-only / empty
+    // frames so the caller can skip them.
+    const parseFrame = (frame) => {
+      let event = 'message'
+      const dataLines = []
+      for (const raw of frame.split('\n')) {
+        if (raw.startsWith('event:')) {
+          event = raw.slice(6).trim()
+        } else if (raw.startsWith('data:')) {
+          dataLines.push(raw.slice(5).replace(/^ /, ''))
+        }
+      }
+      if (!dataLines.length) return null
+      const json = dataLines.join('\n')
+      if (json === '[DONE]') return null
+      let data
+      try { data = JSON.parse(json) } catch { return null }
+      return { event, data }
+    }
+
+    ;(async () => {
+      let res
+      try {
+        res = await fetch(fullUrl, { method: 'GET', headers, signal: controller.signal })
+      } catch (err) {
+        if (err?.name !== 'AbortError') safe(onError, _wrapRequestError(err, fullUrl))
+        return
+      }
+      if (!res.ok || !res.body) {
+        const text = await res.text().catch(() => '')
+        safe(onError, new Error(`stream HTTP ${res.status}: ${text.slice(0, 200)}`))
+        return
+      }
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buffer += decoder.decode(value, { stream: true })
+          // Frames are delimited by a blank line (\n\n). Keep the trailing
+          // partial frame in the buffer until its terminator arrives.
+          const frames = buffer.split('\n\n')
+          buffer = frames.pop() || ''
+          for (const frame of frames) {
+            const parsed = parseFrame(frame)
+            if (parsed) safe(onEvent, parsed)
+          }
+        }
+      } catch (err) {
+        if (err?.name !== 'AbortError') safe(onError, err)
+      } finally {
+        try { reader.cancel() } catch {}
+      }
+    })()
+
+    return () => {
+      try { controller.abort() } catch {}
+    }
+  }
+
   // Cleanup method
   destroy () {
     if (this._tokenManager) {

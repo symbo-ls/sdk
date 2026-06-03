@@ -4,63 +4,53 @@ import { BaseService } from './BaseService.js'
 // LLM (AppAssistant, CanvasPromptTextarea, ticket standup/detail editor,
 // meet transcript analysis, the simone extension, …).
 //
-// Three modes the user can pick from, persisted in localStorage:
+// Transport: a WORKSPACE-scoped agent conversation served over SSE. Every
+// interactive turn opens a per-workspace conversation (cached in
+// localStorage) and streams the assistant's reply back as
+// `event: <name>\ndata: <json>\n\n` frames:
 //
-//   1. 'simone' (default) — POST /ai-chat/stream → main server hits
-//      Symbols Service (https://symbols-service-production.up.railway.app)
-//      which uses managed Anthropic/OpenAI keys. Zero local setup, lowest
-//      friction. Same path the AiChatService.stream method already takes.
-//
-//   2. 'providers' — POST /ai-chat/stream with an explicit `mode:'providers'`
-//      hint. The server routes through @symbo.ls/ai-providers'
-//      ModelRouterService which picks the best provider (Anthropic / OpenAI
-//      / OpenRouter / Gemini) per task type and uses YOUR org's keys (from
-//      Vault). Same wire format as simone mode — only the upstream changes.
-//
-//   3. 'local' — direct WebSocket to a locally-running simone-bridge at
-//      ws://127.0.0.1:8765 (configurable). Bridge spawns claude-code (or
-//      codex) with full filesystem + MCP tool access; replies stream back
-//      as `assistant_delta` events that we translate into the same
-//      onChunk/onDone callback shape the HTTP path uses. Requires
-//      `smbls claude` (or equivalent) running locally.
+//   base = `${apiUrl}/agents/workspaces/${workspaceId}/conversations`
+//   POST base                      { title? }  → { success, data:{ id } }
+//   POST base/:id/messages         { content, modelMode }
+//                                  → { success, data:{ conversation, userMessage, assistantMessage } }
+//   GET  base/:id/stream           → SSE frames:
+//        event: conversation.snapshot  data { conversation, messages:[…] }
+//        event: message.created        data { id, role, content:[{type:'text',text}], … }
+//        event: message.delta          data { message:'<delta>' }   (may not be emitted yet)
+//        event: conversation.heartbeat data { … }
 //
 // Why route here instead of per-consumer:
-//   - One mode preference, one transport switch, one place to add a fourth
-//     mode later. Consumers just call sdk.ai.stream({…}, {onChunk,…}) and
-//     stay agnostic.
+//   - One transport, one place to add capabilities later. Consumers just
+//     call sdk.ai.stream({…}, {onChunk,…}) and stay agnostic.
 //   - The simone extension, workspace AppAssistant, canvas freestyler, and
 //     tickets' standup AI used to each maintain their own dispatch path.
 //     Migrating them to sdk.ai removes ~5 forked transport implementations.
 //
-// Wire shape is preserved across all three modes:
+// Wire shape consumers depend on (preserved):
 //   stream(payload, { onChunk, onDone, onError }) → cancel()
+//   dispatch(payload, callbacks) → Promise<{ intent, text? | spec? }>
 //   completion(payload) → Promise<result>
 //   meetAnalyze(payload) → Promise<result>
-//
-// Local-mode WebSocket protocol (see smbls/plugins/simone-bridge):
-//   surface → bridge: { type:'hello', surface, capabilities }
-//   surface → bridge: { type:'select_target', target:{ mode, model, cwd? } }
-//   surface → bridge: { type:'user_message', text, context? }
-//   bridge → surface: { type:'bridge_ready', sessionId, ... }
-//   bridge → surface: { type:'assistant_delta', blockIndex, text }
-//   bridge → surface: { type:'turn_complete', isError, durationMs }
-//   bridge → surface: { type:'tool_use', toolUseId, tool, input }
-// The bridge handles tool calls itself in app mode; we don't proxy tool
-// results back from here (the surface that needs tool round-trips —
-// canvas — connects directly to the bridge with its own ws client that
-// understands canvas tools).
 
-const STORAGE_KEY_MODE = 'symbols_ai_mode'
-const STORAGE_KEY_BRIDGE_URL = 'symbols_ai_bridge_url'
+const STORAGE_KEY_MODEL_MODE = 'symbols_ai_model_mode'
 const STORAGE_KEY_AUTH_MODE = 'symbols_ai_auth_mode'
-const DEFAULT_MODE = 'simone'
-const DEFAULT_BRIDGE_URL = 'ws://127.0.0.1:8765'
+const DEFAULT_MODEL_MODE = 'auto'
 const DEFAULT_AUTH_MODE = 'ask'
 
+// Model-mode catalog — the upstream provider routing the workspace agent
+// should use for a turn. Persisted in localStorage and sent as `modelMode`
+// on every appended message.
+const MODEL_MODES = ['auto', 'openai', 'openrouter', 'anthropic', 'gemini', 'research', 'cheap']
+
+// How long to wait after the message POST resolves before falling back to
+// a one-shot getConversation() read — the server publishes message.created
+// synchronously during the POST, so the SSE frame normally beats this.
+const ASSISTANT_FALLBACK_MS = 1000
+
 // Intent contract — every prompt the user submits to sdk.ai.dispatch
-// classifies into exactly one of these three intents. The classifier is
-// LLM-side (system prompt declares three tools and the model picks one),
-// with a single client-side hard hint: text starting with `/new` always
+// classifies into exactly one of these three intents. The workspace agent
+// transport is answer-only, so dispatch resolves ANSWER for everything
+// except the one client-side hard hint: text starting with `/new` always
 // goes to BUILD without a round-trip.
 //
 //   BUILD   — "make me a landing page", "/new dashboard with kanban"
@@ -92,80 +82,48 @@ export const INTENT_BUILD = 'build'
 export const INTENT_ANSWER = 'answer'
 export const INTENT_ACTION = 'action'
 
-// Mode catalog — the dropdown UI reads this via sdk.ai.modes() to render
-// the picker. `available` is a runtime check (e.g. local mode pings the
-// bridge before declaring itself reachable). `disabledReason` is shown
-// inline in the picker when a mode can't be used.
-const MODE_CATALOG = [
-  {
-    key: 'simone',
-    label: 'Symbols Cloud',
-    description: 'Managed Anthropic + OpenAI keys via Symbols Service. Zero setup.',
-    transport: 'http'
-  },
-  {
-    key: 'providers',
-    label: 'Org providers',
-    description: 'Routes through @symbo.ls/ai-providers using your org\'s keys (Vault).',
-    transport: 'http'
-  },
-  {
-    key: 'local',
-    label: 'Local agent',
-    description: 'Direct WebSocket to simone-bridge (claude-code / codex). Requires local setup.',
-    transport: 'ws'
-  }
-]
-
 export class AiService extends BaseService {
-  constructor (config) {
-    super(config)
-    // Live WebSocket for local mode. Lazily created on first stream call.
-    // Kept open across turns so the bridge can preserve session state
-    // (memory, tool context). Reset on disconnect / mode change.
-    this._bridgeWs = null
-    this._bridgeReady = null  // Promise<void> resolved when 'bridge_ready' arrives
-    this._bridgeSessionId = null
-    // Per-turn callback registry keyed by an internal turn id. The bridge
-    // doesn't echo the user_message turn id back (yet), so we serialize:
-    // one open turn at a time. Subsequent stream() calls queue.
-    this._pendingTurn = null
-    this._turnQueue = []
-  }
+  // ==================== MODEL MODE ====================
 
-  // ==================== MODE ====================
-
-  getMode () {
+  // Which upstream provider the workspace agent routes a turn through.
+  // Persisted in localStorage and sent as `modelMode` on every message.
+  getModelMode () {
     try {
-      return localStorage.getItem(STORAGE_KEY_MODE) || DEFAULT_MODE
+      return localStorage.getItem(STORAGE_KEY_MODEL_MODE) || DEFAULT_MODEL_MODE
     } catch (_) {
-      return DEFAULT_MODE
+      return DEFAULT_MODEL_MODE
     }
   }
 
-  setMode (mode) {
-    if (!MODE_CATALOG.find((m) => m.key === mode)) {
-      throw new Error(`[sdk.ai] unknown mode "${mode}". Valid: ${MODE_CATALOG.map((m) => m.key).join(', ')}`)
+  setModelMode (mode) {
+    if (!MODEL_MODES.includes(mode)) {
+      throw new Error(`[sdk.ai] unknown modelMode "${mode}". Valid: ${MODEL_MODES.join(', ')}`)
     }
-    try { localStorage.setItem(STORAGE_KEY_MODE, mode) } catch (_) {}
-    // Drop any open bridge WebSocket so the next stream() reconnects in
-    // the right mode (e.g. simone → local should not reuse a dead ws).
-    this._closeBridge('mode change')
+    try { localStorage.setItem(STORAGE_KEY_MODEL_MODE, mode) } catch (_) {}
   }
 
-  // Returns the mode catalog augmented with runtime availability. The UI
-  // picker uses this to grey-out modes that aren't reachable. The check
-  // is best-effort — `simone`/`providers` are always available if the user
-  // has an auth token; `local` requires the bridge to be reachable.
-  async modes () {
-    const current = this.getMode()
-    return MODE_CATALOG.map((m) => ({
-      ...m,
-      active: m.key === current,
-      // Runtime availability is async per-mode; expose a static `available: true`
-      // default and let the picker call `localBridge.status()` lazily for `local`.
-      available: m.key !== 'local' ? true : null
+  // The picker UI reads this via sdk.ai.modes() to render the model-mode
+  // dropdown. Returns [{ key, label }] with the active mode flagged.
+  modes () {
+    const current = this.getModelMode()
+    return MODEL_MODES.map((key) => ({
+      key,
+      label: key === 'auto' ? 'Auto' : key.charAt(0).toUpperCase() + key.slice(1),
+      active: key === current
     }))
+  }
+
+  // ==================== MODE (deprecated shims) ====================
+
+  // Provider/transport mode-switching is gone — every turn flows through
+  // the workspace agent. These shims stay so any straggler consumer that
+  // still calls setMode/getMode keeps working without throwing.
+  getMode () {
+    return 'workspace'
+  }
+
+  setMode () {
+    console.warn('[sdk.ai] setMode is deprecated; use setModelMode')
   }
 
   // ==================== AUTH MODE (ask / auto) ====================
@@ -199,67 +157,11 @@ export class AiService extends BaseService {
     try { localStorage.setItem(STORAGE_KEY_AUTH_MODE, authMode) } catch (_) {}
   }
 
-  // ==================== BRIDGE URL CONFIG ====================
-
-  getBridgeUrl () {
-    try {
-      return localStorage.getItem(STORAGE_KEY_BRIDGE_URL) || DEFAULT_BRIDGE_URL
-    } catch (_) {
-      return DEFAULT_BRIDGE_URL
-    }
-  }
-
-  setBridgeUrl (url) {
-    try { localStorage.setItem(STORAGE_KEY_BRIDGE_URL, url) } catch (_) {}
-    this._closeBridge('bridge url change')
-  }
-
-  // ==================== LOCAL BRIDGE STATUS ====================
-
-  localBridge = {
-    // Quick reachability ping — opens a transient WebSocket, waits for the
-    // bridge_ready event with a 1.5s timeout, then closes. Used by the
-    // picker UI to mark local mode as available / unreachable.
-    status: () => new Promise((resolve) => {
-      let resolved = false
-      const finish = (ok, reason) => {
-        if (resolved) return
-        resolved = true
-        try { ws.close() } catch (_) {}
-        resolve({ available: ok, reason })
-      }
-      let ws
-      try {
-        ws = new WebSocket(this.getBridgeUrl())
-      } catch (err) {
-        return resolve({ available: false, reason: err.message })
-      }
-      const timer = setTimeout(() => finish(false, 'timeout'), 1500)
-      ws.addEventListener('open', () => {
-        try {
-          ws.send(JSON.stringify({ type: 'hello', surface: 'sdk-probe', capabilities: [] }))
-        } catch (_) {}
-      })
-      ws.addEventListener('message', (ev) => {
-        try {
-          const msg = JSON.parse(ev.data)
-          if (msg.type === 'bridge_ready') {
-            clearTimeout(timer)
-            finish(true, null)
-          }
-        } catch (_) {}
-      })
-      ws.addEventListener('error', () => { clearTimeout(timer); finish(false, 'error') })
-      ws.addEventListener('close', () => { clearTimeout(timer); finish(false, 'closed') })
-    })
-  }
-
   // ==================== DISPATCH (intent-classified turn) ====================
 
   // Single entry point for every interactive AI surface (CanvasPromptTextarea,
   // AppAssistant, the simone extension). Classifies the prompt into BUILD /
-  // ANSWER / ACTION and returns a normalized response shape the UI can
-  // route on.
+  // ANSWER and returns a normalized response shape the UI can route on.
   //
   // payload:
   //   text:        the user's prompt
@@ -270,41 +172,25 @@ export class AiService extends BaseService {
   //
   // callbacks (for the streamed text portion of an ANSWER intent):
   //   onChunk(deltaText)
-  //   onDone(result)              — also fired for build / action so the
-  //                                 caller has a single completion hook
+  //   onDone(result)              — also fired for build so the caller has a
+  //                                 single completion hook
   //   onError(err)
   //
   // Returns: Promise<{
-  //   intent: 'build' | 'answer' | 'action',
-  //
-  //   // ANSWER:
-  //   text?: string,              // full assistant reply
-  //
-  //   // BUILD:
-  //   spec?: { kind: 'page' | 'tile' | 'component', body: object },
-  //                                hand off to freestyler (canvas) or
-  //                                add-app (full-page) based on `kind`.
-  //
-  //   // ACTION:
-  //   actions?: [ProposedAction],  // shape declared at top of file
-  //   requiresConfirmation?: bool, // true when authMode === 'ask'
-  //   results?: [...]              // populated when authMode === 'auto'
+  //   intent: 'build' | 'answer',
+  //   text?: string,              // ANSWER: full assistant reply
+  //   spec?: { kind, body }       // BUILD: hand off to freestyler / add-app
   // }>
-  //
-  // Wire: same /ai-chat/stream endpoint. The server reads `intentTools`
-  // from the payload and runs the LLM with a tool-use system prompt that
-  // declares three tools: build_app / answer / propose_actions. The model
-  // calls exactly one and the server returns the structured response.
   //
   // Client-side hint: a prompt starting with `/new` (case-insensitive,
   // optional trailing space) is forced to BUILD without consulting the
-  // LLM for classification — saves a round-trip on the most explicit case.
-  // Everything else relies on LLM classification.
+  // agent — saves a round-trip on the most explicit case. Everything else
+  // streams an answer from the workspace agent. The agent transport is
+  // answer-only today, so ACTION proposals don't come back from here;
+  // authMode is still read for forward-compat but currently unused.
   async dispatch (payload = {}, callbacks = {}) {
     const text = String(payload.text || payload.content || '').trim()
     const forcedBuild = /^\/new(\s|$)/i.test(text)
-    const authMode = this.getAuthMode()
-    const mode = this.getMode()
 
     // /new prefix is a hard hint — skip the round-trip and return the
     // build descriptor immediately so the caller can hand off to the
@@ -317,136 +203,31 @@ export class AiService extends BaseService {
       return result
     }
 
-    const requestBody = {
-      payload: {
-        ...payload,
-        text,
-        intentMode: 'classify',
-        authMode,
-        mode
-      }
-    }
-
-    // ANSWER intent streams text; BUILD/ACTION return structured payloads
-    // delivered through onDone. We forward both: onChunk fires when the
-    // server emits assistant_delta events; onDone fires once with the
-    // resolved intent + payload.
-    //
-    // Local mode bypasses /ai-chat/dispatch entirely and streams through
-    // the simone-bridge — the bridge's MCP-aware agent can run tools
-    // server-side. Intent classification stays a "best effort answer"
-    // until the bridge is taught to emit { intent, spec, actions } too.
-    if (mode === 'local') {
-      return new Promise((resolve) => {
-        let buffered = ''
-        this._streamLocal(payload, {
-          onChunk: (delta) => {
-            buffered += delta
-            callbacks.onChunk?.(delta)
-          },
-          onDone: () => {
-            const result = { intent: INTENT_ANSWER, text: buffered }
-            callbacks.onDone?.(result)
-            resolve(result)
-          },
-          onError: (err) => {
-            callbacks.onError?.(err)
-            resolve({ intent: INTENT_ANSWER, text: '', error: err?.message || String(err) })
-          }
-        })
-      })
-    }
-
-    // Server-side intent classification. Falls back to stream() if the
-    // /ai-chat/dispatch endpoint isn't deployed yet — treats the
-    // response as plain answer intent so the existing /ai-chat/stream
-    // path keeps working during the multi-PR migration.
-    return new Promise((resolve, reject) => {
+    // Everything else is an ANSWER streamed from the workspace agent. We
+    // buffer the streamed text and resolve once the turn completes.
+    return new Promise((resolve) => {
       let buffered = ''
-      let resolved = false
-      let fellBack = false
-
-      const fallbackToStream = () => {
-        if (fellBack || resolved) return
-        fellBack = true
-        let streamBuf = ''
-        // Translate dispatch's `text` → ai-chat/stream's expected
-        // `content` / `messages`. AiChatService.stream wants either
-        // `threadId + content` OR a `messages` array; dispatch
-        // callers only have `text`, so synthesize a single user
-        // message. attachedCard / appContext pass through unchanged.
-        const fallbackBody = {
-          payload: {
-            ...payload,
-            ...(payload.threadId || payload.content || payload.messages
-              ? {}
-              : { messages: [{ role: 'user', content: text }] })
-          }
-        }
-        this._streamPost('/ai-chat/stream', fallbackBody, {
-          onChunk: (delta) => {
-            streamBuf += delta
-            callbacks.onChunk?.(delta)
-          },
-          onDone: (donePayload) => {
-            if (resolved) return
-            resolved = true
-            const finalText = donePayload?.text || streamBuf
-            const result = { intent: INTENT_ANSWER, text: finalText, _viaFallback: true }
-            callbacks.onDone?.(result)
-            resolve(result)
-          },
-          onError: (err) => {
-            if (resolved) return
-            resolved = true
-            callbacks.onError?.(err)
-            reject(err)
-          }
-        })
-      }
-
-      this._streamPost('/ai-chat/dispatch', requestBody, {
+      this._streamWorkspaceTurn({ ...payload, content: text || payload.content, text }, {
         onChunk: (delta) => {
           buffered += delta
           callbacks.onChunk?.(delta)
         },
-        onDone: async (payload) => {
-          if (resolved) return
-          resolved = true
-          const result = payload && typeof payload === 'object'
-            ? payload
-            : { intent: INTENT_ANSWER, text: buffered }
-          // Auto-execute proposed actions when authMode is 'auto'.
-          if (result.intent === INTENT_ACTION && authMode === 'auto' && Array.isArray(result.actions)) {
-            result.results = await this._executeActions(result.actions)
-            result.requiresConfirmation = false
-          } else if (result.intent === INTENT_ACTION) {
-            result.requiresConfirmation = true
-          }
+        onDone: (donePayload) => {
+          const result = { intent: INTENT_ANSWER, text: donePayload?.text || buffered }
           callbacks.onDone?.(result)
           resolve(result)
         },
         onError: (err) => {
-          // 404 / route-missing → graceful fallback to the existing
-          // /ai-chat/stream path. Any other error surfaces as before.
-          const msg = String(err?.message || err || '')
-          if (/404|not\s*found|cannot.*POST.*dispatch/i.test(msg)) {
-            fallbackToStream()
-            return
-          }
-          if (resolved) return
-          resolved = true
           callbacks.onError?.(err)
-          reject(err)
+          resolve({ intent: INTENT_ANSWER, text: buffered, error: err?.message || String(err) })
         }
       })
     })
   }
 
-  // Execute a list of ProposedAction descriptors. Called by dispatch() in
-  // authMode='auto' and by the AiActionConfirmCard's Confirm button in
-  // authMode='ask'. Resolves each action via the SDK's service surface —
-  // no domain knowledge in the AI service itself.
+  // Execute a list of ProposedAction descriptors. Called by the
+  // AiActionConfirmCard's Confirm button. Resolves each action via the
+  // SDK's service surface — no domain knowledge in the AI service itself.
   //
   // Action descriptor shape:
   //   { sdkCall: { service:'tickets', method:'create', args:[{…}] } }
@@ -497,66 +278,167 @@ export class AiService extends BaseService {
   //   { content, messages?, threadId?, attachedCard?, systemPromptOverride?,
   //     model?, context? }
   // callbacks:
-  //   onChunk(deltaText), onDone({ text, usage, ... }), onError(err)
+  //   onChunk(deltaText), onDone({ text, … }), onError(err)
   // returns: cancel() — abort the in-flight turn
   stream (payload = {}, callbacks = {}) {
-    const mode = this.getMode()
-    if (mode === 'local') return this._streamLocal(payload, callbacks)
-    // simone + providers share the HTTP/SSE path; the server reads `mode`
-    // from the body to pick the upstream.
-    return this._streamHttp(payload, callbacks, mode)
+    return this._streamHttp(payload, callbacks)
   }
 
-  _streamHttp (payload, callbacks, mode) {
-    const body = { payload: { ...payload, mode } }
-    return this._streamPost('/ai-chat/stream', body, callbacks)
+  _streamHttp (payload, callbacks) {
+    return this._streamWorkspaceTurn(payload, callbacks)
   }
 
-  _streamLocal (payload, callbacks) {
+  // ==================== WORKSPACE AGENT TURN (private) ====================
+
+  // Stream one turn through the workspace-scoped agent conversation.
+  //
+  //   1. Resolve the active workspace; bail via onError if none.
+  //   2. Resolve (or lazily create + cache) the conversation id for it.
+  //   3. Open the SSE stream BEFORE posting the message — the server runs
+  //      the planner synchronously during the POST and publishes
+  //      message.created, so we must be subscribed first to catch it.
+  //   4. POST the message ({ content, modelMode }).
+  //   5. If no assistant frame arrives within ASSISTANT_FALLBACK_MS of the
+  //      POST resolving, fall back to a one-shot getConversation() read and
+  //      surface the latest assistant message.
+  //
+  // Returns cancel() — aborts the SSE stream and marks the turn cancelled.
+  _streamWorkspaceTurn (payload, callbacks = {}) {
     const { onChunk, onDone, onError } = callbacks
-    let cancelled = false
-    const turn = {
-      cancel: () => { cancelled = true },
-      onChunk,
-      onDone,
-      onError,
-      buffer: ''
+
+    const wsId = this._context?.activeWorkspaceId || this._readActiveWorkspace()
+    if (!wsId) {
+      onError?.(new Error('[sdk.ai] no active workspace selected'))
+      return () => {}
     }
 
-    // Serialize turns — bridge sessions are single-turn-at-a-time. If
-    // there's already an open turn, queue this one and start it when the
-    // current finishes.
-    const startTurn = async () => {
-      if (cancelled) return
+    const base = `${this._apiUrl}/agents/workspaces/${encodeURIComponent(wsId)}/conversations`
+
+    let answered = false
+    let cancelled = false
+    let cancelStream = () => {}
+    let fallbackTimer = null
+
+    const stopStream = () => { try { cancelStream() } catch (_) {} }
+    const clearFallback = () => {
+      if (fallbackTimer) { clearTimeout(fallbackTimer); fallbackTimer = null }
+    }
+
+    // Pull the joined text out of an assistant message's content blocks.
+    const blocksToText = (content) =>
+      (content || []).filter((p) => p && p.type === 'text').map((p) => p.text).join('')
+
+    const finishAnswer = (txt) => {
+      if (answered || cancelled) return
+      answered = true
+      clearFallback()
+      onChunk?.(txt)
+      onDone?.({ text: txt })
+      stopStream()
+    }
+
+    const fail = (err) => {
+      if (answered || cancelled) return
+      answered = true
+      clearFallback()
+      onError?.(err)
+      stopStream()
+    }
+
+    ;(async () => {
+      let conversationId
       try {
-        await this._ensureBridge()
+        conversationId = await this._resolveConversationId(wsId, base)
       } catch (err) {
-        onError?.(err)
+        fail(err)
         return
       }
       if (cancelled) return
-      this._pendingTurn = turn
-      try {
-        this._bridgeWs.send(JSON.stringify({
-          type: 'user_message',
-          text: payload.content || payload.text || '',
-          context: payload.context || null
-        }))
-      } catch (err) {
-        this._pendingTurn = null
-        onError?.(err)
-      }
-    }
 
-    if (this._pendingTurn) {
-      this._turnQueue.push(startTurn)
-    } else {
-      startTurn()
-    }
+      // Subscribe FIRST so we don't miss the synchronously-published
+      // message.created frame, then POST the message.
+      cancelStream = this._streamSSE(`${base}/${conversationId}/stream`, {
+        onEvent: ({ event, data }) => {
+          if (answered || cancelled) return
+          if (event === 'message.delta' && data?.message) {
+            onChunk?.(data.message)
+            return
+          }
+          if (event === 'message.created' && data?.role === 'assistant') {
+            finishAnswer(blocksToText(data.content))
+          }
+        },
+        onError: (err) => fail(err)
+      })
+
+      // POST the user message. The assistant reply comes back over the SSE
+      // stream above (message.created), not in this response.
+      this._requestExternal(`${base}/${conversationId}/messages`, {
+        method: 'POST',
+        body: {
+          content: payload.content || payload.text || '',
+          modelMode: this.getModelMode()
+        },
+        methodName: 'ai.appendMessage'
+      }).then(() => {
+        if (answered || cancelled) return
+        // Race guard: if the assistant frame hasn't arrived shortly after
+        // the POST resolves, read the conversation directly and use the
+        // latest assistant message.
+        clearFallback()
+        fallbackTimer = setTimeout(() => {
+          this._fallbackToLatestAssistant(base, conversationId, finishAnswer, fail)
+        }, ASSISTANT_FALLBACK_MS)
+      }).catch((err) => fail(err))
+    })()
 
     return () => {
       cancelled = true
-      if (this._pendingTurn === turn) this._pendingTurn = null
+      clearFallback()
+      stopStream()
+    }
+  }
+
+  // Resolve the conversation id for a workspace, creating + caching one on
+  // first use. Cached per-workspace in localStorage so a surface reopened
+  // later resumes the same conversation.
+  async _resolveConversationId (wsId, base) {
+    const key = `symbols_ai_conversation_${wsId}`
+    const cached = this._readStorage(key)
+    if (cached) return cached
+
+    const res = await this._requestExternal(base, {
+      method: 'POST',
+      body: {},
+      methodName: 'ai.createConversation'
+    })
+    // _requestExternal returns the raw body — unwrap the { success, data }
+    // envelope when present, else accept a bare conversation object.
+    const data = res && typeof res === 'object' && 'data' in res ? res.data : res
+    const id = data?.id
+    if (!id) throw new Error('[sdk.ai] createConversation returned no id')
+    this._writeStorage(key, id)
+    return id
+  }
+
+  // One-shot read of the conversation, surfacing the latest assistant
+  // message's text. Fallback for when no streamed assistant frame arrived.
+  async _fallbackToLatestAssistant (base, conversationId, finishAnswer, fail) {
+    try {
+      const res = await this._requestExternal(`${base}/${conversationId}`, {
+        method: 'GET',
+        methodName: 'ai.getConversation'
+      })
+      const data = res && typeof res === 'object' && 'data' in res ? res.data : res
+      const messages = data?.messages || []
+      const assistant = [...messages].reverse().find((m) => m?.role === 'assistant')
+      const txt = assistant
+        ? (assistant.content || []).filter((p) => p && p.type === 'text').map((p) => p.text).join('')
+        : ''
+      if (txt) finishAnswer(txt)
+      else fail(new Error('[sdk.ai] no assistant response'))
+    } catch (err) {
+      fail(err)
     }
   }
 
@@ -564,9 +446,6 @@ export class AiService extends BaseService {
 
   // Non-streaming turn — collects the stream into a single promise.
   // Mirrors AiChatService.completion shape so consumers swap cleanly.
-  //
-  // For HTTP modes this could hit the dedicated /ai-chat/completion route,
-  // but routing through stream() keeps the mode-switch logic in ONE place.
   completion (payload = {}) {
     return new Promise((resolve, reject) => {
       let buffer = ''
@@ -596,118 +475,18 @@ export class AiService extends BaseService {
     })
   }
 
-  // ==================== BRIDGE LIFECYCLE (private) ====================
+  // ==================== STORAGE HELPERS (private) ====================
 
-  // Lazily open the WebSocket to simone-bridge and resolve once
-  // 'bridge_ready' is received. Reused across turns; reconnects on close.
-  async _ensureBridge () {
-    if (this._bridgeWs && this._bridgeWs.readyState === WebSocket.OPEN && this._bridgeReady) {
-      await this._bridgeReady
-      return
-    }
-    if (this._bridgeWs) {
-      try { this._bridgeWs.close() } catch (_) {}
-    }
-    const url = this.getBridgeUrl()
-    this._bridgeWs = new WebSocket(url)
-    this._bridgeWs.addEventListener('message', (ev) => this._onBridgeMessage(ev))
-    this._bridgeWs.addEventListener('close', () => this._onBridgeClose())
-    this._bridgeWs.addEventListener('error', (e) => this._onBridgeError(e))
-
-    this._bridgeReady = new Promise((resolve, reject) => {
-      const openTimer = setTimeout(() => reject(new Error('[sdk.ai.local] bridge open timeout')), 5000)
-      this._bridgeWs.addEventListener('open', () => {
-        try {
-          this._bridgeWs.send(JSON.stringify({
-            type: 'hello',
-            surface: 'sdk',
-            capabilities: []
-          }))
-          // Tell the bridge we want app mode (no canvas tools) — workspace
-          // surfaces that need canvas-mcp tool routing connect directly
-          // with their own client.
-          this._bridgeWs.send(JSON.stringify({
-            type: 'select_target',
-            target: { mode: 'app' }
-          }))
-        } catch (err) {
-          clearTimeout(openTimer)
-          reject(err)
-        }
-      })
-      this._bridgeWs.addEventListener('message', (ev) => {
-        try {
-          const msg = JSON.parse(ev.data)
-          if (msg.type === 'bridge_ready') {
-            this._bridgeSessionId = msg.sessionId
-            clearTimeout(openTimer)
-            resolve()
-          }
-        } catch (_) {}
-      })
-    })
-
-    await this._bridgeReady
+  _readActiveWorkspace () {
+    return this._readStorage('activeWorkspace')
   }
 
-  _onBridgeMessage (ev) {
-    let msg
-    try { msg = JSON.parse(ev.data) } catch (_) { return }
-    const turn = this._pendingTurn
-    if (!turn) return  // unsolicited messages (heartbeats, etc.) ignored
-
-    if (msg.type === 'assistant_delta') {
-      turn.buffer += msg.text || ''
-      turn.onChunk?.(msg.text || '')
-    } else if (msg.type === 'turn_complete') {
-      const final = { text: turn.buffer, durationMs: msg.durationMs }
-      this._pendingTurn = null
-      turn.onDone?.(final)
-      this._drainQueue()
-    } else if (msg.type === 'agent_stuck') {
-      this._pendingTurn = null
-      turn.onError?.(new Error(`[sdk.ai.local] agent stuck: ${msg.reason}`))
-      this._drainQueue()
-    }
-    // tool_use: app mode shouldn't see tool calls (bridge handles them);
-    // if one slips through, ignore — surfaces that proxy tools (canvas)
-    // connect to the bridge with their own client.
+  _readStorage (key) {
+    try { return localStorage.getItem(key) } catch (_) { return null }
   }
 
-  _onBridgeClose () {
-    this._bridgeWs = null
-    this._bridgeReady = null
-    if (this._pendingTurn) {
-      this._pendingTurn.onError?.(new Error('[sdk.ai.local] bridge connection closed'))
-      this._pendingTurn = null
-    }
-    this._turnQueue = []
-  }
-
-  _onBridgeError (e) {
-    if (this._pendingTurn) {
-      this._pendingTurn.onError?.(new Error('[sdk.ai.local] bridge socket error'))
-      this._pendingTurn = null
-    }
-  }
-
-  _drainQueue () {
-    const next = this._turnQueue.shift()
-    if (next) next()
-  }
-
-  _closeBridge (reason) {
-    if (this._bridgeWs) {
-      try { this._bridgeWs.close(1000, reason) } catch (_) {}
-    }
-    this._bridgeWs = null
-    this._bridgeReady = null
-    this._bridgeSessionId = null
-    if (this._pendingTurn) {
-      this._pendingTurn.onError?.(new Error(`[sdk.ai.local] ${reason}`))
-      this._pendingTurn = null
-    }
-    this._turnQueue = []
+  _writeStorage (key, value) {
+    try { localStorage.setItem(key, value) } catch (_) {}
   }
 }
 
