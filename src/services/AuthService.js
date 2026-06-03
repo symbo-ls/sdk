@@ -766,6 +766,21 @@ export class AuthService extends BaseService {
     }
   }
 
+  async createAgent(payload = {}) {
+    this._requireReady('createAgent')
+    try {
+      const response = await this._request('/users/agents', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+        methodName: 'createAgent'
+      })
+      if (response?.success) return response.data
+      return response?.data || response
+    } catch (error) {
+      throw new Error(`Failed to create agent: ${error.message}`, { cause: error })
+    }
+  }
+
   async getUserByEmail(email) {
     this._requireReady('getUserByEmail')
     if (!email) {
