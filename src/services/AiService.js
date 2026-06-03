@@ -9,7 +9,8 @@ import { BaseService } from './BaseService.js'
 // localStorage) and streams the assistant's reply back as
 // `event: <name>\ndata: <json>\n\n` frames:
 //
-//   base = `${apiUrl}/agents/workspaces/${workspaceId}/conversations`
+//   base = `${apiUrl}/core/agents/workspaces/${workspaceId}/conversations`  (default)
+//   base = `${apiUrl}/core/agents/projects/${projectId}/conversations`      (when scoped)
 //   POST base                      { title? }  → { success, data:{ id } }
 //   POST base/:id/messages         { content, modelMode }
 //                                  → { success, data:{ conversation, userMessage, assistantMessage } }
@@ -306,13 +307,24 @@ export class AiService extends BaseService {
   _streamWorkspaceTurn (payload, callbacks = {}) {
     const { onChunk, onDone, onError } = callbacks
 
-    const wsId = this._context?.activeWorkspaceId || this._readActiveWorkspace()
-    if (!wsId) {
-      onError?.(new Error('[sdk.ai] no active workspace selected'))
-      return () => {}
+    // Scope: workspace is the DEFAULT ("most common"); a project-scoped
+    // conversation is used when a projectId is supplied — agents work on both.
+    // Both hit /core/agents/<scope>/conversations (note the /core prefix —
+    // _requestExternal/_streamSSE take a full URL, so we add it here).
+    const projectId = payload?.projectId || this._context?.activeProjectId
+    let base, cacheKey
+    if (projectId) {
+      base = `${this._apiUrl}/core/agents/projects/${encodeURIComponent(projectId)}/conversations`
+      cacheKey = `symbols_ai_conversation_project_${projectId}`
+    } else {
+      const wsId = this._context?.activeWorkspaceId || this._readActiveWorkspace()
+      if (!wsId) {
+        onError?.(new Error('[sdk.ai] no active workspace or project selected'))
+        return () => {}
+      }
+      base = `${this._apiUrl}/core/agents/workspaces/${encodeURIComponent(wsId)}/conversations`
+      cacheKey = `symbols_ai_conversation_${wsId}`
     }
-
-    const base = `${this._apiUrl}/agents/workspaces/${encodeURIComponent(wsId)}/conversations`
 
     let answered = false
     let cancelled = false
@@ -348,7 +360,7 @@ export class AiService extends BaseService {
     ;(async () => {
       let conversationId
       try {
-        conversationId = await this._resolveConversationId(wsId, base)
+        conversationId = await this._resolveConversationId(cacheKey, base)
       } catch (err) {
         fail(err)
         return
@@ -402,9 +414,8 @@ export class AiService extends BaseService {
   // Resolve the conversation id for a workspace, creating + caching one on
   // first use. Cached per-workspace in localStorage so a surface reopened
   // later resumes the same conversation.
-  async _resolveConversationId (wsId, base) {
-    const key = `symbols_ai_conversation_${wsId}`
-    const cached = this._readStorage(key)
+  async _resolveConversationId (cacheKey, base) {
+    const cached = this._readStorage(cacheKey)
     if (cached) return cached
 
     const res = await this._requestExternal(base, {
@@ -417,7 +428,7 @@ export class AiService extends BaseService {
     const data = res && typeof res === 'object' && 'data' in res ? res.data : res
     const id = data?.id
     if (!id) throw new Error('[sdk.ai] createConversation returned no id')
-    this._writeStorage(key, id)
+    this._writeStorage(cacheKey, id)
     return id
   }
 
