@@ -752,10 +752,16 @@ export class AuthService extends BaseService {
   // Returns User docs with kind === 'agent'. Replaces the hardcoded
   // SEED_AGENTS array on /team-and-agents so adding/removing an agent
   // is a server-side data op, not a client redeploy.
-  async listAgents() {
+  //
+  // Org-scoped (2026-06-06): pass the active orgId — the server
+  // returns only that org's agents (metadata.organization match).
+  // Omitting it falls back to the legacy unstamped subset, never the
+  // cross-tenant roster.
+  async listAgents(orgId) {
     this._requireReady('listAgents')
     try {
-      const response = await this._request('/users/agents', {
+      const qs = orgId ? `?orgId=${encodeURIComponent(orgId)}` : ''
+      const response = await this._request(`/users/agents${qs}`, {
         method: 'GET',
         methodName: 'listAgents'
       })
