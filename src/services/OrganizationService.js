@@ -326,6 +326,22 @@ export class OrganizationService extends BaseService {
     throw new Error(response.message)
   }
 
+  // Batched: ALL team-member rows for the org's visible teams in one
+  // call — `{ teams, members }` where members carry `team` ids.
+  // Replaces the per-team listTeamMembers fan-out for hydration paths
+  // (2026-06-06 perf).
+  async listOrgTeamMembers (orgId) {
+    this._requireReady('listOrgTeamMembers')
+    if (!orgId) throw new Error('orgId is required')
+
+    const response = await this._request(`/organizations/${orgId}/team-members`, {
+      method: 'GET',
+      methodName: 'listOrgTeamMembers'
+    })
+    if (response.success) return response.data
+    throw new Error(response.message)
+  }
+
   async addTeamMember (orgId, teamId, { userId, role = 'member' }) {
     this._requireReady('addTeamMember')
     if (!orgId || !teamId) throw new Error('orgId and teamId are required')
