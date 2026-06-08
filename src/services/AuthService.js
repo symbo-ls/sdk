@@ -787,6 +787,61 @@ export class AuthService extends BaseService {
     }
   }
 
+  // Full agent record (incl. metadata: instructions / permissions /
+  // userRole / capabilities / scopedProject) for the agent settings editor.
+  // listAgents returns a lean roster; this hydrates every tab of the modal.
+  async getAgent(agentId) {
+    this._requireReady('getAgent')
+    if (!agentId) throw new Error('agentId is required')
+    try {
+      const response = await this._request(`/users/agents/${encodeURIComponent(agentId)}`, {
+        method: 'GET',
+        methodName: 'getAgent'
+      })
+      if (response?.success) return response.data
+      return response?.data || response
+    } catch (error) {
+      throw new Error(`Failed to get agent: ${error.message}`, { cause: error })
+    }
+  }
+
+  // Partial update of an agent's editable config (Instructions / Permissions
+  // / Tools tabs). Body: { instructions?, role?, userRole?, permissions?,
+  // capabilities?, scopedProject? }. Persists onto User.metadata so the
+  // agent runtime reads it at turn time.
+  async updateAgent(agentId, updates = {}) {
+    this._requireReady('updateAgent')
+    if (!agentId) throw new Error('agentId is required')
+    try {
+      const response = await this._request(`/users/agents/${encodeURIComponent(agentId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(updates),
+        methodName: 'updateAgent'
+      })
+      if (response?.success) return response.data
+      return response?.data || response
+    } catch (error) {
+      throw new Error(`Failed to update agent: ${error.message}`, { cause: error })
+    }
+  }
+
+  // Runtime capability/tool catalog that backs the editor's "Tools" tab —
+  // { capabilities, categories, catalog } sourced from agent-core, so the
+  // UI never hardcodes the capability list.
+  async getAgentToolCatalog() {
+    this._requireReady('getAgentToolCatalog')
+    try {
+      const response = await this._request('/users/agents/tool-catalog', {
+        method: 'GET',
+        methodName: 'getAgentToolCatalog'
+      })
+      if (response?.success) return response.data
+      return response?.data || response
+    } catch (error) {
+      throw new Error(`Failed to get agent tool catalog: ${error.message}`, { cause: error })
+    }
+  }
+
   async getUserByEmail(email) {
     this._requireReady('getUserByEmail')
     if (!email) {
