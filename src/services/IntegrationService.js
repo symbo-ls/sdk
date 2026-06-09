@@ -556,4 +556,76 @@ export class IntegrationService extends BaseService {
       throw new Error(`Failed to delete GitHub connector: ${error.message}`, { cause: error })
     }
   }
+
+  // ==================== GITHUB REPO METHODS ====================
+
+  /**
+   * Get a single GitHub repository by owner + repo name.
+   *
+   * Mirrors: GET /core/integrations/github/repo?owner=<owner>&repo=<repo>
+   *
+   * Returns { ok, repo } from the server envelope.
+   */
+  async getGitHubRepo ({ owner, repo } = {}) {
+    this._requireReady('getGitHubRepo')
+    if (!owner) {
+      throw new Error('owner is required')
+    }
+    if (!repo) {
+      throw new Error('repo is required')
+    }
+
+    const queryParams = new URLSearchParams()
+    queryParams.append('owner', String(owner))
+    queryParams.append('repo', String(repo))
+
+    try {
+      const response = await this._request(
+        `/integrations/github/repo?${queryParams.toString()}`,
+        {
+          method: 'GET',
+          methodName: 'getGitHubRepo'
+        }
+      )
+      if (response.success) {
+        return response.data
+      }
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Failed to get GitHub repo: ${error.message}`, { cause: error })
+    }
+  }
+
+  /**
+   * List GitHub repositories accessible to the authenticated user / org.
+   *
+   * Mirrors: GET /core/integrations/github/repos?orgId=<orgId>
+   *
+   * Returns { ok, repos } from the server envelope.
+   */
+  async listGitHubRepos ({ orgId } = {}) {
+    this._requireReady('listGitHubRepos')
+    if (!orgId) {
+      throw new Error('orgId is required')
+    }
+
+    const queryParams = new URLSearchParams()
+    queryParams.append('orgId', String(orgId))
+
+    try {
+      const response = await this._request(
+        `/integrations/github/repos?${queryParams.toString()}`,
+        {
+          method: 'GET',
+          methodName: 'listGitHubRepos'
+        }
+      )
+      if (response.success) {
+        return response.data
+      }
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Failed to list GitHub repos: ${error.message}`, { cause: error })
+    }
+  }
 }
