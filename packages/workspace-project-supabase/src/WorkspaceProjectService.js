@@ -567,6 +567,7 @@ export class WorkspaceProjectService extends BaseService {
   birthdays     = this._sbCrud('birthdays')
   stories       = this._sbCrud('stories')
   valuations    = this._sbCrud('valuations')
+  fileCanvas    = this._sbCrud('file_canvas')
 
   // --- Analyzed (observability) ----------------------------------------------
   // Replaces Grafana Faro for symbo.ls apps. Browser → workspace-project

@@ -751,6 +751,17 @@ const ENTITY_ROUTES = {
     },
     argMap: CRUD_ARG_MAP,
   },
+  'workspaceProject.fileCanvas': {
+    service: 'workspaceProject',
+    methods: {
+      list: 'fileCanvas.list',
+      get: 'fileCanvas.get',
+      create: 'fileCanvas.create',
+      update: 'fileCanvas.update',
+      remove: 'fileCanvas.remove',
+    },
+    argMap: CRUD_ARG_MAP,
+  },
   'workspaceProject.companyInfo': {
     service: 'workspaceProject',
     methods: { list: 'companyInfo.list', update: 'companyInfo.upsert' },
