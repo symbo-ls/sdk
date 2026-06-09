@@ -348,6 +348,7 @@ export const SERVICE_METHODS = {
   deleteGitHubConnector: 'integration',
   getGitHubRepo: 'integration',
   listGitHubRepos: 'integration',
+  syncGitHubIntegration: 'integration',
 
   // Feature flag methods (system-level + experiments)
   getFeatureFlags: 'featureFlag',

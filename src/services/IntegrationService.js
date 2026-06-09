@@ -628,4 +628,33 @@ export class IntegrationService extends BaseService {
       throw new Error(`Failed to list GitHub repos: ${error.message}`, { cause: error })
     }
   }
+
+  /**
+   * Trigger a manual "Pull now" sync for an org's GitHub Projects v2 board.
+   *
+   * Mirrors: POST /core/integrations/github/sync
+   * Body: { orgId, slug, scopeType, scopeId }
+   *
+   * Returns { ok, summary } from the server envelope.
+   */
+  async syncGitHubIntegration ({ orgId, slug = 'default', scopeType = 'org', scopeId = null } = {}) {
+    this._requireReady('syncGitHubIntegration')
+    if (!orgId) {
+      throw new Error('orgId is required')
+    }
+
+    try {
+      const response = await this._request('/integrations/github/sync', {
+        method: 'POST',
+        body: JSON.stringify({ orgId, slug, scopeType, scopeId }),
+        methodName: 'syncGitHubIntegration'
+      })
+      if (response.success) {
+        return response.data
+      }
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Failed to sync GitHub integration: ${error.message}`, { cause: error })
+    }
+  }
 }
