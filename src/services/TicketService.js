@@ -46,6 +46,24 @@ export class TicketService extends BaseService {
   }
 
   /**
+   * Per-column ticket counts in ONE server aggregation. Same filter
+   * semantics as list() (workspace auto-scope included) — replaces the
+   * per-column list({limit:0, includeCount}) fan-out.
+   *
+   * @param {object} filter - Filter criteria (cycleId, assigneeEmail, etc.)
+   * @returns {Promise<object>} Map of columnKey → count
+   */
+  columnCounts (filter = {}) {
+    const scoped = (filter.workspaceId || filter.workspace || filter.workspace_id)
+      ? filter
+      : { ...filter, workspaceId: this._workspaceScope() || undefined }
+    return this._call('tickets.columnCounts', '/tickets/column-counts', {
+      method: 'POST',
+      body: { filter: scoped }
+    })
+  }
+
+  /**
    * Get a single ticket by ID.
    *
    * @param {string} ticketId - MongoDB ObjectId or external_id string
