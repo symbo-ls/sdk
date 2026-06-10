@@ -386,6 +386,19 @@ export class TicketService extends BaseService {
       this._call('tickets.columns.list', '/tickets/columns'),
 
     /**
+     * Create a board column. Key defaults to a slug of the label;
+     * position defaults to after the current last column.
+     *
+     * @param {object} payload - { label, key?, position?, color? }
+     * @returns {Promise<object>} Created column document
+     */
+    create: (payload) =>
+      this._call('tickets.columns.create', '/tickets/columns', {
+        method: 'POST',
+        body: { payload }
+      }),
+
+    /**
      * Update a column's properties (name, position, etc.).
      *
      * @param {string} key - Column key identifier
