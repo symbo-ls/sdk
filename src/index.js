@@ -29,6 +29,7 @@ import {
   createSharedAssetService,
   createCreditsService,
   createCanvasLayoutService,
+  createMeetService,
   workspaceProjectBaseUrl,
   createSupabasePassthroughConfig,
   workspaceProjectEdgeFunctionUrl,
@@ -303,6 +304,15 @@ export class SDK {
       this._initService(
         'canvasLayout',
         createCanvasLayoutService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      // Meet — guest waiting-room flow (anonymous) + host remote mute
+      // against /core/meet/* on the main server.
+      this._initService(
+        'meet',
+        createMeetService({
           context: this._context,
           options: this._options
         })
@@ -646,6 +656,7 @@ export {
   createSharedAssetService,
   createCreditsService,
   createCanvasLayoutService,
+  createMeetService,
   workspaceProjectBaseUrl,
   createSupabasePassthroughConfig,
   workspaceProjectEdgeFunctionUrl,

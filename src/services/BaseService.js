@@ -309,7 +309,13 @@ export class BaseService {
       'getPlans',
       'getPlan',
       'listPublicProjects',
-      'getPublicProject'
+      'getPublicProject',
+      // Anonymous meet guest flow — unauthenticated visitors join public
+      // rooms through the waiting room; no bearer token is attached.
+      'meetGuestMeta',
+      'meetGuestRequest',
+      'meetGuestStatus',
+      'meetGuestToken'
     ])
     return !noInitMethods.has(methodName)
   }

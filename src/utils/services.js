@@ -492,6 +492,18 @@ export const SERVICE_METHODS = {
   // Subscribe: 'canvas-layout-changed' socket event.
   getCanvasLayout: 'canvasLayout',
   patchCanvasLayout: 'canvasLayout',
-  subscribeWorkspaceCanvasLayout: 'canvasLayout'
+  subscribeWorkspaceCanvasLayout: 'canvasLayout',
+
+  // Meet — anonymous guest waiting-room flow + host remote mute.
+  // POST /core/meet/guest/meta    → { name, require*, ... }      (no auth)
+  // POST /core/meet/guest/request → { waitingId, status, ... }   (no auth)
+  // POST /core/meet/guest/status  → { status }                   (no auth)
+  // POST /core/meet/guest/token   → { token, url, identity }     (no auth)
+  // POST /core/meet/mute          → { ok: true }                 (auth, host-only)
+  meetGuestMeta: 'meet',
+  meetGuestRequest: 'meet',
+  meetGuestStatus: 'meet',
+  meetGuestToken: 'meet',
+  meetMuteParticipant: 'meet'
 }
 

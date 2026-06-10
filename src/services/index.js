@@ -39,6 +39,7 @@ import { AllocationRuleService } from './AllocationRuleService.js'
 import { SharedAssetService } from './SharedAssetService.js'
 import { CreditsService } from './CreditsService.js'
 import { CanvasLayoutService } from './CanvasLayoutService.js'
+import { MeetService } from './MeetService.js'
 
 const createService = (ServiceClass, config) => new ServiceClass(config)
 
@@ -143,6 +144,12 @@ export const createCreditsService = config =>
 export const createCanvasLayoutService = config =>
   createService(CanvasLayoutService, config)
 
+// Meet service — guest waiting-room flow (anonymous) + host-side remote
+// mute against /core/meet/* on the main server. Replaces the legacy
+// meet-guest-* Supabase Edge Function raw-fetch calls.
+export const createMeetService = config =>
+  createService(MeetService, config)
+
 export {
   AuthService,
   CollabService,
@@ -177,5 +184,6 @@ export {
   AllocationRuleService,
   SharedAssetService,
   CreditsService,
-  CanvasLayoutService
+  CanvasLayoutService,
+  MeetService
 }
