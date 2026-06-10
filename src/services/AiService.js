@@ -498,7 +498,34 @@ export class AiService extends BaseService {
   }
 
   // Create a fresh thread. Returns the conversation summary ({ id, ... }).
-  async createConversation (opts = {}) {
+  // Ephemeral one-shot turn — the conversations pipeline (router → simone
+  // provider lead) with ZERO persistence: no conversation row, no messages.
+  // The default for stateless consumers (ticket standups, inline
+  // completions). payload: { content } or { messages:[{role,content}] },
+  // optional system + modelMode.
+  async turn (payload = {}, opts = {}) {
+    // Workspace-scoped only — the /turn route lives on the workspace, so an
+    // active project context must not divert the URL to /projects/:id.
+    const wsId = opts?.workspaceId || this._context?.activeWorkspaceId || this._readActiveWorkspace()
+    if (!wsId) throw new Error('[sdk.ai] no active workspace selected')
+    const url = `${this._apiUrl}/core/agents/workspaces/${encodeURIComponent(wsId)}/turn`
+    const body = {
+      ...(Array.isArray(payload.messages) && payload.messages.length
+        ? { messages: payload.messages }
+        : { content: String(payload.content || payload.text || '') }),
+      ...(payload.system ? { system: payload.system } : {}),
+      modelMode: payload.modelMode || this.getModelMode() || 'auto'
+    }
+    const res = await this._requestExternal(url, {
+      method: 'POST',
+      body,
+      methodName: 'ai.turn'
+    })
+    const data = this._unwrap(res)
+    return { text: (data && data.text) || '', raw: data }
+  }
+
+    async createConversation (opts = {}) {
     const targetAgentId = (opts && (opts.targetAgentId || (opts.context && opts.context.targetAgentId))) || null
     const res = await this._requestExternal(this._conversationBase(opts), {
       method: 'POST',
