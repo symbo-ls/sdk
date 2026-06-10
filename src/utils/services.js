@@ -493,6 +493,8 @@ export const SERVICE_METHODS = {
   getCanvasLayout: 'canvasLayout',
   patchCanvasLayout: 'canvasLayout',
   subscribeWorkspaceCanvasLayout: 'canvasLayout',
+  // Subscribe: 'file-canvas-changed' socket event (live /files desktop).
+  subscribeWorkspaceFileCanvas: 'canvasLayout',
 
   // Meet — anonymous guest waiting-room flow + host remote mute.
   // POST /core/meet/guest/meta    → { name, require*, ... }      (no auth)

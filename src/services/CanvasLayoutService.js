@@ -122,4 +122,71 @@ export class CanvasLayoutService extends BaseService {
       try { socket.disconnect() } catch (_) {}
     }
   }
+
+  /**
+   * Live /files desktop sync. Same socket transport/lifecycle as
+   * subscribeWorkspaceCanvasLayout, but fans `file-canvas-changed` events —
+   * broadcast by the server after every successful file_canvas mutation
+   * through the /sb proxy (the table's single write path).
+   *
+   * Handler receives { type: 'INSERT'|'UPDATE'|'DELETE', rows, ids, patch }:
+   * `rows` are full PostgREST rows when the response carried a
+   * representation; otherwise `ids` (+ `patch` for UPDATEs) lets the client
+   * merge without a refetch.
+   *
+   * @param {string} workspaceId
+   * @param {(payload: { type: string, rows: object[], ids: string[], patch: object|null }) => void} handler
+   * @returns {() => void} unsubscribe
+   */
+  subscribeWorkspaceFileCanvas (workspaceId, handler) {
+    if (!workspaceId || typeof handler !== 'function') return () => {}
+    if (!this._tokenManager) return () => {}
+    const token = this._tokenManager.getAccessToken?.()
+    if (!token) return () => {}
+    const baseUrl = this._apiUrl
+    if (!baseUrl) return () => {}
+
+    let socket
+    try {
+      socket = socketIoClient(baseUrl, {
+        path: '/user-socket',
+        transports: ['websocket', 'polling'],
+        auth: { token },
+        autoConnect: true,
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 10_000
+      })
+    } catch (err) {
+      logger.warn('[sdk.subscribeWorkspaceFileCanvas] socket init failed:', err?.message || err)
+      return () => {}
+    }
+
+    let _loggedAuthFail = false
+    socket.on('connect_error', (err) => {
+      if (err?.message && !_loggedAuthFail) {
+        _loggedAuthFail = true
+        logger.warn('[sdk.subscribeWorkspaceFileCanvas] connect_error:', err.message)
+      }
+    })
+
+    socket.on('file-canvas-changed', (payload) => {
+      if (payload?.workspaceId && payload.workspaceId !== workspaceId) return
+      try {
+        handler({
+          type: payload?.type || 'UPDATE',
+          rows: Array.isArray(payload?.rows) ? payload.rows : [],
+          ids: Array.isArray(payload?.ids) ? payload.ids : [],
+          patch: payload?.patch || null
+        })
+      } catch (err) {
+        logger.warn('[sdk.subscribeWorkspaceFileCanvas] handler threw:', err?.message || err)
+      }
+    })
+
+    return () => {
+      try { socket.removeAllListeners() } catch (_) {}
+      try { socket.disconnect() } catch (_) {}
+    }
+  }
 }
