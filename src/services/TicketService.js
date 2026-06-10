@@ -15,6 +15,20 @@ export class TicketService extends BaseService {
   // ==================== TICKET READS ====================
 
   /**
+   * Active-workspace scope. The server's /tickets list, epic-counts and
+   * resolutions routes are workspace-scoped (workspaceId REQUIRED — 400
+   * without it). Auto-attach the active workspace when the caller didn't
+   * pass one, resolved the same way AiService does: live SDK context first,
+   * then the persisted `activeWorkspace` storage key.
+   *
+   * @returns {string|null} Active workspace id, or null when unknown
+   */
+  _workspaceScope () {
+    if (this._context?.activeWorkspaceId) return this._context.activeWorkspaceId
+    try { return globalThis.localStorage?.getItem('activeWorkspace') || null } catch (_) { return null }
+  }
+
+  /**
    * List tickets matching filter and options.
    *
    * @param {object} filter - Filter criteria (ownerOrganization, project, state, assignee, etc.)
@@ -22,9 +36,12 @@ export class TicketService extends BaseService {
    * @returns {Promise<Array>} Array of ticket documents
    */
   list (filter = {}, options = {}) {
+    const scoped = (filter.workspaceId || filter.workspace || filter.workspace_id)
+      ? filter
+      : { ...filter, workspaceId: this._workspaceScope() || undefined }
     return this._call('tickets.list', '/tickets/list', {
       method: 'POST',
-      body: { filter, options }
+      body: { filter: scoped, options }
     })
   }
 
@@ -44,7 +61,9 @@ export class TicketService extends BaseService {
    * @returns {Promise<object>} Map of epic label → count
    */
   epicCounts () {
-    return this._call('tickets.epicCounts', '/tickets/epic-counts')
+    const wid = this._workspaceScope()
+    const qs = wid ? `?workspaceId=${encodeURIComponent(wid)}` : ''
+    return this._call('tickets.epicCounts', `/tickets/epic-counts${qs}`)
   }
 
   /**
@@ -431,10 +450,12 @@ export class TicketService extends BaseService {
    * @param {number} [opts.skip=0]
    * @returns {Promise<Array>} Array of resolution row objects
    */
-  resolutions ({ limit = 100, skip = 0 } = {}) {
+  resolutions ({ limit = 100, skip = 0, workspaceId } = {}) {
     const params = new URLSearchParams()
     if (limit !== 100) params.set('limit', String(limit))
     if (skip) params.set('skip', String(skip))
+    const wid = workspaceId || this._workspaceScope()
+    if (wid) params.set('workspaceId', wid)
     const qs = params.toString()
     return this._call('tickets.resolutions', `/tickets/resolutions${qs ? `?${qs}` : ''}`)
   }
