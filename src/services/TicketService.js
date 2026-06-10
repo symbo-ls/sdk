@@ -141,15 +141,20 @@ export class TicketService extends BaseService {
   update (ticketId, payload, { ifMatch } = {}) {
     const headers = {}
     if (ifMatch) headers['If-Match'] = ifMatch
+    // Writes are workspace-scoped server-side too — attach the active
+    // workspace as a query param (read by workspaceIdFromRequest) so BOTH
+    // payload shapes (JSON + markdown body) carry the scope.
+    const wid = this._workspaceScope()
+    const qs = wid ? `?workspaceId=${encodeURIComponent(wid)}` : ''
     if (typeof payload === 'string') {
       headers['Content-Type'] = 'text/markdown'
-      return this._call('tickets.update', `/tickets/${encodeURIComponent(ticketId)}`, {
+      return this._call('tickets.update', `/tickets/${encodeURIComponent(ticketId)}${qs}`, {
         method: 'PUT',
         body: payload,
         headers
       })
     }
-    return this._call('tickets.update', `/tickets/${encodeURIComponent(ticketId)}`, {
+    return this._call('tickets.update', `/tickets/${encodeURIComponent(ticketId)}${qs}`, {
       method: 'PUT',
       body: { payload },
       headers
@@ -163,7 +168,9 @@ export class TicketService extends BaseService {
    * @returns {Promise<null>}
    */
   remove (ticketId) {
-    return this._call('tickets.remove', `/tickets/${encodeURIComponent(ticketId)}`, {
+    const wid = this._workspaceScope()
+    const qs = wid ? `?workspaceId=${encodeURIComponent(wid)}` : ''
+    return this._call('tickets.remove', `/tickets/${encodeURIComponent(ticketId)}${qs}`, {
       method: 'DELETE'
     })
   }
