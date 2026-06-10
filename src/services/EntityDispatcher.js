@@ -948,7 +948,18 @@ const ENTITY_ROUTES = {
   'workspaceProject.realtime.meet': {
     service: 'workspaceProject',
     methods: { subscribe: 'realtime.subscribeMeet' },
-    argMap: { subscribe: (a) => [{ roomId: a?.roomId ?? a?.filter?.roomId }] },
+    // Forward roomId, workspaceId AND tables — the SSE transport needs the
+    // room/workspace scope to fan out the change stream and the kind set so
+    // the consumer only receives the kinds it asked for. (Previously dropped
+    // `tables`, which is why some pages silently re-defaulted the kind set —
+    // spec §4.2 / §1.4.)
+    argMap: {
+      subscribe: (a) => [{
+        roomId: a?.roomId ?? a?.filter?.roomId,
+        workspaceId: a?.workspaceId ?? a?.filter?.workspaceId,
+        tables: a?.tables ?? a?.filter?.tables,
+      }],
+    },
   },
   'workspaceProject.realtime.agentMessages': {
     service: 'workspaceProject',

@@ -360,18 +360,47 @@ export class BaseService {
   // Node.js: dynamically imports the optional `eventsource` package. If it is
   // not installed, _sseSubscribe throws a clear error message.
   //
-  // Event naming conventions from server:
+  // Event naming conventions from server (default / tickets path):
   //   tickets.snapshot → { type: 'snapshot', tickets: [...] }
   //   tickets.insert   → { type: 'tickets.insert', ticket: {} }
   //   tickets.update   → { type: 'tickets.update', ticket: {} }
   //   tickets.delete   → { type: 'tickets.delete', ticket: {} }
   //
+  // Generalization (spec §4.1 — meet realtime cutover): callers that need a
+  // different event vocabulary (e.g. the meet stream's `meet.room.*`,
+  // `meet.waiting.*`, …) pass `opts.events` — an array of
+  // `{ name, frame }` descriptors. For each `name`, an `addEventListener` is
+  // wired that parses the SSE frame's JSON `data` and calls
+  // `onEvent(frame(parsedData, name))`. When `opts.events` is omitted the
+  // historical tickets listeners are installed verbatim, so the tickets/docs
+  // callers are byte-unchanged.
+  //
+  // `opts.flatParams` (default false): the tickets/docs server controllers
+  // historically read `filter[key]` nested params; the meet stream controller
+  // reads FLAT query params (`?roomId=…&tables=…`). Setting `flatParams: true`
+  // serializes the filter as flat `?key=value` so the meet route's
+  // `req.query.roomId` / `req.query.tables` resolve. Default keeps the legacy
+  // `filter[key]=value` shape.
+  //
   // Returns an unsubscribe() function that closes the EventSource and
   // cancels any pending reconnect timers.
-  _sseSubscribe (path, filter = {}, onEvent) {
+  _sseSubscribe (path, filter = {}, onEvent, opts = {}) {
     if (typeof onEvent !== 'function') {
       throw new Error(`_sseSubscribe: onEvent must be a function`)
     }
+
+    const flatParams = opts?.flatParams === true
+    // Default event vocabulary = the historical tickets listeners. Kept here
+    // (not inlined below) so the meet path can swap it out without touching
+    // the connection/reconnect machinery.
+    const events = Array.isArray(opts?.events) && opts.events.length
+      ? opts.events
+      : [
+          { name: 'tickets.snapshot', frame: (data) => ({ type: 'snapshot', tickets: data.tickets || data }) },
+          { name: 'tickets.insert', frame: (data) => ({ type: 'tickets.insert', ticket: data.ticket || data }) },
+          { name: 'tickets.update', frame: (data) => ({ type: 'tickets.update', ticket: data.ticket || data }) },
+          { name: 'tickets.delete', frame: (data) => ({ type: 'tickets.delete', ticket: data.ticket || data }) }
+        ]
 
     let es = null
     let reconnectTimer = null
@@ -386,10 +415,11 @@ export class BaseService {
         const token = this._tokenManager.getAccessToken?.()
         if (token) params.set('access_token', token)
       }
-      // Serialize filter as filter[key]=value query params.
+      // Serialize filter — flat `key=value` (meet stream route) or the
+      // historical nested `filter[key]=value` (tickets/docs routes).
       for (const [k, v] of Object.entries(filter || {})) {
         if (v !== undefined && v !== null) {
-          params.set(`filter[${k}]`, String(v))
+          params.set(flatParams ? k : `filter[${k}]`, String(v))
         }
       }
       const qs = params.toString()
@@ -425,22 +455,17 @@ export class BaseService {
       const url = _buildUrl()
       es = new EventSourceImpl(url)
 
-      es.addEventListener('tickets.snapshot', (evt) => {
-        try {
-          const data = JSON.parse(evt.data)
-          onEvent({ type: 'snapshot', tickets: data.tickets || data })
-        } catch {}
-      })
-
-      const _ticketEvent = (type) => (evt) => {
-        try {
-          const data = JSON.parse(evt.data)
-          onEvent({ type, ticket: data.ticket || data })
-        } catch {}
+      // Wire each declared event name → parse JSON `data` → frame → onEvent.
+      // A frame throwing or a malformed payload must not kill the listener.
+      for (const { name, frame } of events) {
+        es.addEventListener(name, (evt) => {
+          try {
+            const data = JSON.parse(evt.data)
+            const framed = typeof frame === 'function' ? frame(data, name) : data
+            if (framed !== undefined) onEvent(framed)
+          } catch {}
+        })
       }
-      es.addEventListener('tickets.insert', _ticketEvent('tickets.insert'))
-      es.addEventListener('tickets.update', _ticketEvent('tickets.update'))
-      es.addEventListener('tickets.delete', _ticketEvent('tickets.delete'))
 
       es.addEventListener('error', () => {
         if (destroyed) return

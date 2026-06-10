@@ -894,8 +894,75 @@ export class WorkspaceProjectService extends BaseService {
       this._realtimeSubscribe('presence', { scope, userKey }, cb),
     // meet_rooms / meet_participants / meet_waiting_room combined feed for a
     // single room. cb receives ('room'|'participant'|'waiting', payload).
-    subscribeMeet: ({ roomId } = {}, cb) =>
-      this._realtimeSubscribe('meet', { roomId }, cb),
+    //
+    // Transport-agnostic: delegates to the injected realtime provider, which
+    // picks Supabase postgres_changes or the server SSE stream based on the
+    // MEET_REALTIME flag (spec §4.3). Both transports honor the SAME
+    // (kind, payload) + snake_case `{eventType,new,old}` contract, so the
+    // consumer (`subscribeMeetRealtime.js`) is byte-unchanged.
+    subscribeMeet: ({ roomId, workspaceId, tables } = {}, cb) =>
+      this._realtimeSubscribe('meet', { roomId, workspaceId, tables }, cb),
+
+    // Server-SSE meet subscription (spec §4 — the SSE transport behind
+    // MEET_REALTIME=sse|both). Reuses the proven tickets `_sseSubscribe`
+    // EventSource client (query-param auth, exp-backoff reconnect) and
+    // re-frames the server's `meet.<kind>.<verb>` event envelope back into the
+    // legacy `(kind, payload)` callback the Supabase path emitted — so the
+    // consumer stays unchanged.
+    //
+    // The server stream (GET /core/meet/stream) already serializes rows in the
+    // PostgREST wire shape and sends `data: { eventType, new, old }` (snake_case
+    // columns), so each re-framer is a thin event-NAME → kind map; the payload
+    // passes through verbatim. `participant` is intentionally absent from the
+    // map (D6 — never emitted by the server); the consumer's `participant`
+    // branch stays dead code, unchanged.
+    subscribeMeetSse: ({ roomId, workspaceId, tables } = {}, cb) => {
+      if (typeof cb !== 'function') return () => {}
+
+      // (kind, payload) adapter: each event frame returns { kind, payload };
+      // a frame returning undefined is swallowed (snapshot/revoked have no
+      // consumer branch — the page's own fetch reconciles).
+      const deliver = (framed) => {
+        if (!framed || !framed.kind) return
+        try { cb(framed.kind, framed.payload) } catch (_) { /* listener errors don't propagate */ }
+      }
+
+      // The server `data` is ALREADY `{ eventType, new, old }`; pass it
+      // through as the payload so the consumer's payload.new/.old/.eventType
+      // reads land unchanged. eventType is also recomputed defensively from
+      // the SSE event name when the server omits it.
+      const passthrough = (kind) => (data) => ({ kind, payload: data })
+
+      const events = [
+        // snapshot drives a refetch on the consumer; it has no `snapshot`
+        // branch, so swallow and let the page's own initial fetch populate.
+        { name: 'meet.snapshot', frame: () => undefined },
+        { name: 'meet.room.insert', frame: passthrough('room') },
+        { name: 'meet.room.update', frame: passthrough('room') },
+        { name: 'meet.room.delete', frame: passthrough('room') },
+        { name: 'meet.waiting.insert', frame: passthrough('waiting') },
+        { name: 'meet.waiting.update', frame: passthrough('waiting') },
+        { name: 'meet.waiting.delete', frame: passthrough('waiting') },
+        // transcripts are INSERT-only (immutable utterances).
+        { name: 'meet.transcript.insert', frame: passthrough('transcript') },
+        { name: 'meet.analysis.insert', frame: passthrough('analysis') },
+        { name: 'meet.analysis.update', frame: passthrough('analysis') },
+        // access lost mid-stream (visibility flip / membership revoke): the
+        // server stops emitting; the consumer reconciles to empty on next
+        // fetch. No consumer branch — swallow.
+        { name: 'meet.revoked', frame: () => undefined }
+      ]
+
+      // tables CSV — the server reads a flat `?tables=…` query param (NOT
+      // `filter[tables]`), so serialize FLAT. Only forward defined scope keys.
+      const filter = {}
+      if (roomId) filter.roomId = roomId
+      if (workspaceId && !roomId) filter.workspaceId = workspaceId
+      if (Array.isArray(tables) && tables.length) filter.tables = tables.join(',')
+      else if (typeof tables === 'string' && tables) filter.tables = tables
+
+      return this._sseSubscribe('/meet/stream', filter, deliver, { events, flatParams: true })
+    },
     // agent_messages — fired on INSERT addressed to `toAgent`. Used by the
     // walkie-talkie ops layer (Simona/Chuvaka).
     subscribeAgentMessages: ({ toAgent } = {}, cb) =>
