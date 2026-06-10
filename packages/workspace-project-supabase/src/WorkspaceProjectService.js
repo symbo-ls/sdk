@@ -963,6 +963,109 @@ export class WorkspaceProjectService extends BaseService {
 
       return this._sseSubscribe('/meet/stream', filter, deliver, { events, flatParams: true })
     },
+
+    // Server-SSE chat subscription (chat-realtime-spec §5 — the SSE transport
+    // behind CHAT_REALTIME=sse|both). The EXACT analog of subscribeMeetSse:
+    // reuses the proven tickets `_sseSubscribe` EventSource client (query-param
+    // auth, exp-backoff reconnect) and re-frames the server's
+    // `chat.<entity>.<verb>` event envelope back into the SAME callback shape
+    // the Supabase chat path emitted — so the consumer (subscribeRealtime.js)
+    // stays byte-unchanged.
+    //
+    // ── Wire contract (server src/domains/chat/stream/ChatStreamController.js) ─
+    // ONE multiplexed stream per session: GET /core/chat/stream?workspaceId=…,
+    // FLAT query params (the controller reads req.query.workspaceId directly,
+    // same as the meet route → flatParams:true). The server `data:` is shaped
+    // per-entity (the controller's `_wireData`): `{ message: row }`,
+    // `{ channel: row }`, `{ member: row }`, `{ mention: row }`, and the
+    // snapshot `{ channels, members, mentionsUnread }`. Rows are snake_case,
+    // byte-shaped like the PostgREST rows the frontend already parses (D6).
+    //
+    // ── Re-framing → the Supabase-shape callback (spec §5.2) ──────────────────
+    // The Supabase chat path delivered `(op, { eventType, new, old, _kind? })`.
+    // This re-framer reconstructs that envelope from the SSE entity payload +
+    // the verb encoded in the event NAME, then invokes `cb(kind, payload)`:
+    //   chat.message.insert  → cb('chat.messages',  { eventType:'INSERT', new: row,  old: null })
+    //   chat.message.update  → cb('chat.messages',  { eventType:'UPDATE', new: row,  old: null })
+    //   chat.message.delete  → cb('chat.messages',  { eventType:'DELETE', new: null, old: row  })
+    //   chat.channel.*       → cb('chat.channels',  { eventType, new|old })          (no _kind)
+    //   chat.member.*        → cb('chat.channels',  { eventType, new|old, _kind:'member' })
+    //   chat.mention.insert  → cb('chat.mentions',  { eventType:'INSERT', new: row })
+    //   chat.snapshot        → cb('chat.snapshot',  { channels, members, mentionsUnread })
+    // The `kind` mirrors the provider's chat op vocabulary so a consumer can
+    // route by op; the `payload` is the Supabase-style envelope so every
+    // existing `payload.new`/`payload.old`/`payload.eventType` read lands
+    // unchanged. `error` frames carry no consumer branch — swallowed.
+    subscribeChatSse: ({ workspaceId, channelIds, tables } = {}, cb) => {
+      if (typeof cb !== 'function') return () => {}
+
+      // (kind, payload) adapter: each event frame returns { kind, payload };
+      // a frame returning undefined is swallowed.
+      const deliver = (framed) => {
+        if (!framed || !framed.kind) return
+        try { cb(framed.kind, framed.payload) } catch (_) { /* listener errors don't propagate */ }
+      }
+
+      // Optional client-side channel filter (the drawer subscribes to ONE
+      // channel; the stream is per-session, so filter the message/member
+      // events here — parity with the Supabase `channel_id=eq.` filter).
+      const channelSet = Array.isArray(channelIds) && channelIds.length
+        ? new Set(channelIds.map((x) => String(x)))
+        : null
+      const _chanOf = (row) => row && (row.channel_id != null ? String(row.channel_id) : null)
+      const _passesChannel = (row) => !channelSet || (row != null && channelSet.has(_chanOf(row)))
+
+      // Build the Supabase-style envelope for an entity row + verb.
+      const entityFrame = (kind, verb, key) => (data) => {
+        const row = data?.[key]
+        if (verb !== 'DELETE' && channelSet && !_passesChannel(row)) return undefined
+        if (verb === 'DELETE' && channelSet && !_passesChannel(row)) return undefined
+        const payload = verb === 'DELETE'
+          ? { eventType: 'DELETE', new: null, old: row }
+          : { eventType: verb, new: row, old: null }
+        return { kind, payload }
+      }
+      // Members carry the same envelope plus the `_kind:'member'` tag the
+      // Supabase provider attached (parity with sdkRealtimeProvider.js).
+      const memberFrame = (verb) => (data) => {
+        const framed = entityFrame('chat.channels', verb, 'member')(data)
+        if (!framed) return undefined
+        framed.payload._kind = 'member'
+        return framed
+      }
+
+      const events = [
+        // snapshot — reconcile sidebar-critical state on connect/reconnect.
+        { name: 'chat.snapshot', frame: (data) => ({ kind: 'chat.snapshot', payload: data || {} }) },
+
+        { name: 'chat.message.insert', frame: entityFrame('chat.messages', 'INSERT', 'message') },
+        { name: 'chat.message.update', frame: entityFrame('chat.messages', 'UPDATE', 'message') },
+        { name: 'chat.message.delete', frame: entityFrame('chat.messages', 'DELETE', 'message') },
+
+        { name: 'chat.channel.insert', frame: entityFrame('chat.channels', 'INSERT', 'channel') },
+        { name: 'chat.channel.update', frame: entityFrame('chat.channels', 'UPDATE', 'channel') },
+        { name: 'chat.channel.delete', frame: entityFrame('chat.channels', 'DELETE', 'channel') },
+
+        { name: 'chat.member.insert', frame: memberFrame('INSERT') },
+        { name: 'chat.member.update', frame: memberFrame('UPDATE') },
+        { name: 'chat.member.delete', frame: memberFrame('DELETE') },
+
+        // mentions are INSERT-only (own-mention, server-enriched channel_id).
+        { name: 'chat.mention.insert', frame: entityFrame('chat.mentions', 'INSERT', 'mention') },
+
+        // post-header handler error: no consumer branch — swallow.
+        { name: 'error', frame: () => undefined }
+      ]
+
+      // FLAT query params — the controller reads req.query.workspaceId / .tables
+      // directly (NOT filter[workspaceId]). Only forward defined scope keys.
+      const filter = {}
+      if (workspaceId) filter.workspaceId = workspaceId
+      if (Array.isArray(tables) && tables.length) filter.tables = tables.join(',')
+      else if (typeof tables === 'string' && tables) filter.tables = tables
+
+      return this._sseSubscribe('/chat/stream', filter, deliver, { events, flatParams: true })
+    },
     // agent_messages — fired on INSERT addressed to `toAgent`. Used by the
     // walkie-talkie ops layer (Simona/Chuvaka).
     subscribeAgentMessages: ({ toAgent } = {}, cb) =>
