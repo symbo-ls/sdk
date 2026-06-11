@@ -418,6 +418,24 @@ export class WorkspaceProjectService extends BaseService {
     // transcript analysis summaries returned by listTranscripts.
     listUtterances: (id) =>
       this._ws('meet.listUtterances', `/meet/rooms/${encodeURIComponent(id)}/utterances`),
+    // Combined utterances + cached analysis — the shape the legacy
+    // get_meet_transcript_view(uuid) Supabase RPC returned. The
+    // workspaceProject.meet.transcriptView entity has mapped to
+    // meet.getTranscriptView since the 2026-04-27 migration but the
+    // method was NEVER implemented — sdk.execute threw "method not
+    // found", the meet TranscriptPage fetch swallowed it, root.analysis
+    // stayed undefined forever and the auto-analyze loop never fired
+    // ("why its not doing analysis", reported 2026-06-12). Composes the
+    // two real endpoints; analysis = newest analyses row or null.
+    getTranscriptView: async (id) => {
+      const [utterances, analyses] = await Promise.all([
+        this._ws('meet.listUtterances', `/meet/rooms/${encodeURIComponent(id)}/utterances`),
+        this._ws('meet.listTranscripts', `/meet/rooms/${encodeURIComponent(id)}/transcripts`),
+      ]);
+      const u = Array.isArray(utterances) ? utterances : utterances?.data || [];
+      const a = Array.isArray(analyses) ? analyses : analyses?.data || [];
+      return { utterances: u, analysis: a[0] || null };
+    },
     waitingRoom: () => this._ws('meet.waitingRoom', '/meet/waiting-room'),
     // Host actions on a meet_waiting_room row. RLS policy
     // meet_waiting_room_update gates these to the parent room's creator
