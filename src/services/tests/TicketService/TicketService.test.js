@@ -128,6 +128,20 @@ test('tickets.create (markdown string) sends text/markdown Content-Type', async 
   t.end()
 })
 
+test('tickets.create scopes to the active workspace (#2368 — else the ticket is created workspace-less and vanishes from the workspace-scoped list on refresh)', async t => {
+  t.plan(2)
+  const svc = makeService()
+  svc._context = { activeWorkspaceId: 'ws-123' }
+  const stub = sandbox.stub(svc, '_call').resolves({ id: 'new' })
+  await svc.create({ title: 'Scoped ticket' })
+  t.equal(stub.firstCall.args[1], '/tickets?workspaceId=ws-123', 'JSON create carries ?workspaceId (mirrors update/remove)')
+  stub.resetHistory()
+  await svc.create('# Markdown ticket')
+  t.equal(stub.firstCall.args[1], '/tickets?workspaceId=ws-123', 'markdown create carries ?workspaceId too')
+  sandbox.restore()
+  t.end()
+})
+
 // ─── update ───────────────────────────────────────────────────────────────────
 
 test('tickets.update (JSON) PUTs to /tickets/:id with payload', async t => {

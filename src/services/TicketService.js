@@ -115,14 +115,22 @@ export class TicketService extends BaseService {
    * @returns {Promise<object>} Created ticket document
    */
   create (payload) {
+    // Writes are workspace-scoped server-side — attach the active workspace as
+    // a query param (read by workspaceIdFromRequest) so the new ticket is
+    // created WITH a workspace and is therefore visible to the workspace-scoped
+    // list(). Without it the server fell back to a legacy workspace-LESS ticket
+    // that the board's list never returns, so the ticket returned 201 but
+    // "vanished" on refresh (#2368). Mirrors update()/remove().
+    const wid = this._workspaceScope()
+    const qs = wid ? `?workspaceId=${encodeURIComponent(wid)}` : ''
     if (typeof payload === 'string') {
-      return this._call('tickets.create', '/tickets', {
+      return this._call('tickets.create', `/tickets${qs}`, {
         method: 'POST',
         body: payload,
         headers: { 'Content-Type': 'text/markdown' }
       })
     }
-    return this._call('tickets.create', '/tickets', {
+    return this._call('tickets.create', `/tickets${qs}`, {
       method: 'POST',
       body: { payload }
     })
