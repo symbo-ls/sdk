@@ -381,7 +381,13 @@ export class AiService extends BaseService {
             return
           }
           if (event === 'message.created' && data?.role === 'assistant') {
-            finishAnswer(blocksToText(data.content))
+            // A multi-step agentic turn persists intermediate assistant
+            // `tool_call` messages (tool_call part only, NO text) before the
+            // final answer — finishing on the first assistant frame would end
+            // the turn on an empty message. Only the final, text-bearing
+            // assistant message ends the turn.
+            const txt = blocksToText(data.content)
+            if (txt) finishAnswer(txt)
           }
         },
         onError: (err) => fail(err)
@@ -447,10 +453,13 @@ export class AiService extends BaseService {
       })
       const data = res && typeof res === 'object' && 'data' in res ? res.data : res
       const messages = data?.messages || []
-      const assistant = [...messages].reverse().find((m) => m?.role === 'assistant')
-      const txt = assistant
-        ? (assistant.content || []).filter((p) => p && p.type === 'text').map((p) => p.text).join('')
-        : ''
+      // Find the latest assistant message that actually carries text — skip
+      // intermediate `tool_call` assistant messages (no text part) from a
+      // multi-step agentic turn.
+      const textOf = (m) =>
+        (m?.content || []).filter((p) => p && p.type === 'text').map((p) => p.text).join('')
+      const assistant = [...messages].reverse().find((m) => m?.role === 'assistant' && textOf(m))
+      const txt = assistant ? textOf(assistant) : ''
       if (txt) finishAnswer(txt)
       else fail(new Error('[sdk.ai] no assistant response'))
     } catch (err) {
