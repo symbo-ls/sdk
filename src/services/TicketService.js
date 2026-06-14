@@ -70,7 +70,15 @@ export class TicketService extends BaseService {
    * @returns {Promise<object>} Ticket document
    */
   get (ticketId) {
-    return this._call('tickets.get', `/tickets/${encodeURIComponent(ticketId)}`)
+    // Single-ticket reads are workspace-scoped server-side too (403 without the
+    // active workspace — same as list/columnCounts). `get` was the one read
+    // that didn't attach it, so opening a ticket from the board
+    // (TicketDetailModal._fetchTicketDeps → get) 403'd with "workspaceId is
+    // required for workspace-scoped tickets" (2026-06-14 per Nika). Attach the
+    // active workspace as a query param, mirroring create/update/remove.
+    const wid = this._workspaceScope()
+    const qs = wid ? `?workspaceId=${encodeURIComponent(wid)}` : ''
+    return this._call('tickets.get', `/tickets/${encodeURIComponent(ticketId)}${qs}`)
   }
 
   /**
