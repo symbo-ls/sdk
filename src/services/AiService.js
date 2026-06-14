@@ -519,6 +519,20 @@ export class AiService extends BaseService {
     return `${this._apiUrl}/core/agents/workspaces/${encodeURIComponent(wsId)}/conversations`
   }
 
+  // List the active workspace's AI-built extensions (Project{metadata.extension})
+  // with their DOMQL source → [{ id, name, key, route, source, updatedAt }].
+  // Powers the /add-app sidebar: created extensions appear and survive reload
+  // (clicking re-renders the persisted source into the pane).
+  async listExtensions (opts = {}) {
+    const wsId = opts?.workspaceId || this._context?.activeWorkspaceId || this._readActiveWorkspace()
+    if (!wsId) return []
+    const res = await this._requestExternal(
+      `${this._apiUrl}/core/agents/workspaces/${encodeURIComponent(wsId)}/extensions`,
+      { method: 'GET', methodName: 'ai.listExtensions' }
+    )
+    return this._unwrap(res) || []
+  }
+
   _unwrap (res) {
     return res && typeof res === 'object' && 'data' in res ? res.data : res
   }
