@@ -221,7 +221,12 @@ export class AiService extends BaseService {
         onError: (err) => {
           callbacks.onError?.(err)
           resolve({ intent: INTENT_ANSWER, text: buffered, error: err?.message || String(err) })
-        }
+        },
+        // Browser-run platform actions (navigate / theme / search / confirm).
+        // The consumer resolves (callId, tool, args) → result; the SDK submits
+        // it to resume the loop. Without a handler, the server gets an error
+        // result and the model adapts.
+        onToolCall: callbacks.onToolCall
       })
     })
   }
@@ -305,7 +310,7 @@ export class AiService extends BaseService {
   //
   // Returns cancel() — aborts the SSE stream and marks the turn cancelled.
   _streamWorkspaceTurn (payload, callbacks = {}) {
-    const { onChunk, onDone, onError } = callbacks
+    const { onChunk, onDone, onError, onToolCall } = callbacks
 
     // Scope: workspace is the DEFAULT ("most common"); a project-scoped
     // conversation is used when a projectId is supplied — agents work on both.
@@ -329,6 +334,7 @@ export class AiService extends BaseService {
     let answered = false
     let cancelled = false
     let streamedAny = false
+    let clientToolPending = false
     let cancelStream = () => {}
     let fallbackTimer = null
 
@@ -380,6 +386,32 @@ export class AiService extends BaseService {
             onChunk?.(data.message)
             return
           }
+          // Client (browser) tool: the server suspended the loop and wants the
+          // browser to run a platform action (el.call), then POST the result so
+          // the loop resumes. Keep the stream open across the round-trip (the
+          // real answer arrives later) and suppress the post-POST fallback so an
+          // intermediate tool_call frame isn't mistaken for the final answer.
+          if (event === 'tool.call_required' && data?.callId) {
+            clientToolPending = true
+            clearFallback()
+            Promise.resolve(
+              onToolCall
+                ? onToolCall(data.callId, data.tool, data.args, data)
+                : { ok: false, error: 'No client-tool handler registered for this surface.' }
+            )
+              .then((result) =>
+                this.submitToolResult(conversationId, data.callId, result === undefined ? { ok: true } : result, {
+                  projectId: payload?.projectId
+                })
+              )
+              .catch((err) =>
+                this.submitToolResult(conversationId, data.callId, { ok: false, error: String(err?.message || err) }, {
+                  projectId: payload?.projectId
+                })
+              )
+              .finally(() => { clientToolPending = false })
+            return
+          }
           if (event === 'message.created' && data?.role === 'assistant') {
             // A multi-step agentic turn persists intermediate assistant
             // `tool_call` messages (tool_call part only, NO text) before the
@@ -409,6 +441,10 @@ export class AiService extends BaseService {
         // the POST resolves, read the conversation directly and use the
         // latest assistant message.
         clearFallback()
+        // A client-tool turn suspends here (POST resolves with no final answer);
+        // the real answer streams in after the browser round-trip. Don't let the
+        // fallback read the intermediate tool_call frame as the answer.
+        if (clientToolPending) return
         fallbackTimer = setTimeout(() => {
           this._fallbackToLatestAssistant(base, conversationId, finishAnswer, fail)
         }, ASSISTANT_FALLBACK_MS)
@@ -502,6 +538,24 @@ export class AiService extends BaseService {
     const res = await this._requestExternal(
       `${this._conversationBase(opts)}/${encodeURIComponent(conversationId)}`,
       { method: 'GET', methodName: 'ai.getConversation' }
+    )
+    return this._unwrap(res)
+  }
+
+  // Resume a turn that paused on a client (browser) tool: POST the outcome of
+  // the el.call platform action so the server-side agentic loop continues.
+  // `callId` is the id carried by the `tool.call_required` SSE event. Normally
+  // invoked automatically by the streaming layer's onToolCall plumbing; exposed
+  // for callers that drive the round-trip themselves. Returns the server's
+  // { suspended, callId?, assistantMessage? } envelope.
+  async submitToolResult (conversationId, callId, result, opts = {}) {
+    const res = await this._requestExternal(
+      `${this._conversationBase(opts)}/${encodeURIComponent(conversationId)}/tool-result`,
+      {
+        method: 'POST',
+        body: { callId, result, ...(opts?.modelMode ? { modelMode: opts.modelMode } : {}) },
+        methodName: 'ai.submitToolResult'
+      }
     )
     return this._unwrap(res)
   }
