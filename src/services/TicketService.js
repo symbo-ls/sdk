@@ -577,7 +577,16 @@ export class TicketService extends BaseService {
    * @returns {function} unsubscribe() — call to close the connection
    */
   subscribe (filter = {}, onEvent) {
-    return this._sseSubscribe('/tickets/stream', filter, onEvent)
+    // /tickets/stream is workspace-scoped: the controller requires a FLAT
+    // `workspaceId` query param and returns 400 without it. Inject the active
+    // workspace (same scope resolution list()/counts() use) when the caller
+    // didn't pass one, and serialize flat (`?workspaceId=…&project=…`) so the
+    // server's `req.query.workspaceId` resolves — the controller was migrated
+    // from nested `filter[key]` to flat params in the workspace-scope rewrite.
+    const scoped = (filter.workspaceId || filter.workspace || filter.workspace_id)
+      ? filter
+      : { ...filter, workspaceId: this._workspaceScope() || undefined }
+    return this._sseSubscribe('/tickets/stream', scoped, onEvent, { flatParams: true })
   }
 }
 
