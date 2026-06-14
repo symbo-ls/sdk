@@ -432,7 +432,11 @@ export class AiService extends BaseService {
         body: {
           content: payload.content || payload.text || '',
           modelMode: this.getModelMode(),
-          targetAgentId: (payload && (payload.targetAgentId || (payload.context && payload.context.targetAgentId))) || null
+          targetAgentId: (payload && (payload.targetAgentId || (payload.context && payload.context.targetAgentId))) || null,
+          // Forward the caller's freeform per-turn context (page awareness:
+          // currentPage / pageData / pageActions) so the server can surface it
+          // in the agent's system instruction. Null when the caller passes none.
+          context: (payload && payload.context) || null
         },
         methodName: 'ai.appendMessage'
       }).then(() => {
