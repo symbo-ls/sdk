@@ -214,7 +214,11 @@ export class AiService extends BaseService {
           callbacks.onChunk?.(delta)
         },
         onDone: (donePayload) => {
-          const result = { intent: INTENT_ANSWER, text: donePayload?.text || buffered }
+          const result = {
+            intent: INTENT_ANSWER,
+            text: donePayload?.text || buffered,
+            conversationId: donePayload?.conversationId || null
+          }
           callbacks.onDone?.(result)
           resolve(result)
         },
@@ -333,6 +337,7 @@ export class AiService extends BaseService {
 
     let answered = false
     let cancelled = false
+    let resolvedConvId = null
     let streamedAny = false
     let clientToolPending = false
     let cancelStream = () => {}
@@ -354,7 +359,9 @@ export class AiService extends BaseService {
       // If text deltas already streamed in, the chunks are already applied —
       // re-emitting the full text here would double it. Just finalize.
       if (!streamedAny) onChunk?.(txt)
-      onDone?.({ text: txt })
+      // Surface the conversation id this turn used so the caller can track the
+      // active thread (esp. a NEW thread whose id was lazily created here).
+      onDone?.({ text: txt, conversationId: resolvedConvId })
       stopStream()
     }
 
@@ -369,7 +376,17 @@ export class AiService extends BaseService {
     ;(async () => {
       let conversationId
       try {
-        conversationId = await this._resolveConversationId(cacheKey, base)
+        // Honor the caller's active thread: if a real conversation id is passed
+        // (from the session UI's activeSessionId), append to THAT thread —
+        // otherwise fall back to the per-workspace cached/lazily-created one.
+        // This is what makes "new thread" and "switch thread" actually route the
+        // message to the selected conversation instead of one sticky cache id.
+        const wanted = payload && payload.conversationId
+        conversationId =
+          wanted && !String(wanted).startsWith('s-')
+            ? String(wanted)
+            : await this._resolveConversationId(cacheKey, base)
+        resolvedConvId = conversationId
       } catch (err) {
         fail(err)
         return
