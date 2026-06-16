@@ -777,6 +777,19 @@ const ENTITY_ROUTES = {
     methods: { get: 'userPreferences.get', update: 'userPreferences.upsert' },
     argMap: { get: () => [], update: argMaps.payload },
   },
+  'workspaceProject.homeDashboardPrefs': {
+    service: 'workspaceProject',
+    methods: { get: 'homeDashboardPrefs.get', update: 'homeDashboardPrefs.upsert' },
+    argMap: { get: () => [], update: argMaps.payload },
+  },
+  'workspaceProject.workspaceDashboardDefaults': {
+    service: 'workspaceProject',
+    methods: {
+      get: 'workspaceDashboardDefaults.get',
+      update: 'workspaceDashboardDefaults.upsert',
+    },
+    argMap: { get: () => [], update: argMaps.payload },
+  },
   'workspaceProject.userGrants': {
     service: 'workspaceProject',
     methods: {

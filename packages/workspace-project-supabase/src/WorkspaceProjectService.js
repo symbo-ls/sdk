@@ -689,6 +689,37 @@ export class WorkspaceProjectService extends BaseService {
         { payload, options: { upsertOnConflict: 'user_id' } }),
   }
 
+  // Per-user, per-workspace home dashboard prefs (hidden_widgets / grid_layout /
+  // dashboard_v) — real cross-device persistence; user_preferences had no home or
+  // workspace columns so its writes always failed. Composite PK
+  // (user_id, workspace_id); the /sb proxy pins BOTH from the caller's auth, so
+  // the upsert must conflict on the full key. `list` + limit:1 (not `single`) so a
+  // missing row returns [] rather than a PostgREST coerce error. See migration 0157.
+  homeDashboardPrefs = {
+    get: async () => {
+      const rows = await this._sb('homeDashboardPrefs.get', 'home_dashboard_prefs', 'list',
+        { options: { limit: 1 } })
+      return Array.isArray(rows) ? (rows[0] || null) : (rows || null)
+    },
+    upsert: (payload) =>
+      this._sb('homeDashboardPrefs.upsert', 'home_dashboard_prefs', 'create',
+        { payload, options: { upsertOnConflict: 'user_id,workspace_id' } }),
+  }
+
+  // Per-workspace admin default panel set (one row per workspace). Members read
+  // it; org-admins write it (write gated in the proxy via
+  // WORKSPACE_ADMIN_WRITE_TABLES). See migration 0157.
+  workspaceDashboardDefaults = {
+    get: async () => {
+      const rows = await this._sb('workspaceDashboardDefaults.get', 'workspace_dashboard_defaults',
+        'list', { options: { limit: 1 } })
+      return Array.isArray(rows) ? (rows[0] || null) : (rows || null)
+    },
+    upsert: (payload) =>
+      this._sb('workspaceDashboardDefaults.upsert', 'workspace_dashboard_defaults', 'create',
+        { payload, options: { upsertOnConflict: 'workspace_id' } }),
+  }
+
   userGrants     = this._sbCrud('user_grants')
 
   // user_profiles is keyed by user_id, not numeric id. Override get/update.
