@@ -55,6 +55,7 @@ export const SERVICE_METHODS = {
   getMyOrgMemberships: 'auth',
   getOrgMemberRoles: 'auth',
   setActiveOrganization: 'auth',
+  setActiveWorkspace: 'auth',
   subscribeUserEvents: 'auth',
   resendVerification: 'auth',
   verifyEmail: 'auth',

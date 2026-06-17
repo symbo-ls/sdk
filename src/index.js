@@ -517,16 +517,13 @@ export class SDK {
       return { ok: true, changed: false, workspaceId: newWorkspaceId }
     }
 
-    // Run federation refresh first — if the bridge rejects (forbidden,
-    // network error), bail BEFORE clearing local state so the UI stays
-    // pointed at the still-valid old workspace.
-    let federationResult = { ok: true }
-    const federationFn = this._context.federationSwitchWorkspace
-    if (typeof federationFn === 'function') {
-      federationResult = await federationFn(newWorkspaceId)
-      if (!federationResult?.ok) {
-        return { ok: false, error: federationResult?.error, federation: federationResult }
-      }
+    // Mongo-native switch (mirrors switchOrg's setActiveOrganization persist):
+    // write the active workspace to Mongo FIRST — that's the source of truth
+    // the workspace-project `userResolver` reads, so the switch resolves the
+    // right tenant WITHOUT any Supabase federation. If the Mongo write fails,
+    // that's a genuine failure → surface it (throws to the caller).
+    if (typeof this.setActiveWorkspace === 'function') {
+      await this.setActiveWorkspace(newWorkspaceId)
     }
 
     this.updateContext({ activeWorkspaceId: newWorkspaceId })
@@ -550,6 +547,34 @@ export class SDK {
 
     if (typeof globalThis !== 'undefined' && globalThis.localStorage) {
       try { globalThis.localStorage.setItem('activeWorkspace', newWorkspaceId) } catch {}
+    }
+
+    // Supabase federation is now OPTIONAL enrichment — fire it best-effort
+    // (mirrors switchOrg) so the federated JWT's `active_workspace_id` re-mints
+    // in the background, but NEVER let a federation hiccup (CORS / cold edge fn
+    // / no governance session) abort the switch. This is the detach: Mongo is
+    // authoritative; the bridge is a chainable adapter. (Previously this fetch
+    // was the blocking critical path that surfaced "Failed to fetch".)
+    let federationResult = { ok: true, skipped: true }
+    const federationFn = this._context.federationSwitchWorkspace
+    if (typeof federationFn === 'function') {
+      federationResult = { ok: true, pending: true }
+      Promise.resolve()
+        .then(() => federationFn(newWorkspaceId))
+        .then((res) => {
+          if (res && res.ok === false) {
+            logger.warn(
+              '[sdk.switchWorkspace] federation refresh failed (non-fatal):',
+              res?.error?.message || res?.error
+            )
+          }
+        })
+        .catch((err) => {
+          logger.warn(
+            '[sdk.switchWorkspace] federation refresh error (non-fatal):',
+            err?.message || err
+          )
+        })
     }
 
     this.rootBus?.emit?.('sdk.workspaceSwitched', { previousWorkspaceId, newWorkspaceId })

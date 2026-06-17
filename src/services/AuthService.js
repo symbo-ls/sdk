@@ -1486,6 +1486,26 @@ export class AuthService extends BaseService {
     return { activeOrganization: next }
   }
 
+  // PATCH /auth/me/active-workspace — Mongo-native workspace switch. Persists
+  // the chosen workspace on the User doc (the workspace-project userResolver
+  // reads it), so a switch works WITHOUT the Supabase federation claim. The
+  // optional federation re-mint is fired separately + best-effort by
+  // SDK.switchWorkspace; this method is purely the authoritative Mongo write.
+  async setActiveWorkspace (workspaceId) {
+    this._requireReady('setActiveWorkspace')
+    if (!workspaceId) throw new Error('[sdk.setActiveWorkspace] workspaceId is required')
+    const response = await this._request('/auth/me/active-workspace', {
+      method: 'PATCH',
+      body: JSON.stringify({ workspaceId: String(workspaceId) }),
+      methodName: 'setActiveWorkspace'
+    })
+    const next = response?.data?.activeWorkspace || String(workspaceId)
+    if (this._currentUser && typeof this._currentUser === 'object') {
+      this._currentUser.activeWorkspace = next
+    }
+    return { activeWorkspace: next }
+  }
+
   /**
    * Subscribe to per-user real-time events. Opens a socket.io connection
    * to the server's `/user-socket` namespace, joins the `user:<id>`
