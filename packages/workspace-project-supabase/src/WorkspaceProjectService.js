@@ -123,20 +123,6 @@ export class WorkspaceProjectService extends BaseService {
     return this._requestExternal(url, init)
   }
 
-  // Admin: set another member's workspace status (read-only / reactivate).
-  // PATCH /workspace-project/admin/members/:userId/status { status }.
-  // Superadmin-gated server-side (surfaces/admin.js) — needed because the /sb
-  // proxy self-scopes user_profiles writes, so admins can't set OTHER members'
-  // status through it. 'inactive' = read-only access (enforced by the /sb
-  // read-only write-guard); 'active' reactivates; 'left' = departed.
-  async setMemberStatus(userId, status) {
-    if (!userId) throw new Error('[workspaceProject] setMemberStatus: userId required')
-    return this._ws('setMemberStatus', `/admin/members/${encodeURIComponent(userId)}/status`, {
-      method: 'PATCH',
-      body: { status }
-    })
-  }
-
   // PostgREST-style call routed through the workspace wrapper's existing
   // Supabase passthrough at /workspace/sb/rest/v1/*. Lets us expose any
   // workspace-tenant table on the SDK without writing a curated server

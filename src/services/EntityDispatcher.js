@@ -408,19 +408,6 @@ const ENTITY_ROUTES = {
   // Each workspaceProject service method takes positional args
   // (filter, options) / (id) / (id, payload) etc., so every route below
   // gets a CRUD argMap so sdk.execute() can fan adapter args out correctly.
-  // Admin: set a member's workspace status (read-only / reactivate). Routes to
-  // the superadmin-gated /admin/members/:id/status worker route, NOT the
-  // self-scoped /sb user_profiles update.
-  // sdk.execute('workspaceProject.members', 'setStatus', { userId, status })
-  'workspaceProject.members': {
-    service: 'workspaceProject',
-    methods: {
-      setStatus: 'setMemberStatus',
-    },
-    argMap: {
-      setStatus: (a) => [a?.userId ?? a?.id, a?.status],
-    },
-  },
   'workspaceProject.chat': {
     service: 'workspaceProject',
     methods: {

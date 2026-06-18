@@ -451,6 +451,30 @@ export class OrganizationService extends BaseService {
     throw new Error(response.message)
   }
 
+  // Set a member's account status. 'inactive' = read-only access (the auth
+  // middleware allows reads but 403s writes); 'active' restores full access.
+  // Sets the GLOBAL Mongo User.status; authz is org-scoped (caller must hold an
+  // org-management role on :orgId). userId may be a Mongo _id OR the member's
+  // supabaseUserId — the server resolves either.
+  async setMemberStatus (orgId, userId, status) {
+    this._requireReady('setMemberStatus')
+    if (!orgId) throw new Error('orgId is required')
+    if (!userId) throw new Error('userId is required')
+    if (status !== 'active' && status !== 'inactive') {
+      throw new Error("status must be 'active' or 'inactive'")
+    }
+    const response = await this._request(
+      `/organizations/${orgId}/members/${encodeURIComponent(userId)}/status`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+        methodName: 'setMemberStatus'
+      }
+    )
+    if (response.success) return response
+    throw new Error(response.message || response.error || 'setMemberStatus failed')
+  }
+
   // ==================== INVITATIONS ====================
 
   async createOrgInvitation (orgId, { email, role = 'member', teams }) {
