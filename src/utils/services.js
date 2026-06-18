@@ -57,6 +57,7 @@ export const SERVICE_METHODS = {
   setActiveOrganization: 'auth',
   setActiveWorkspace: 'auth',
   subscribeUserEvents: 'auth',
+  subscribePresence: 'auth',
   resendVerification: 'auth',
   verifyEmail: 'auth',
 

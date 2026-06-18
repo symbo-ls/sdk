@@ -1582,6 +1582,68 @@ export class AuthService extends BaseService {
   }
 
   /**
+   * Subscribe to socket-based PRESENCE on `/user-socket` — the Mongo/socket
+   * replacement for the Supabase presence channel. Emits `presence:join` on
+   * every (re)connect and forwards each `presence:sync` for `scope` to
+   * `onSync(state)`, where `state` is the Supabase-`presenceState()`-compatible
+   * shape `{ [userKey]: [{ online_at, ...meta }] }` — so the workspace consumer
+   * (`presence.js`) is unchanged. Opens its own dedicated `/user-socket`
+   * connection; the returned unsubscribe disconnects it (the server drops the
+   * user from the roster on disconnect, so no explicit leave is needed).
+   *
+   * Fail-soft: no-op unsubscribe when no token / API url / transport / scope.
+   *
+   * @param {{ scope: string, userKey?: string, meta?: object }} opts
+   * @param {(state: Record<string, Array<object>>) => void} onSync
+   * @returns {() => void} unsubscribe
+   */
+  subscribePresence ({ scope, userKey, meta } = {}, onSync) {
+    if (!this._tokenManager || typeof onSync !== 'function' || !scope) return () => {}
+    const token = this._tokenManager.getAccessToken?.()
+    if (!token) return () => {}
+    const baseUrl = this._apiUrl
+    if (!baseUrl) return () => {}
+
+    let socket
+    try {
+      socket = socketIoClient(baseUrl, {
+        path: '/user-socket',
+        transports: ['websocket', 'polling'],
+        auth: { token },
+        autoConnect: true,
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 10_000
+      })
+    } catch (err) {
+      logger.warn('[sdk.subscribePresence] socket init failed:', err?.message || err)
+      return () => {}
+    }
+
+    // (Re)announce presence on every connect so a reconnect re-joins the scope.
+    const join = () => {
+      try { socket.emit('presence:join', { scope, userKey, meta: meta || {} }) } catch (_) {}
+    }
+    socket.on('connect', join)
+    socket.on('presence:sync', (payload) => {
+      if (!payload || payload.scope !== scope) return
+      try { onSync(payload.state || {}) } catch (_) { /* listener errors don't propagate */ }
+    })
+    let _loggedAuthFail = false
+    socket.on('connect_error', (err) => {
+      if (err?.message && !_loggedAuthFail) {
+        _loggedAuthFail = true
+        logger.warn('[sdk.subscribePresence] connect_error:', err.message)
+      }
+    })
+
+    return () => {
+      try { socket.removeAllListeners() } catch (_) {}
+      try { socket.disconnect() } catch (_) {}
+    }
+  }
+
+  /**
    * Cross-org calendar busy slots for the unified calendar.
    * NEEDED_FOR_INTRANET §I9. Fails-soft to `{slots: []}`.
    *
