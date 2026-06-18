@@ -46,6 +46,27 @@ export class WorkspaceProjectService extends BaseService {
     super.init({ context })
     this._workspacePrefix = workspaceProjectBaseUrl(context?.workspaceApiUrl || this._apiUrl)
     this._tokenProvider = context?.workspaceProjectTokenProvider || null
+    // Notifications data-store cutover toggle (Supabase → Mongo DORMANT slice).
+    // DEFAULT OFF → notifications.{list,unreadCount,markRead,markAllRead} keep
+    // riding the workspace-project worker `/notifications` surface (which is
+    // itself governed by the server NOTIFICATIONS_STORE flag). When flipped ON
+    // (context.useCoreNotifications === true OR globalThis.__USE_CORE_NOTIFICATIONS__)
+    // the READ + mark methods repoint to the new /core/notifications routes
+    // (same notificationStore dispatcher server-side). create() and the
+    // realtime path are intentionally left on their current transports for
+    // THIS slice — only the data store migrates.
+    this._useCoreNotificationsFlag = context?.useCoreNotifications === true
+  }
+
+  // Lazy flag read so a runtime global (set after SDK boot) can flip it
+  // without re-init — parity with how server flags are re-read per call.
+  _useCoreNotifications() {
+    if (this._useCoreNotificationsFlag) return true
+    try {
+      return typeof globalThis !== 'undefined' && globalThis.__USE_CORE_NOTIFICATIONS__ === true
+    } catch {
+      return false
+    }
   }
 
   async _resolveAuthHeader() {
@@ -488,20 +509,46 @@ export class WorkspaceProjectService extends BaseService {
   }
 
   // --- Notifications ----------------------------------------------------------
+  // DORMANT cutover: when _useCoreNotifications() is true the reads + mark
+  // methods route to the /core/notifications routes (BaseService._request →
+  // `${apiUrl}/core/notifications`, Mongo-token auth); otherwise they ride the
+  // workspace-project worker `/notifications` surface exactly as before. The
+  // wire shapes are identical (the server NotificationController returns
+  // { data } / { count } / { ok } envelopes the same way the worker relay
+  // does), so consumers don't branch. Default OFF → no behavior change.
   notifications = {
-    list: () => this._ws('notifications.list', '/notifications'),
-    unreadCount: () => this._ws('notifications.unreadCount', '/notifications/unread-count'),
-    // POSTs a single notification row through the wrapper. Replaces direct
-    // sb().from('notifications').insert(...) in shared/functions/
-    // notifications/createNotification.js.
+    list: () =>
+      this._useCoreNotifications()
+        ? this._request('/notifications', { method: 'GET', methodName: 'notifications.list' })
+        : this._ws('notifications.list', '/notifications'),
+    unreadCount: () =>
+      this._useCoreNotifications()
+        ? this._request('/notifications/unread-count', {
+          method: 'GET',
+          methodName: 'notifications.unreadCount',
+        })
+        : this._ws('notifications.unreadCount', '/notifications/unread-count'),
+    // create() stays on the worker surface for THIS slice (the realtime
+    // INSERT delivery currently keys off the Supabase write — see the slice
+    // report). Repointing create is a later increment.
     create: (payload) =>
       this._ws('notifications.create', '/notifications', { method: 'POST', body: { payload } }),
     markRead: (id) =>
-      this._ws('notifications.markRead', `/notifications/${encodeURIComponent(id)}/read`, {
-        method: 'POST',
-      }),
+      this._useCoreNotifications()
+        ? this._request(`/notifications/${encodeURIComponent(id)}/read`, {
+          method: 'POST',
+          methodName: 'notifications.markRead',
+        })
+        : this._ws('notifications.markRead', `/notifications/${encodeURIComponent(id)}/read`, {
+          method: 'POST',
+        }),
     markAllRead: () =>
-      this._ws('notifications.markAllRead', '/notifications/mark-all-read', { method: 'POST' }),
+      this._useCoreNotifications()
+        ? this._request('/notifications/mark-all-read', {
+          method: 'POST',
+          methodName: 'notifications.markAllRead',
+        })
+        : this._ws('notifications.markAllRead', '/notifications/mark-all-read', { method: 'POST' }),
   }
 
   // --- Search -----------------------------------------------------------------

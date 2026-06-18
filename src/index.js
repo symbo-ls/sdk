@@ -30,6 +30,7 @@ import {
   createCreditsService,
   createCanvasLayoutService,
   createMeetService,
+  createCalendarService,
   workspaceProjectBaseUrl,
   createSupabasePassthroughConfig,
   workspaceProjectEdgeFunctionUrl,
@@ -313,6 +314,16 @@ export class SDK {
       this._initService(
         'meet',
         createMeetService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      // Calendar — workspace-scoped events against /core/calendar/* on the
+      // main server. DORMANT until CALENDAR_STORE is flipped off 'supabase'
+      // (Supabase → Mongo migration Phase 4). Writes are owner/admin-gated.
+      this._initService(
+        'calendar',
+        createCalendarService({
           context: this._context,
           options: this._options
         })
@@ -682,6 +693,7 @@ export {
   createCreditsService,
   createCanvasLayoutService,
   createMeetService,
+  createCalendarService,
   workspaceProjectBaseUrl,
   createSupabasePassthroughConfig,
   workspaceProjectEdgeFunctionUrl,

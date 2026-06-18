@@ -40,6 +40,7 @@ import { SharedAssetService } from './SharedAssetService.js'
 import { CreditsService } from './CreditsService.js'
 import { CanvasLayoutService } from './CanvasLayoutService.js'
 import { MeetService } from './MeetService.js'
+import { CalendarService } from './CalendarService.js'
 
 const createService = (ServiceClass, config) => new ServiceClass(config)
 
@@ -150,6 +151,13 @@ export const createCanvasLayoutService = config =>
 export const createMeetService = config =>
   createService(MeetService, config)
 
+// Calendar service — workspace-scoped calendar events against
+// /core/calendar/events on the main server. DORMANT until CALENDAR_STORE is
+// flipped off 'supabase' (Supabase → Mongo migration Phase 4). Writes are
+// owner/admin-gated server-side (calendar-agnostic-spec.md §7).
+export const createCalendarService = config =>
+  createService(CalendarService, config)
+
 export {
   AuthService,
   CollabService,
@@ -185,5 +193,6 @@ export {
   SharedAssetService,
   CreditsService,
   CanvasLayoutService,
-  MeetService
+  MeetService,
+  CalendarService
 }

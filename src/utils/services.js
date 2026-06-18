@@ -508,6 +508,20 @@ export const SERVICE_METHODS = {
   meetGuestRequest: 'meet',
   meetGuestStatus: 'meet',
   meetGuestToken: 'meet',
-  meetMuteParticipant: 'meet'
+  meetMuteParticipant: 'meet',
+
+  // Calendar — workspace-scoped events against /core/calendar/* (auth).
+  // DORMANT until the server's CALENDAR_STORE flag is flipped off 'supabase'
+  // (Supabase → Mongo migration Phase 4). Writes are owner/admin-gated.
+  // GET  /core/calendar/events       → list within a window
+  // GET  /core/calendar/events/:id   → get one
+  // POST /core/calendar/events       → create (owner/admin)
+  // PATCH  /core/calendar/events/:id → update (owner/admin)
+  // DELETE /core/calendar/events/:id → soft delete (owner/admin)
+  calendarListEvents: 'calendar',
+  calendarGetEvent: 'calendar',
+  calendarCreateEvent: 'calendar',
+  calendarUpdateEvent: 'calendar',
+  calendarDeleteEvent: 'calendar'
 }
 

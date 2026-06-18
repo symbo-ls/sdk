@@ -26,7 +26,9 @@ import {
   AllocationRuleService,
   SharedAssetService,
   CreditsService,
-  CanvasLayoutService
+  CanvasLayoutService,
+  MeetService,
+  CalendarService
 } from '../../index.js'
 
 // service-name → ServiceClass — the same wiring `_initService` does in
@@ -58,7 +60,9 @@ const SERVICES = {
   allocationRule: AllocationRuleService,
   sharedAsset: SharedAssetService,
   credits: CreditsService,
-  canvasLayout: CanvasLayoutService
+  canvasLayout: CanvasLayoutService,
+  meet: MeetService,
+  calendar: CalendarService
 }
 
 // Methods that intentionally exist on a service but are NOT flat-exposed via
