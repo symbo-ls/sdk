@@ -1,5 +1,11 @@
 # @symbo.ls/sdk
 
+## 3.14.486
+
+### Patch Changes
+
+- Auto-generated cross-repo patch release.
+
 ## 3.14.485
 
 ### Patch Changes
