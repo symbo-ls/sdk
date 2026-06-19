@@ -352,7 +352,7 @@ export class AiService extends BaseService {
     const blocksToText = (content) =>
       (content || []).filter((p) => p && p.type === 'text').map((p) => p.text).join('')
 
-    const finishAnswer = (txt) => {
+    const finishAnswer = (txt, messageId) => {
       if (answered || cancelled) return
       answered = true
       clearFallback()
@@ -360,8 +360,12 @@ export class AiService extends BaseService {
       // re-emitting the full text here would double it. Just finalize.
       if (!streamedAny) onChunk?.(txt)
       // Surface the conversation id this turn used so the caller can track the
-      // active thread (esp. a NEW thread whose id was lazily created here).
-      onDone?.({ text: txt, conversationId: resolvedConvId })
+      // active thread (esp. a NEW thread whose id was lazily created here), plus
+      // the SERVER assistant message id so the caller can re-key its optimistic
+      // message into the server id-space — without that, the live buffer (synthetic
+      // a-… ids) and reloaded history (Mongo _ids) never reconcile and messages
+      // duplicate or vanish on the next thread switch/reload.
+      onDone?.({ text: txt, conversationId: resolvedConvId, messageId: messageId || null })
       stopStream()
     }
 
@@ -387,6 +391,14 @@ export class AiService extends BaseService {
             ? String(wanted)
             : await this._resolveConversationId(cacheKey, base)
         resolvedConvId = conversationId
+        // Keep the per-(workspace|project) cache tracking the LAST-USED thread,
+        // not the first-ever one. _resolveConversationId only writes the cache when
+        // it CREATES a conversation, so once a real id is passed (the session UI's
+        // activeSessionId) the cache stayed pinned to the first conversation —
+        // meaning any later turn arriving with a blank/local id fell back to that
+        // first thread and independent threads collapsed onto it (the "messages
+        // mixed up" bug). Write through so the cache always names the active thread.
+        try { this._writeStorage(cacheKey, conversationId) } catch (_) {}
       } catch (err) {
         fail(err)
         return
@@ -436,7 +448,7 @@ export class AiService extends BaseService {
             // the turn on an empty message. Only the final, text-bearing
             // assistant message ends the turn.
             const txt = blocksToText(data.content)
-            if (txt) finishAnswer(txt)
+            if (txt) finishAnswer(txt, data.id || data._id || null)
           }
         },
         onError: (err) => fail(err)
@@ -517,7 +529,7 @@ export class AiService extends BaseService {
         (m?.content || []).filter((p) => p && p.type === 'text').map((p) => p.text).join('')
       const assistant = [...messages].reverse().find((m) => m?.role === 'assistant' && textOf(m))
       const txt = assistant ? textOf(assistant) : ''
-      if (txt) finishAnswer(txt)
+      if (txt) finishAnswer(txt, (assistant && (assistant.id || assistant._id)) || null)
       else fail(new Error('[sdk.ai] no assistant response'))
     } catch (err) {
       fail(err)
