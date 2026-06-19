@@ -724,6 +724,13 @@ const ENTITY_ROUTES = {
   // WorkspaceProjectService once that method ships. For now the route is
   // reserved so callers (DOMQL fetch:, sdk.execute) compile against the
   // final entity name and we can flip the implementation under them.
+  // Announcements — DORMANT Supabase → Mongo cutover. The route is STATIC; the
+  // engine choice (byte-identical /sb passthrough vs new Mongo /core path) lives
+  // inside WorkspaceProjectService.announcements behind _useCoreAnnouncements()
+  // (context.useCoreAnnouncements / globalThis.__USE_CORE_ANNOUNCEMENTS__).
+  // Default OFF → no behavior change. The `react` op (toggle a reactor on one
+  // emoji) is Mongo-only — it resolves to a no-op off-flag, so the historical
+  // local-only IntranetRows reaction behavior is preserved in the default path.
   'workspaceProject.announcements': {
     service: 'workspaceProject',
     methods: {
@@ -732,8 +739,12 @@ const ENTITY_ROUTES = {
       create: 'announcements.create',
       update: 'announcements.update',
       remove: 'announcements.remove',
+      react: 'announcements.toggleReaction',
     },
-    argMap: CRUD_ARG_MAP,
+    argMap: {
+      ...CRUD_ARG_MAP,
+      react: (a) => [a?.id ?? a?.number, a?.emoji, a?.reactor],
+    },
   },
   'workspaceProject.birthdays': {
     service: 'workspaceProject',

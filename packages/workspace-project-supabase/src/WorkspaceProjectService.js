@@ -56,6 +56,16 @@ export class WorkspaceProjectService extends BaseService {
     // realtime path are intentionally left on their current transports for
     // THIS slice — only the data store migrates.
     this._useCoreNotificationsFlag = context?.useCoreNotifications === true
+    // Announcements data-store cutover toggle (Supabase → Mongo DORMANT slice).
+    // DEFAULT OFF → announcements.{list,get,create,update,remove} keep riding the
+    // generic /sb PostgREST passthrough via _sbCrud (BYTE-IDENTICAL to today —
+    // /sb/rest/v1/announcements, workspace_id-pinned server-side). When flipped ON
+    // (context.useCoreAnnouncements === true OR globalThis.__USE_CORE_ANNOUNCEMENTS__)
+    // they repoint to the new Mongo /core/announcements routes (which are
+    // themselves fail-closed behind the server ANNOUNCEMENTS_STORE flag). The
+    // reader-facing wire shape is byte-identical (the server serializer emits the
+    // same snake_case row PostgREST returned), so consumers don't branch.
+    this._useCoreAnnouncementsFlag = context?.useCoreAnnouncements === true
   }
 
   // Lazy flag read so a runtime global (set after SDK boot) can flip it
@@ -64,6 +74,17 @@ export class WorkspaceProjectService extends BaseService {
     if (this._useCoreNotificationsFlag) return true
     try {
       return typeof globalThis !== 'undefined' && globalThis.__USE_CORE_NOTIFICATIONS__ === true
+    } catch {
+      return false
+    }
+  }
+
+  // Lazy flag read — parity with _useCoreNotifications. Default OFF keeps the
+  // announcements surface on the byte-identical _sbCrud → /sb path.
+  _useCoreAnnouncements() {
+    if (this._useCoreAnnouncementsFlag) return true
+    try {
+      return typeof globalThis !== 'undefined' && globalThis.__USE_CORE_ANNOUNCEMENTS__ === true
     } catch {
       return false
     }
@@ -628,7 +649,66 @@ export class WorkspaceProjectService extends BaseService {
   // validation, denormalization, or composition.
   // ────────────────────────────────────────────────────────────────────────
 
-  announcements = this._sbCrud('announcements')
+  // DORMANT cutover (Supabase → Mongo). When _useCoreAnnouncements() is FALSE
+  // (the DEFAULT) every method delegates to the original _sbCrud('announcements')
+  // surface — BYTE-IDENTICAL to today (generic /sb passthrough, workspace_id
+  // pinned server-side). When TRUE the methods repoint to the Mongo
+  // /core/announcements routes (BaseService._request → `${apiUrl}/core/...`,
+  // Mongo-token auth) and unwrap the `{ announcements } / { announcement }`
+  // envelope back to the exact array / row shape the readers consume, so
+  // loadPrivateData.js's `.map(...)` is unchanged. The default _sbCrud surface
+  // is constructed once and held so the default branch is a pure pass-through.
+  _announcementsSb = this._sbCrud('announcements')
+  announcements = {
+    list: (filter, options) =>
+      this._useCoreAnnouncements()
+        ? this._request('/announcements', { method: 'GET', methodName: 'announcements.list' })
+          .then((r) => (Array.isArray(r) ? r : r?.announcements ?? []))
+        : this._announcementsSb.list(filter, options),
+    get: (id) =>
+      this._useCoreAnnouncements()
+        ? this._request(`/announcements/${encodeURIComponent(id)}`, {
+          method: 'GET',
+          methodName: 'announcements.get',
+        }).then((r) => r?.announcement ?? r)
+        : this._announcementsSb.get(id),
+    create: (payload) =>
+      this._useCoreAnnouncements()
+        ? this._request('/announcements', {
+          method: 'POST',
+          body: JSON.stringify({ payload }),
+          methodName: 'announcements.create',
+        }).then((r) => r?.announcement ?? r)
+        : this._announcementsSb.create(payload),
+    update: (id, payload) =>
+      this._useCoreAnnouncements()
+        ? this._request(`/announcements/${encodeURIComponent(id)}`, {
+          method: 'PUT',
+          body: JSON.stringify({ payload }),
+          methodName: 'announcements.update',
+        }).then((r) => r?.announcement ?? r)
+        : this._announcementsSb.update(id, payload),
+    remove: (id) =>
+      this._useCoreAnnouncements()
+        ? this._request(`/announcements/${encodeURIComponent(id)}`, {
+          method: 'DELETE',
+          methodName: 'announcements.remove',
+        })
+        : this._announcementsSb.remove(id),
+    // Reactions fold — Mongo-only. The DEFAULT path has no persisted reactions
+    // (the announcement_reactions table is dead + IntranetRows mutates local
+    // root state only), so toggleReaction is a no-op resolving null off-flag,
+    // preserving the local-only default behavior. On-flag it persists via the
+    // /core route. The server resolves the reactor from the caller's identity.
+    toggleReaction: (id, emoji, reactor) =>
+      this._useCoreAnnouncements()
+        ? this._request(`/announcements/${encodeURIComponent(id)}/reactions`, {
+          method: 'POST',
+          body: JSON.stringify({ emoji, reactor }),
+          methodName: 'announcements.toggleReaction',
+        }).then((r) => r?.announcement ?? r)
+        : Promise.resolve(null),
+  }
   birthdays     = this._sbCrud('birthdays')
   stories       = this._sbCrud('stories')
   valuations    = this._sbCrud('valuations')
