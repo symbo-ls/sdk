@@ -783,6 +783,13 @@ const ENTITY_ROUTES = {
     methods: { get: 'companySettings.get', update: 'companySettings.update' },
     argMap: { get: () => [], update: argMaps.payload },
   },
+  // PREFS trio — DORMANT Supabase → Mongo cutover. These routes are STATIC; the
+  // engine choice (byte-identical /sb passthrough vs new Mongo /core/prefs path)
+  // lives inside WorkspaceProjectService.{userPreferences,homeDashboardPrefs,
+  // workspaceDashboardDefaults} behind _useCorePrefs() (context.useCorePrefs /
+  // globalThis.__USE_CORE_PREFS__). Default OFF → no behavior change. The
+  // serialized wire shape is byte-identical either way, so the dispatcher's
+  // update→upsert mapping + payload argMap are unchanged.
   'workspaceProject.userPreferences': {
     service: 'workspaceProject',
     methods: { get: 'userPreferences.get', update: 'userPreferences.upsert' },

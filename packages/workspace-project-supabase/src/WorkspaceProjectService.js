@@ -66,6 +66,18 @@ export class WorkspaceProjectService extends BaseService {
     // reader-facing wire shape is byte-identical (the server serializer emits the
     // same snake_case row PostgREST returned), so consumers don't branch.
     this._useCoreAnnouncementsFlag = context?.useCoreAnnouncements === true
+    // PREFS-trio data-store cutover toggle (Supabase → Mongo DORMANT slice).
+    // DEFAULT OFF → userPreferences / homeDashboardPrefs / workspaceDashboardDefaults
+    // keep riding the generic /sb PostgREST passthrough via _sb (BYTE-IDENTICAL to
+    // today — /sb/rest/v1/user_preferences|home_dashboard_prefs|workspace_dashboard_defaults,
+    // user_id + workspace_id pinned server-side). When flipped ON
+    // (context.useCorePrefs === true OR globalThis.__USE_CORE_PREFS__) they
+    // repoint to the new Mongo /core/prefs routes (themselves fail-closed behind
+    // the server PREFS_STORE flag). The reader-facing wire shape is byte-identical
+    // (the server serializer emits the same snake_case rows PostgREST returned —
+    // userPrefs flat object, home prefs { hidden_widgets, grid_layout, dashboard_v },
+    // workspace defaults { home_default_panels }), so consumers don't branch.
+    this._useCorePrefsFlag = context?.useCorePrefs === true
   }
 
   // Lazy flag read so a runtime global (set after SDK boot) can flip it
@@ -85,6 +97,17 @@ export class WorkspaceProjectService extends BaseService {
     if (this._useCoreAnnouncementsFlag) return true
     try {
       return typeof globalThis !== 'undefined' && globalThis.__USE_CORE_ANNOUNCEMENTS__ === true
+    } catch {
+      return false
+    }
+  }
+
+  // Lazy flag read — parity with _useCoreAnnouncements. Default OFF keeps the
+  // PREFS-trio surfaces on the byte-identical _sb → /sb path.
+  _useCorePrefs() {
+    if (this._useCorePrefsFlag) return true
+    try {
+      return typeof globalThis !== 'undefined' && globalThis.__USE_CORE_PREFS__ === true
     } catch {
       return false
     }
@@ -806,14 +829,30 @@ export class WorkspaceProjectService extends BaseService {
   // PostgREST "Cannot coerce the result to a single JSON object" error.
   // Caller treats null as "no prefs yet" and renders defaults.
   userPreferences = {
+    // DORMANT cutover: when _useCorePrefs() is FALSE (the DEFAULT) both methods
+    // delegate to the BYTE-IDENTICAL _sb('user_preferences') path. When TRUE they
+    // repoint to GET/PUT /core/prefs/user and unwrap the `{ prefs }` envelope back
+    // to the flat object the reader (root.userPrefs) consumes. The /core path
+    // persists ad-hoc keys (homeWelcomeDismissed, …) the typed Supabase columns
+    // silently dropped — same wire shape, fixed persistence.
     get: async () => {
+      if (this._useCorePrefs()) {
+        const r = await this._request('/prefs/user', { method: 'GET', methodName: 'userPreferences.get' })
+        return r?.prefs ?? null
+      }
       const rows = await this._sb('userPreferences.get', 'user_preferences', 'list',
         { options: { limit: 1 } })
       return Array.isArray(rows) ? (rows[0] || null) : (rows || null)
     },
     upsert: (payload) =>
-      this._sb('userPreferences.upsert', 'user_preferences', 'create',
-        { payload, options: { upsertOnConflict: 'user_id' } }),
+      this._useCorePrefs()
+        ? this._request('/prefs/user', {
+          method: 'PUT',
+          body: JSON.stringify({ payload }),
+          methodName: 'userPreferences.upsert',
+        }).then((r) => r?.prefs ?? r)
+        : this._sb('userPreferences.upsert', 'user_preferences', 'create',
+          { payload, options: { upsertOnConflict: 'user_id' } }),
   }
 
   // Per-user, per-workspace home dashboard prefs (hidden_widgets / grid_layout /
@@ -823,28 +862,64 @@ export class WorkspaceProjectService extends BaseService {
   // the upsert must conflict on the full key. `list` + limit:1 (not `single`) so a
   // missing row returns [] rather than a PostgREST coerce error. See migration 0157.
   homeDashboardPrefs = {
+    // DORMANT cutover (parity with userPreferences). Default OFF → byte-identical
+    // _sb('home_dashboard_prefs') path; ON → GET/PUT /core/prefs/home-dashboard,
+    // unwrapping `{ prefs }` to the snake_case row (hidden_widgets / grid_layout /
+    // dashboard_v) the reader (root.userDashboardPrefs) + resolver consume.
     get: async () => {
+      if (this._useCorePrefs()) {
+        const r = await this._request('/prefs/home-dashboard', {
+          method: 'GET',
+          methodName: 'homeDashboardPrefs.get',
+        })
+        return r?.prefs ?? null
+      }
       const rows = await this._sb('homeDashboardPrefs.get', 'home_dashboard_prefs', 'list',
         { options: { limit: 1 } })
       return Array.isArray(rows) ? (rows[0] || null) : (rows || null)
     },
     upsert: (payload) =>
-      this._sb('homeDashboardPrefs.upsert', 'home_dashboard_prefs', 'create',
-        { payload, options: { upsertOnConflict: 'user_id,workspace_id' } }),
+      this._useCorePrefs()
+        ? this._request('/prefs/home-dashboard', {
+          method: 'PUT',
+          body: JSON.stringify({ payload }),
+          methodName: 'homeDashboardPrefs.upsert',
+        }).then((r) => r?.prefs ?? r)
+        : this._sb('homeDashboardPrefs.upsert', 'home_dashboard_prefs', 'create',
+          { payload, options: { upsertOnConflict: 'user_id,workspace_id' } }),
   }
 
   // Per-workspace admin default panel set (one row per workspace). Members read
   // it; org-admins write it (write gated in the proxy via
   // WORKSPACE_ADMIN_WRITE_TABLES). See migration 0157.
   workspaceDashboardDefaults = {
+    // DORMANT cutover (parity with userPreferences). Default OFF → byte-identical
+    // _sb('workspace_dashboard_defaults') path; ON → GET/PUT
+    // /core/prefs/workspace-defaults, unwrapping `{ defaults }` to the snake_case
+    // row (home_default_panels) the reader (root.workspaceSettings) consumes. The
+    // /core writer is org-admin-gated server-side (mirrors the proxy's
+    // WORKSPACE_ADMIN_WRITE_TABLES gate).
     get: async () => {
+      if (this._useCorePrefs()) {
+        const r = await this._request('/prefs/workspace-defaults', {
+          method: 'GET',
+          methodName: 'workspaceDashboardDefaults.get',
+        })
+        return r?.defaults ?? null
+      }
       const rows = await this._sb('workspaceDashboardDefaults.get', 'workspace_dashboard_defaults',
         'list', { options: { limit: 1 } })
       return Array.isArray(rows) ? (rows[0] || null) : (rows || null)
     },
     upsert: (payload) =>
-      this._sb('workspaceDashboardDefaults.upsert', 'workspace_dashboard_defaults', 'create',
-        { payload, options: { upsertOnConflict: 'workspace_id' } }),
+      this._useCorePrefs()
+        ? this._request('/prefs/workspace-defaults', {
+          method: 'PUT',
+          body: JSON.stringify({ payload }),
+          methodName: 'workspaceDashboardDefaults.upsert',
+        }).then((r) => r?.defaults ?? r)
+        : this._sb('workspaceDashboardDefaults.upsert', 'workspace_dashboard_defaults', 'create',
+          { payload, options: { upsertOnConflict: 'workspace_id' } }),
   }
 
   userGrants     = this._sbCrud('user_grants')
