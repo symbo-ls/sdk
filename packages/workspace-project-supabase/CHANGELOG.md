@@ -1,5 +1,13 @@
 # @symbo.ls/workspace-project-supabase
 
+## 3.14.489
+
+### Patch Changes
+
+- Auto-generated cross-repo patch release.
+- Updated dependencies
+  - @symbo.ls/sdk@3.14.489
+
 ## 3.14.488
 
 ### Patch Changes
