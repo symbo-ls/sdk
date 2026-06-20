@@ -213,11 +213,20 @@ export class TicketService extends BaseService {
     /**
      * List comments for a ticket ordered by creation time.
      *
+     * Ticket comments are workspace-scoped server-side (authorizeTicketRequest
+     * 403s `workspace_scope_required` without a resolvable workspace). These
+     * calls never carried `?workspaceId=`, so comments silently failed to load /
+     * post in the detail modal. Attach the active workspace the same way
+     * get()/update()/remove() do (`?workspaceId=`, read by workspaceIdFromRequest).
+     *
      * @param {string} ticketId - Ticket ID
      * @returns {Promise<Array>} Array of comment documents
      */
-    list: (ticketId) =>
-      this._call('tickets.comments.list', `/tickets/${encodeURIComponent(ticketId)}/comments`),
+    list: (ticketId) => {
+      const wid = this._workspaceScope()
+      const qs = wid ? `?workspaceId=${encodeURIComponent(wid)}` : ''
+      return this._call('tickets.comments.list', `/tickets/${encodeURIComponent(ticketId)}/comments${qs}`)
+    },
 
     /**
      * Add a comment to a ticket.
@@ -226,11 +235,14 @@ export class TicketService extends BaseService {
      * @param {string} body - Comment markdown body
      * @returns {Promise<object>} Created comment document
      */
-    create: (ticketId, body) =>
-      this._call('tickets.comments.create', `/tickets/${encodeURIComponent(ticketId)}/comments`, {
+    create: (ticketId, body) => {
+      const wid = this._workspaceScope()
+      const qs = wid ? `?workspaceId=${encodeURIComponent(wid)}` : ''
+      return this._call('tickets.comments.create', `/tickets/${encodeURIComponent(ticketId)}/comments${qs}`, {
         method: 'POST',
         body: { body }
-      }),
+      })
+    },
 
     /**
      * Update an existing comment body.
@@ -239,11 +251,14 @@ export class TicketService extends BaseService {
      * @param {string} body - New comment markdown body
      * @returns {Promise<object>} Updated comment document
      */
-    update: (id, body) =>
-      this._call('tickets.comments.update', `/tickets/comments/${encodeURIComponent(id)}`, {
+    update: (id, body) => {
+      const wid = this._workspaceScope()
+      const qs = wid ? `?workspaceId=${encodeURIComponent(wid)}` : ''
+      return this._call('tickets.comments.update', `/tickets/comments/${encodeURIComponent(id)}${qs}`, {
         method: 'PUT',
         body: { body }
-      }),
+      })
+    },
 
     /**
      * Delete a comment.
@@ -251,10 +266,13 @@ export class TicketService extends BaseService {
      * @param {string} id - Comment ID
      * @returns {Promise<null>}
      */
-    remove: (id) =>
-      this._call('tickets.comments.remove', `/tickets/comments/${encodeURIComponent(id)}`, {
+    remove: (id) => {
+      const wid = this._workspaceScope()
+      const qs = wid ? `?workspaceId=${encodeURIComponent(wid)}` : ''
+      return this._call('tickets.comments.remove', `/tickets/comments/${encodeURIComponent(id)}${qs}`, {
         method: 'DELETE'
       })
+    }
   }
 
   // ==================== RELEASE SUB-NAMESPACE ====================
