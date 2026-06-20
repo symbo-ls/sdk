@@ -315,7 +315,9 @@ export class BaseService {
       'meetGuestMeta',
       'meetGuestRequest',
       'meetGuestStatus',
-      'meetGuestToken'
+      'meetGuestToken',
+      // Demo flow — unauthenticated visitor starts a demo session
+      'startDemo'
     ])
     return !noInitMethods.has(methodName)
   }
