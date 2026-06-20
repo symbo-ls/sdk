@@ -652,13 +652,10 @@ const ENTITY_ROUTES = {
     argMap: { list: argMaps.filterOptions },
   },
 
-  // ─── Role permissions matrix (governance ACL) ─────────────────────────────
-  // Replaces direct sb().from('role_permissions') reads from /admin/permissions.
-  'workspaceProject.rolePermissions': {
-    service: 'workspaceProject',
-    methods: { list: 'rolePermissions.list' },
-    argMap: { list: () => [] },
-  },
+  // workspaceProject.rolePermissions entity removed — dead SDK surface with
+  // zero callers (the /admin/permissions UI retired the role_permissions
+  // fetch). The role_permissions TABLE is not dropped (still read by the
+  // curated GET /admin/role-permissions route); see migration 0159.
 
   // ─── Analyzed (observability) ──────────────────────────────────────────────
   // Replaces Grafana Faro. Browser → workspace-project worker →
@@ -992,11 +989,8 @@ const ENTITY_ROUTES = {
       }],
     },
   },
-  'workspaceProject.realtime.agentMessages': {
-    service: 'workspaceProject',
-    methods: { subscribe: 'realtime.subscribeAgentMessages' },
-    argMap: { subscribe: (a) => [{ toAgent: a?.toAgent ?? a?.filter?.toAgent }] },
-  },
+  // workspaceProject.realtime.agentMessages removed — agent_messages table
+  // dropped in migration 0159; the agentMessages SDK surface had zero callers.
 
   // ─── Workspace storage (signed URLs + uploads for contracts, chat-attachments) ─
   // Replaces direct sb().storage.from(...) calls. Buckets are wrapper-scoped,
@@ -1018,47 +1012,11 @@ const ENTITY_ROUTES = {
     },
   },
 
-  // Walkie-talkie messages between ops agents (Simona/Chuvaka). The browser
-  // path uses sdk.execute(); the node ops path keeps a service-role REST
-  // fetch in shared/functions/agentMessages.js because there is no SDK
-  // admin token issuance flow yet.
-  'workspaceProject.agentMessages': {
-    service: 'workspaceProject',
-    methods: {
-      list: 'agentMessages.list',
-      create: 'agentMessages.create',
-      update: 'agentMessages.update',
-      subscribe: 'agentMessages.subscribe',
-    },
-    argMap: {
-      list: (a) => [a?.filter ?? a?.params, {
-        order: a?.order, limit: a?.limit, ...(a?.options || {})
-      }],
-      create: argMaps.payload,
-      update: argMaps.idPayload,
-      subscribe: (a) => [a?.toAgent ?? a?.filter?.to_agent ?? a?.params?.to_agent],
-    },
-  },
-  // Backwards-compat alias — agentMessages.js currently calls
-  // sdk.execute('agent_messages', ...). Keep the bare name routing to the
-  // same service methods until consumers update to the dotted form.
-  'agent_messages': {
-    service: 'workspaceProject',
-    methods: {
-      list: 'agentMessages.list',
-      create: 'agentMessages.create',
-      update: 'agentMessages.update',
-      subscribe: 'agentMessages.subscribe',
-    },
-    argMap: {
-      list: (a) => [a?.filter ?? a?.params, {
-        order: a?.order, limit: a?.limit, ...(a?.options || {})
-      }],
-      create: argMaps.payload,
-      update: argMaps.idPayload,
-      subscribe: (a) => [a?.toAgent ?? a?.filter?.to_agent ?? a?.params?.to_agent],
-    },
-  },
+  // workspaceProject.agentMessages + the bare 'agent_messages' back-compat
+  // alias removed — agent_messages table dropped in migration 0159; the
+  // SDK surface (WorkspaceProjectService.agentMessages) had zero live callers
+  // and the referenced shared/functions/agentMessages.js never existed.
+
   // ─── Community feed + follow graph ────────────────────────────────────────
   // Backed by migration 0106_community_feed.sql. Tables are read-public and
   // write-scoped to the caller's email via RLS. Routes thread through the

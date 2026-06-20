@@ -966,13 +966,10 @@ export class WorkspaceProjectService extends BaseService {
       }),
   }
 
-  // Role permission catalog (admin read-only).
-  rolePermissions = {
-    list: () =>
-      this._sb('rolePermissions.list', 'role_permissions', 'list', {
-        options: { order: 'role,resource,action' },
-      }),
-  }
+  // rolePermissions entity removed — dead SDK surface with zero callers
+  // (the /admin/permissions UI retired the role_permissions fetch). The
+  // role_permissions table itself is NOT dropped (still read by the curated
+  // GET /admin/role-permissions route); see migration 0159 header.
 
   // --- AI surface retired 2026-05-20 -----------------------------------------
   // Both ai.chat and ai.meetAnalyze moved off Supabase. All AI inference
@@ -982,23 +979,11 @@ export class WorkspaceProjectService extends BaseService {
   //   sdk.aiChat.meetAnalyze({ roomId, force })
   // See sdk/src/services/AiChatService.js.
 
-  // --- Agent walkie-talkie (Simona ↔ Chuvaka) — passthrough-routed ---------
-  // Routes through /workspace/sb/rest/v1/agent_messages (RLS-scoped). Browser
-  // path. The node ops path keeps a service-role REST fetch in
-  // shared/functions/agentMessages.js — admin token issuance flow not yet
-  // available outside a user session.
-  agentMessages = {
-    list: (filter, options) =>
-      this._sb('agentMessages.list', 'agent_messages', 'list', { filter, options }),
-    create: (payload) =>
-      this._sb('agentMessages.create', 'agent_messages', 'create', { payload }),
-    update: (id, payload) =>
-      this._sb('agentMessages.update', 'agent_messages', 'update', { id, payload }),
-    remove: (id) =>
-      this._sb('agentMessages.remove', 'agent_messages', 'remove', { id }),
-    // Realtime subscription stub — wires through socket once backend ships.
-    subscribe: (_toAgent) => () => {},
-  }
+  // agentMessages entity removed — dead SDK surface (agent_messages table
+  // dropped in migration 0159; zero live callers). The referenced
+  // shared/functions/agentMessages.js never existed. The realtime
+  // subscribeAgentMessages method + its EntityDispatcher routes were removed
+  // in the same change set.
 
   // --- Community feed + follow graph ----------------------------------------
   // Backed by migration 0106_community_feed.sql. Tables are public-readable
@@ -1317,10 +1302,8 @@ export class WorkspaceProjectService extends BaseService {
 
       return this._sseSubscribe('/chat/stream', filter, deliver, { events, flatParams: true })
     },
-    // agent_messages — fired on INSERT addressed to `toAgent`. Used by the
-    // walkie-talkie ops layer (Simona/Chuvaka).
-    subscribeAgentMessages: ({ toAgent } = {}, cb) =>
-      this._realtimeSubscribe('agentMessages', { toAgent }, cb),
+    // subscribeAgentMessages removed — agent_messages table dropped in
+    // migration 0159; the agentMessages entity had zero live callers.
   }
 
   // --- Storage (workspace-tenant buckets: contracts, chat-attachments, …) ---
