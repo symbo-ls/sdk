@@ -26,6 +26,8 @@ export const SERVICE_METHODS = {
   getAuthToken: 'auth',
   register: 'auth',
   login: 'auth',
+  startDemo: 'auth',
+  claimDemoAccount: 'auth',
   logout: 'auth',
   refreshToken: 'auth',
   googleAuth: 'auth',
