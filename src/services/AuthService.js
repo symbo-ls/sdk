@@ -149,10 +149,10 @@ export class AuthService extends BaseService {
     }
   }
 
-  async claimDemoAccount ({ password, name } = {}) {
+  async claimDemoAccount ({ email, password, name } = {}) {
     return this._call('claimDemoAccount', '/demo/claim', {
       method: 'POST',
-      body: { password, name }
+      body: { email, password, name }
     })
   }
 
