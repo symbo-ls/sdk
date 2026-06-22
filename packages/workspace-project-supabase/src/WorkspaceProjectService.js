@@ -922,6 +922,21 @@ export class WorkspaceProjectService extends BaseService {
           { payload, options: { upsertOnConflict: 'workspace_id' } }),
   }
 
+  // Per-workspace personalization (design system / navbar / language / dir /
+  // modules). Member-read, org-admin-write. workspace_id is pinned by the /sb
+  // proxy from the caller's auth; upsert on the workspace_id PK. Mirrors
+  // workspaceDashboardDefaults' byte-identical _sb path.
+  workspaceSettings = {
+    get: async () => {
+      const rows = await this._sb('workspaceSettings.get', 'workspace_settings',
+        'list', { options: { limit: 1 } })
+      return Array.isArray(rows) ? (rows[0] || null) : (rows || null)
+    },
+    upsert: (payload) =>
+      this._sb('workspaceSettings.upsert', 'workspace_settings', 'create',
+        { payload, options: { upsertOnConflict: 'workspace_id' } }),
+  }
+
   userGrants     = this._sbCrud('user_grants')
 
   // user_profiles is keyed by user_id, not numeric id. Override get/update.
