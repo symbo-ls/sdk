@@ -27,6 +27,7 @@ export const SERVICE_METHODS = {
   register: 'auth',
   login: 'auth',
   startDemo: 'auth',
+  enterDemo: 'auth',
   claimDemoAccount: 'auth',
   logout: 'auth',
   refreshToken: 'auth',
