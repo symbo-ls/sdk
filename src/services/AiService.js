@@ -230,7 +230,11 @@ export class AiService extends BaseService {
         // The consumer resolves (callId, tool, args) → result; the SDK submits
         // it to resume the loop. Without a handler, the server gets an error
         // result and the model adapts.
-        onToolCall: callbacks.onToolCall
+        onToolCall: callbacks.onToolCall,
+        // Live active-process events (delegated/chained sub-agents starting +
+        // finishing) — informational; the consumer renders the process panel +
+        // canvas activity from these.
+        onProcessActive: callbacks.onProcessActive
       })
     })
   }
@@ -314,7 +318,7 @@ export class AiService extends BaseService {
   //
   // Returns cancel() — aborts the SSE stream and marks the turn cancelled.
   _streamWorkspaceTurn (payload, callbacks = {}) {
-    const { onChunk, onDone, onError, onToolCall } = callbacks
+    const { onChunk, onDone, onError, onToolCall, onProcessActive } = callbacks
 
     // Scope: workspace is the DEFAULT ("most common"); a project-scoped
     // conversation is used when a projectId is supplied — agents work on both.
@@ -439,6 +443,15 @@ export class AiService extends BaseService {
                 })
               )
               .finally(() => { clientToolPending = false })
+            return
+          }
+          // Active-process events: a delegated/chained sub-agent started or
+          // finished. PURELY INFORMATIONAL — they do NOT end or suspend the turn
+          // (no finishAnswer, no fallback-timer touch), so the final assistant
+          // answer still resolves normally. The consumer renders them as a live
+          // "who's working on what" panel + lights up the canvas.
+          if (event === 'agent.started' || event === 'agent.completed') {
+            onProcessActive?.({ event, ...(data || {}) })
             return
           }
           if (event === 'message.created' && data?.role === 'assistant') {
