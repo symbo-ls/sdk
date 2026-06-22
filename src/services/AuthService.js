@@ -181,6 +181,13 @@ export class AuthService extends BaseService {
     })
   }
 
+  async cloneDemoWorkspace ({ demoOrgId } = {}) {
+    return this._call('cloneDemoWorkspace', '/demo/clone', {
+      method: 'POST',
+      body: { demoOrgId }
+    })
+  }
+
   async logout() {
     this._requireReady('logout')
     try {

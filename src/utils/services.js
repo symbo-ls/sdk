@@ -29,6 +29,7 @@ export const SERVICE_METHODS = {
   startDemo: 'auth',
   enterDemo: 'auth',
   claimDemoAccount: 'auth',
+  cloneDemoWorkspace: 'auth',
   logout: 'auth',
   refreshToken: 'auth',
   googleAuth: 'auth',
