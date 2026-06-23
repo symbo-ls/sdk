@@ -770,6 +770,20 @@ const ENTITY_ROUTES = {
     },
     argMap: CRUD_ARG_MAP,
   },
+  // Generic record store backing AI-generated extensions (migration 0163,
+  // table workspace_records). Standard CRUD; the `collection` namespace rides
+  // in the list filter (records.list({ filter: { collection: 'policies' } })).
+  'workspaceProject.records': {
+    service: 'workspaceProject',
+    methods: {
+      list: 'records.list',
+      get: 'records.get',
+      create: 'records.create',
+      update: 'records.update',
+      remove: 'records.remove',
+    },
+    argMap: CRUD_ARG_MAP,
+  },
   'workspaceProject.companyInfo': {
     service: 'workspaceProject',
     methods: { list: 'companyInfo.list', update: 'companyInfo.upsert' },

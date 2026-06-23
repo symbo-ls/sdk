@@ -736,6 +736,12 @@ export class WorkspaceProjectService extends BaseService {
   stories       = this._sbCrud('stories')
   valuations    = this._sbCrud('valuations')
   fileCanvas    = this._sbCrud('file_canvas')
+  // Generic record store backing AI-generated extensions (migration 0163,
+  // table workspace_records). list/get/create/update/remove via the standard
+  // _sbCrud → /sb PostgREST passthrough; the `collection` namespace is just a
+  // filter column (records.list({ collection: 'policies' })). Workspace_id is
+  // pinned by the proxy (sb.js WORKSPACE_SCOPED_TABLES).
+  records       = this._sbCrud('workspace_records')
 
   // --- Analyzed (observability) ----------------------------------------------
   // Replaces Grafana Faro for symbo.ls apps. Browser → workspace-project
