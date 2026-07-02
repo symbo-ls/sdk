@@ -926,7 +926,7 @@ export class WorkspaceProjectService extends BaseService {
         : Promise.resolve(null)
   }
   birthdays = this._sbCrud('birthdays')
-  stories = this._sbCrud('stories')
+  // stories entity removed — stories table dropped in migration 0162 (feature retired 2026-06-02; no Mongo successor).
   valuations = this._sbCrud('valuations')
   fileCanvas = this._sbCrud('file_canvas')
   // Generic record store backing AI-generated extensions (migration 0163,
@@ -1225,8 +1225,8 @@ export class WorkspaceProjectService extends BaseService {
 
   // rolePermissions entity removed — dead SDK surface with zero callers
   // (the /admin/permissions UI retired the role_permissions fetch). The
-  // role_permissions table itself is NOT dropped (still read by the curated
-  // GET /admin/role-permissions route); see migration 0159 header.
+  // role_permissions table itself WAS dropped in migration 0161 (2026-06);
+  // the Mongo successor is Team.permissions[].
 
   // --- AI surface retired 2026-05-20 -----------------------------------------
   // Both ai.chat and ai.meetAnalyze moved off Supabase. All AI inference

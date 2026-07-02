@@ -654,8 +654,8 @@ const ENTITY_ROUTES = {
 
   // workspaceProject.rolePermissions entity removed — dead SDK surface with
   // zero callers (the /admin/permissions UI retired the role_permissions
-  // fetch). The role_permissions TABLE is not dropped (still read by the
-  // curated GET /admin/role-permissions route); see migration 0159.
+  // fetch). The role_permissions TABLE was dropped in migration 0161
+  // (2026-06); the Mongo successor is Team.permissions[].
 
   // ─── Analyzed (observability) ──────────────────────────────────────────────
   // Replaces Grafana Faro. Browser → workspace-project worker →
@@ -748,17 +748,7 @@ const ENTITY_ROUTES = {
     methods: { list: 'birthdays.list' },
     argMap: { list: () => [] },
   },
-  'workspaceProject.stories': {
-    service: 'workspaceProject',
-    methods: {
-      list: 'stories.list',
-      get: 'stories.get',
-      create: 'stories.create',
-      update: 'stories.update',
-      remove: 'stories.remove',
-    },
-    argMap: CRUD_ARG_MAP,
-  },
+  // workspaceProject.stories entity removed — stories table dropped in migration 0162 (feature retired 2026-06-02; no Mongo successor).
   'workspaceProject.fileCanvas': {
     service: 'workspaceProject',
     methods: {
