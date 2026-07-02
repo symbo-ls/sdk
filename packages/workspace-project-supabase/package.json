@@ -1,6 +1,6 @@
 {
   "name": "@symbo.ls/workspace-project-supabase",
-  "version": "3.14.536",
+  "version": "3.14.558",
   "type": "module",
   "description": "Workspace-project Supabase-backed surface for @symbo.ls/sdk — the curated /workspace-project/* REST wrapper + PostgREST passthrough adapter for tenant tables that haven't been migrated to Mongo yet. WorkspaceProjectService + supabasePassthrough live here so the SDK core stays Mongo-only.",
   "main": "./dist/cjs/src/index.cjs",
@@ -31,7 +31,7 @@
     "prepublishOnly": "npm run build"
   },
   "peerDependencies": {
-    "@symbo.ls/sdk": "^3.14.533"
+    "@symbo.ls/sdk": "^3.14.558"
   },
   "peerDependenciesMeta": {
     "@supabase/supabase-js": {
