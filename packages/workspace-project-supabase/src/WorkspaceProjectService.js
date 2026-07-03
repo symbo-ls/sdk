@@ -48,104 +48,137 @@ export class WorkspaceProjectService extends BaseService {
       context?.workspaceApiUrl || this._apiUrl
     )
     this._tokenProvider = context?.workspaceProjectTokenProvider || null
-    // Notifications data-store cutover toggle (Supabase → Mongo DORMANT slice).
-    // DEFAULT OFF → notifications.{list,unreadCount,markRead,markAllRead} keep
-    // riding the workspace-project worker `/notifications` surface (which is
-    // itself governed by the server NOTIFICATIONS_STORE flag). When flipped ON
-    // (context.useCoreNotifications === true OR globalThis.__USE_CORE_NOTIFICATIONS__)
-    // the READ + mark methods repoint to the new /core/notifications routes
-    // (same notificationStore dispatcher server-side). create() and the
-    // realtime path are intentionally left on their current transports for
-    // THIS slice — only the data store migrates.
-    this._useCoreNotificationsFlag = context?.useCoreNotifications === true
-    // Announcements data-store cutover toggle (Supabase → Mongo DORMANT slice).
-    // DEFAULT OFF → announcements.{list,get,create,update,remove} keep riding the
-    // generic /sb PostgREST passthrough via _sbCrud (BYTE-IDENTICAL to today —
-    // /sb/rest/v1/announcements, workspace_id-pinned server-side). When flipped ON
-    // (context.useCoreAnnouncements === true OR globalThis.__USE_CORE_ANNOUNCEMENTS__)
-    // they repoint to the new Mongo /core/announcements routes (which are
-    // themselves fail-closed behind the server ANNOUNCEMENTS_STORE flag). The
-    // reader-facing wire shape is byte-identical (the server serializer emits the
-    // same snake_case row PostgREST returned), so consumers don't branch.
-    this._useCoreAnnouncementsFlag = context?.useCoreAnnouncements === true
-    // PREFS-trio data-store cutover toggle (Supabase → Mongo DORMANT slice).
-    // DEFAULT OFF → userPreferences / homeDashboardPrefs / workspaceDashboardDefaults
-    // keep riding the generic /sb PostgREST passthrough via _sb (BYTE-IDENTICAL to
-    // today — /sb/rest/v1/user_preferences|home_dashboard_prefs|workspace_dashboard_defaults,
-    // user_id + workspace_id pinned server-side). When flipped ON
-    // (context.useCorePrefs === true OR globalThis.__USE_CORE_PREFS__) they
-    // repoint to the new Mongo /core/prefs routes (themselves fail-closed behind
-    // the server PREFS_STORE flag). The reader-facing wire shape is byte-identical
-    // (the server serializer emits the same snake_case rows PostgREST returned —
-    // userPrefs flat object, home prefs { hidden_widgets, grid_layout, dashboard_v },
-    // workspace defaults { home_default_panels }), so consumers don't branch.
-    this._useCorePrefsFlag = context?.useCorePrefs === true
-    // Storage data-store cutover toggle (Supabase → GCS DORMANT slice).
-    // DEFAULT OFF → storage.{createSignedUrl,upload,remove,publicUrl} keep
-    // riding the workspace-project worker `/storage/*` Supabase surface
-    // (BYTE-IDENTICAL to today — multipart upload to _workspacePrefix, JSON
-    // signed-url/public-url/object via _ws). When flipped ON
-    // (context.useCoreStorage === true OR globalThis.__USE_CORE_STORAGE__) they
-    // repoint to the new GCS-backed /core/storage routes (themselves fail-closed
-    // behind the server STORAGE_STORE flag). Response shapes are un-enveloped +
-    // identical ({ bucket, path, url, … } / { signedUrl, path } / { publicUrl,
-    // path } / { ok, path }), so consumers don't branch.
-    this._useCoreStorageFlag = context?.useCoreStorage === true
+    // Notifications data-store cutover toggle (Supabase → Mongo).
+    // DEFAULT ON since 2026-07-03 (dev cutover — server store defaults flipped
+    // to mongo in lock-step) → notifications.{list,unreadCount,markRead,
+    // markAllRead} route to the /core/notifications routes (same
+    // notificationStore dispatcher server-side). ROLLBACK: set
+    // context.useCoreNotifications = false OR
+    // globalThis.__USE_CORE_NOTIFICATIONS__ = false to ride the legacy
+    // workspace-project worker `/notifications` surface again. An explicit
+    // context boolean wins over the global; absent → the lazy global read
+    // decides (default ON). create() and the realtime path are intentionally
+    // left on their current transports for THIS slice — only the data store
+    // migrates.
+    this._useCoreNotificationsFlag =
+      typeof context?.useCoreNotifications === 'boolean'
+        ? context.useCoreNotifications
+        : null
+    // Announcements data-store cutover toggle (Supabase → Mongo).
+    // DEFAULT ON since 2026-07-03 (dev cutover — server ANNOUNCEMENTS_STORE
+    // flipped to mongo in lock-step) → announcements.{list,get,create,update,
+    // remove} route to the Mongo /core/announcements routes. ROLLBACK: set
+    // context.useCoreAnnouncements = false OR
+    // globalThis.__USE_CORE_ANNOUNCEMENTS__ = false to ride the legacy /sb
+    // PostgREST passthrough via _sbCrud again (/sb/rest/v1/announcements,
+    // workspace_id-pinned server-side). An explicit context boolean wins over
+    // the global; absent → the lazy global read decides (default ON). The
+    // reader-facing wire shape is byte-identical (the server serializer emits
+    // the same snake_case row PostgREST returned), so consumers don't branch.
+    this._useCoreAnnouncementsFlag =
+      typeof context?.useCoreAnnouncements === 'boolean'
+        ? context.useCoreAnnouncements
+        : null
+    // PREFS-trio data-store cutover toggle (Supabase → Mongo).
+    // DEFAULT ON since 2026-07-03 (dev cutover — server PREFS_STORE flipped to
+    // mongo in lock-step) → userPreferences / homeDashboardPrefs /
+    // workspaceDashboardDefaults route to the Mongo /core/prefs routes.
+    // ROLLBACK: set context.useCorePrefs = false OR
+    // globalThis.__USE_CORE_PREFS__ = false to ride the legacy /sb PostgREST
+    // passthrough via _sb again (/sb/rest/v1/user_preferences|
+    // home_dashboard_prefs|workspace_dashboard_defaults, user_id +
+    // workspace_id pinned server-side). An explicit context boolean wins over
+    // the global; absent → the lazy global read decides (default ON). The
+    // reader-facing wire shape is byte-identical (the server serializer emits
+    // the same snake_case rows PostgREST returned — userPrefs flat object,
+    // home prefs { hidden_widgets, grid_layout, dashboard_v }, workspace
+    // defaults { home_default_panels }), so consumers don't branch.
+    this._useCorePrefsFlag =
+      typeof context?.useCorePrefs === 'boolean' ? context.useCorePrefs : null
+    // Storage data-store cutover toggle (Supabase → GCS).
+    // DEFAULT ON since 2026-07-03 (dev cutover — server STORAGE_STORE flipped
+    // to GCS in lock-step) → storage.{createSignedUrl,upload,remove,publicUrl}
+    // route to the GCS-backed /core/storage routes. ROLLBACK: set
+    // context.useCoreStorage = false OR globalThis.__USE_CORE_STORAGE__ =
+    // false to ride the legacy workspace-project worker `/storage/*` Supabase
+    // surface again (multipart upload to _workspacePrefix, JSON
+    // signed-url/public-url/object via _ws). An explicit context boolean wins
+    // over the global; absent → the lazy global read decides (default ON).
+    // Response shapes are un-enveloped + identical ({ bucket, path, url, … } /
+    // { signedUrl, path } / { publicUrl, path } / { ok, path }), so consumers
+    // don't branch.
+    this._useCoreStorageFlag =
+      typeof context?.useCoreStorage === 'boolean'
+        ? context.useCoreStorage
+        : null
   }
 
   // Lazy flag read so a runtime global (set after SDK boot) can flip it
   // without re-init — parity with how server flags are re-read per call.
+  // DEFAULT ON since 2026-07-03; globalThis.__USE_CORE_NOTIFICATIONS__ = false
+  // is the runtime rollback (an explicit ctor context boolean wins over it).
   _useCoreNotifications() {
-    if (this._useCoreNotificationsFlag) return true
+    if (typeof this._useCoreNotificationsFlag === 'boolean') {
+      return this._useCoreNotificationsFlag
+    }
     try {
-      return (
+      return !(
         typeof globalThis !== 'undefined' &&
-        globalThis.__USE_CORE_NOTIFICATIONS__ === true
+        globalThis.__USE_CORE_NOTIFICATIONS__ === false
       )
     } catch {
-      return false
+      return true
     }
   }
 
-  // Lazy flag read — parity with _useCoreNotifications. Default OFF keeps the
-  // announcements surface on the byte-identical _sbCrud → /sb path.
+  // Lazy flag read — parity with _useCoreNotifications. DEFAULT ON since
+  // 2026-07-03; globalThis.__USE_CORE_ANNOUNCEMENTS__ = false is the runtime
+  // rollback to the byte-identical _sbCrud → /sb path.
   _useCoreAnnouncements() {
-    if (this._useCoreAnnouncementsFlag) return true
+    if (typeof this._useCoreAnnouncementsFlag === 'boolean') {
+      return this._useCoreAnnouncementsFlag
+    }
     try {
-      return (
+      return !(
         typeof globalThis !== 'undefined' &&
-        globalThis.__USE_CORE_ANNOUNCEMENTS__ === true
+        globalThis.__USE_CORE_ANNOUNCEMENTS__ === false
       )
     } catch {
-      return false
+      return true
     }
   }
 
-  // Lazy flag read — parity with _useCoreAnnouncements. Default OFF keeps the
-  // PREFS-trio surfaces on the byte-identical _sb → /sb path.
+  // Lazy flag read — parity with _useCoreAnnouncements. DEFAULT ON since
+  // 2026-07-03; globalThis.__USE_CORE_PREFS__ = false is the runtime rollback
+  // to the byte-identical _sb → /sb path for the PREFS-trio surfaces.
   _useCorePrefs() {
-    if (this._useCorePrefsFlag) return true
+    if (typeof this._useCorePrefsFlag === 'boolean') {
+      return this._useCorePrefsFlag
+    }
     try {
-      return (
+      return !(
         typeof globalThis !== 'undefined' &&
-        globalThis.__USE_CORE_PREFS__ === true
+        globalThis.__USE_CORE_PREFS__ === false
       )
     } catch {
-      return false
+      return true
     }
   }
 
-  // Lazy flag read — parity with _useCorePrefs. Default OFF keeps the storage
-  // surface on the byte-identical _ws / _workspacePrefix worker path.
+  // Lazy flag read — parity with _useCorePrefs. DEFAULT ON since 2026-07-03;
+  // globalThis.__USE_CORE_STORAGE__ = false is the runtime rollback to the
+  // byte-identical _ws / _workspacePrefix worker path.
   _useCoreStorage() {
-    if (this._useCoreStorageFlag) return true
+    if (typeof this._useCoreStorageFlag === 'boolean') {
+      return this._useCoreStorageFlag
+    }
     try {
-      return (
+      return !(
         typeof globalThis !== 'undefined' &&
-        globalThis.__USE_CORE_STORAGE__ === true
+        globalThis.__USE_CORE_STORAGE__ === false
       )
     } catch {
-      return false
+      return true
     }
   }
 
@@ -727,13 +760,14 @@ export class WorkspaceProjectService extends BaseService {
   }
 
   // --- Notifications ----------------------------------------------------------
-  // DORMANT cutover: when _useCoreNotifications() is true the reads + mark
-  // methods route to the /core/notifications routes (BaseService._request →
-  // `${apiUrl}/core/notifications`, Mongo-token auth); otherwise they ride the
-  // workspace-project worker `/notifications` surface exactly as before. The
-  // wire shapes are identical (the server NotificationController returns
-  // { data } / { count } / { ok } envelopes the same way the worker relay
-  // does), so consumers don't branch. Default OFF → no behavior change.
+  // Cutover (DEFAULT ON since 2026-07-03): when _useCoreNotifications() is
+  // true (the default) the reads + mark methods route to the
+  // /core/notifications routes (BaseService._request →
+  // `${apiUrl}/core/notifications`, Mongo-token auth); when false (the
+  // rollback) they ride the workspace-project worker `/notifications` surface
+  // exactly as before. The wire shapes are identical (the server
+  // NotificationController returns { data } / { count } / { ok } envelopes the
+  // same way the worker relay does), so consumers don't branch.
   notifications = {
     list: () =>
       this._useCoreNotifications()
@@ -863,15 +897,16 @@ export class WorkspaceProjectService extends BaseService {
   // validation, denormalization, or composition.
   // ────────────────────────────────────────────────────────────────────────
 
-  // DORMANT cutover (Supabase → Mongo). When _useCoreAnnouncements() is FALSE
-  // (the DEFAULT) every method delegates to the original _sbCrud('announcements')
-  // surface — BYTE-IDENTICAL to today (generic /sb passthrough, workspace_id
-  // pinned server-side). When TRUE the methods repoint to the Mongo
-  // /core/announcements routes (BaseService._request → `${apiUrl}/core/...`,
-  // Mongo-token auth) and unwrap the `{ announcements } / { announcement }`
-  // envelope back to the exact array / row shape the readers consume, so
-  // loadPrivateData.js's `.map(...)` is unchanged. The default _sbCrud surface
-  // is constructed once and held so the default branch is a pure pass-through.
+  // Cutover (Supabase → Mongo, DEFAULT ON since 2026-07-03). When
+  // _useCoreAnnouncements() is TRUE (the default) the methods route to the
+  // Mongo /core/announcements routes (BaseService._request →
+  // `${apiUrl}/core/...`, Mongo-token auth) and unwrap the `{ announcements }
+  // / { announcement }` envelope back to the exact array / row shape the
+  // readers consume, so loadPrivateData.js's `.map(...)` is unchanged. When
+  // FALSE (the rollback) every method delegates to the original
+  // _sbCrud('announcements') surface — byte-identical legacy behavior (generic
+  // /sb passthrough, workspace_id pinned server-side). The _sbCrud surface is
+  // constructed once and held so the rollback branch is a pure pass-through.
   _announcementsSb = this._sbCrud('announcements')
   announcements = {
     list: (filter, options) =>
@@ -1047,12 +1082,13 @@ export class WorkspaceProjectService extends BaseService {
   // PostgREST "Cannot coerce the result to a single JSON object" error.
   // Caller treats null as "no prefs yet" and renders defaults.
   userPreferences = {
-    // DORMANT cutover: when _useCorePrefs() is FALSE (the DEFAULT) both methods
-    // delegate to the BYTE-IDENTICAL _sb('user_preferences') path. When TRUE they
-    // repoint to GET/PUT /core/prefs/user and unwrap the `{ prefs }` envelope back
-    // to the flat object the reader (root.userPrefs) consumes. The /core path
-    // persists ad-hoc keys (homeWelcomeDismissed, …) the typed Supabase columns
-    // silently dropped — same wire shape, fixed persistence.
+    // Cutover (DEFAULT ON since 2026-07-03): when _useCorePrefs() is TRUE (the
+    // default) both methods route to GET/PUT /core/prefs/user and unwrap the
+    // `{ prefs }` envelope back to the flat object the reader (root.userPrefs)
+    // consumes. When FALSE (the rollback) they delegate to the byte-identical
+    // _sb('user_preferences') path. The /core path persists ad-hoc keys
+    // (homeWelcomeDismissed, …) the typed Supabase columns silently dropped —
+    // same wire shape, fixed persistence.
     get: async () => {
       if (this._useCorePrefs()) {
         const r = await this._request('/prefs/user', {
@@ -1642,13 +1678,14 @@ export class WorkspaceProjectService extends BaseService {
   // matches the legacy `sb.storage.from('contracts').createSignedUrl(path, 300)`
   // call site in MemberProfile so callers don't need to pass it explicitly.
   //
-  // DORMANT cutover: when _useCoreStorage() is FALSE (the DEFAULT) every method
-  // delegates to the BYTE-IDENTICAL worker path (_ws for JSON, the
-  // _workspacePrefix raw-fetch for the multipart upload). When TRUE they repoint
-  // to the GCS-backed /core/storage routes (BaseService._request prepends /core
-  // for JSON; the multipart upload raw-fetches the /core base directly because
-  // _request can't carry FormData cleanly). Response shapes are un-enveloped +
-  // identical in both directions, so no unwrap is needed.
+  // Cutover (DEFAULT ON since 2026-07-03): when _useCoreStorage() is TRUE (the
+  // default) every method routes to the GCS-backed /core/storage routes
+  // (BaseService._request prepends /core for JSON; the multipart upload
+  // raw-fetches the /core base directly because _request can't carry FormData
+  // cleanly). When FALSE (the rollback) they delegate to the byte-identical
+  // worker path (_ws for JSON, the _workspacePrefix raw-fetch for the
+  // multipart upload). Response shapes are un-enveloped + identical in both
+  // directions, so no unwrap is needed.
   storage = {
     createSignedUrl: (bucket, path, ttl = 300) =>
       this._useCoreStorage()

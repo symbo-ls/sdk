@@ -721,13 +721,14 @@ const ENTITY_ROUTES = {
   // WorkspaceProjectService once that method ships. For now the route is
   // reserved so callers (DOMQL fetch:, sdk.execute) compile against the
   // final entity name and we can flip the implementation under them.
-  // Announcements — DORMANT Supabase → Mongo cutover. The route is STATIC; the
-  // engine choice (byte-identical /sb passthrough vs new Mongo /core path) lives
-  // inside WorkspaceProjectService.announcements behind _useCoreAnnouncements()
+  // Announcements — Supabase → Mongo cutover. The route is STATIC; the engine
+  // choice (byte-identical /sb passthrough vs Mongo /core path) lives inside
+  // WorkspaceProjectService.announcements behind _useCoreAnnouncements()
   // (context.useCoreAnnouncements / globalThis.__USE_CORE_ANNOUNCEMENTS__).
-  // Default OFF → no behavior change. The `react` op (toggle a reactor on one
-  // emoji) is Mongo-only — it resolves to a no-op off-flag, so the historical
-  // local-only IntranetRows reaction behavior is preserved in the default path.
+  // Default ON since 2026-07-03 (rollback: flag === false). The `react` op
+  // (toggle a reactor on one emoji) is Mongo-only — it resolves to a no-op
+  // off-flag, preserving the historical local-only IntranetRows reaction
+  // behavior in the rollback path.
   'workspaceProject.announcements': {
     service: 'workspaceProject',
     methods: {
@@ -784,13 +785,13 @@ const ENTITY_ROUTES = {
     methods: { get: 'companySettings.get', update: 'companySettings.update' },
     argMap: { get: () => [], update: argMaps.payload },
   },
-  // PREFS trio — DORMANT Supabase → Mongo cutover. These routes are STATIC; the
-  // engine choice (byte-identical /sb passthrough vs new Mongo /core/prefs path)
+  // PREFS trio — Supabase → Mongo cutover. These routes are STATIC; the
+  // engine choice (byte-identical /sb passthrough vs Mongo /core/prefs path)
   // lives inside WorkspaceProjectService.{userPreferences,homeDashboardPrefs,
   // workspaceDashboardDefaults} behind _useCorePrefs() (context.useCorePrefs /
-  // globalThis.__USE_CORE_PREFS__). Default OFF → no behavior change. The
-  // serialized wire shape is byte-identical either way, so the dispatcher's
-  // update→upsert mapping + payload argMap are unchanged.
+  // globalThis.__USE_CORE_PREFS__). Default ON since 2026-07-03 (rollback:
+  // flag === false). The serialized wire shape is byte-identical either way,
+  // so the dispatcher's update→upsert mapping + payload argMap are unchanged.
   'workspaceProject.userPreferences': {
     service: 'workspaceProject',
     methods: { get: 'userPreferences.get', update: 'userPreferences.upsert' },
