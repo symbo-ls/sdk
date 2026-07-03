@@ -1197,27 +1197,56 @@ const ENTITY_ROUTES = {
   },
   'builds.imports': {
     service: 'builds',
-    methods: { list: 'listBuildImports', create: 'createBuildImport' },
+    methods: {
+      list: 'listBuildImports',
+      create: 'createBuildImport',
+      update: 'updateBuildImport',
+      remove: 'deleteBuildImport',
+    },
     argMap: {
       list: (a) => [buildsWs(a)],
       create: (a) => [buildsWs(a), a?.payload ?? a?.data],
+      update: (a) => [buildsWs(a), buildsRepo(a), a?.payload ?? a?.data ?? {}],
+      remove: (a) => [buildsWs(a), buildsRepo(a)],
     },
   },
   'builds.builds': {
     service: 'builds',
-    methods: { list: 'listBuilds', get: 'getBuild', create: 'triggerBuild' },
+    methods: {
+      list: 'listBuilds',
+      get: 'getBuild',
+      create: 'triggerBuild',
+      logs: 'getBuildLogs',
+      // Workspace-level build/deploy status stream — the handlers bag
+      // ({ onBuildStatus?, onDeploymentStatus?, workspaceId? }) passes
+      // through as the single argument.
+      subscribe: 'subscribeWorkspaceBuilds',
+    },
     argMap: {
       list: (a) => [buildsWs(a), { limit: a?.limit }],
       get: (a) => [buildsWs(a), a?.id ?? a?.buildId ?? a?.params?.id],
       create: (a) => [buildsWs(a), a?.repoId ?? a?.params?.repoId, a?.payload ?? {}],
+      logs: (a) => [buildsWs(a), buildsBuild(a), { tailBytes: a?.tailBytes ?? a?.params?.tailBytes }],
+      subscribe: (a) => [a],
     },
   },
   'builds.deployments': {
     service: 'builds',
-    methods: { list: 'listBuildDeployments', create: 'deployBuild' },
+    methods: {
+      list: 'listBuildDeployments',
+      create: 'deployBuild',
+      rollback: 'rollbackDeployment',
+      scale: 'scaleDeployment',
+      // Same workspace-level stream as builds.builds — one subscription
+      // covers both build and deployment status events.
+      subscribe: 'subscribeWorkspaceBuilds',
+    },
     argMap: {
       list: (a) => [buildsWs(a)],
       create: (a) => [buildsWs(a), a?.buildId ?? a?.params?.buildId, a?.payload ?? {}],
+      rollback: (a) => [buildsWs(a), buildsDeployment(a)],
+      scale: (a) => [buildsWs(a), buildsDeployment(a), a?.payload ?? a?.data ?? {}],
+      subscribe: (a) => [a],
     },
   },
 
@@ -1265,6 +1294,18 @@ const buildsWs = (a) =>
   a?.params?.workspaceId ??
   a?.filter?.workspaceId ??
   (typeof a === 'string' ? a : undefined)
+
+// Row-id resolvers for the builds control-plane verbs — same dual-shape
+// tolerance as buildsWs (imperative bag OR fetch-adapter { params } pack),
+// with `id` as the generic fallback key.
+const buildsRepo = (a) =>
+  a?.repoId ?? a?.params?.repoId ?? a?.id ?? a?.params?.id
+
+const buildsBuild = (a) =>
+  a?.buildId ?? a?.params?.buildId ?? a?.id ?? a?.params?.id
+
+const buildsDeployment = (a) =>
+  a?.deploymentId ?? a?.params?.deploymentId ?? a?.id ?? a?.params?.id
 
 const domainsProject = (a) =>
   a?.projectId ??

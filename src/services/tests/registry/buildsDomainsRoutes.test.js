@@ -71,6 +71,63 @@ test('builds.* routes accept the declarative fetch-adapter pack ({ params })', a
   t.end()
 })
 
+test('builds.* control-plane verbs — import update/remove, rollback, scale, logs', async (t) => {
+  const calls = []
+  const execute = createEntityDispatcher(makeSdk(calls))
+
+  await execute('builds.imports', 'update', {
+    workspaceId: 'ws1',
+    repoId: 'repo9',
+    payload: { envVars: { NODE_ENV: 'production' }, defaultBranch: 'main' }
+  })
+  await execute('builds.imports', 'remove', { workspaceId: 'ws1', repoId: 'repo9' })
+  await execute('builds.deployments', 'rollback', { workspaceId: 'ws1', deploymentId: 'd3' })
+  await execute('builds.deployments', 'scale', {
+    workspaceId: 'ws1',
+    deploymentId: 'd3',
+    payload: { minInstances: 0, maxInstances: 3, cpu: '1', memory: '512Mi' }
+  })
+  await execute('builds.builds', 'logs', { workspaceId: 'ws1', buildId: 'b7', tailBytes: 65536 })
+  // Fetch-adapter pack shape ({ params }) for the row-id resolvers.
+  await execute('builds.imports', 'remove', { params: { workspaceId: 'ws2', repoId: 'repoP' } })
+
+  t.deepEqual(calls[0], {
+    service: 'builds',
+    method: 'updateBuildImport',
+    args: ['ws1', 'repo9', { envVars: { NODE_ENV: 'production' }, defaultBranch: 'main' }]
+  })
+  t.deepEqual(calls[1], { service: 'builds', method: 'deleteBuildImport', args: ['ws1', 'repo9'] })
+  t.deepEqual(calls[2], { service: 'builds', method: 'rollbackDeployment', args: ['ws1', 'd3'] })
+  t.deepEqual(calls[3], {
+    service: 'builds',
+    method: 'scaleDeployment',
+    args: ['ws1', 'd3', { minInstances: 0, maxInstances: 3, cpu: '1', memory: '512Mi' }]
+  })
+  t.deepEqual(calls[4], {
+    service: 'builds',
+    method: 'getBuildLogs',
+    args: ['ws1', 'b7', { tailBytes: 65536 }]
+  })
+  t.deepEqual(calls[5], { service: 'builds', method: 'deleteBuildImport', args: ['ws2', 'repoP'] })
+  t.end()
+})
+
+test('builds subscribe routes pass the handlers bag through to subscribeWorkspaceBuilds', async (t) => {
+  const calls = []
+  const execute = createEntityDispatcher(makeSdk(calls))
+
+  const bag = { workspaceId: 'ws1', onBuildStatus: () => {}, onDeploymentStatus: () => {} }
+  await execute('builds.builds', 'subscribe', bag)
+  await execute('builds.deployments', 'subscribe', bag)
+
+  t.equal(calls[0].method, 'subscribeWorkspaceBuilds', 'builds.builds subscribe → subscribeWorkspaceBuilds')
+  t.equal(calls[0].args.length, 1, 'single positional arg')
+  t.equal(calls[0].args[0], bag, 'handlers bag passes through untouched')
+  t.equal(calls[1].method, 'subscribeWorkspaceBuilds', 'builds.deployments subscribe → subscribeWorkspaceBuilds')
+  t.equal(calls[1].args[0], bag, 'same bag threading for the deployments entity')
+  t.end()
+})
+
 test('projectDomains routes map the PR #440 lifecycle onto DnsService', async (t) => {
   const calls = []
   const execute = createEntityDispatcher(makeSdk(calls))

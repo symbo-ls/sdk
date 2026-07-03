@@ -535,19 +535,30 @@ export const SERVICE_METHODS = {
   // GET  /builds/workspaces/:wsId/github               → connect state
   // GET  /builds/workspaces/:wsId/repos                → installation repos
   // GET/POST /builds/workspaces/:wsId/imports          → WorkspaceRepo rows
+  // PATCH/DELETE /builds/workspaces/:wsId/imports/:id  → update / remove import
   // POST /builds/workspaces/:wsId/imports/:id/trigger  → queue Build
   // GET  /builds/workspaces/:wsId/builds[/:id]         → Build rows / poll
+  // GET  /builds/workspaces/:wsId/builds/:id/logs      → log tail / link-out
   // POST /builds/workspaces/:wsId/builds/:id/deploy    → Cloud Run Deployment
   // GET  /builds/workspaces/:wsId/deployments          → Deployment rows
+  // POST /builds/workspaces/:wsId/deployments/:id/rollback → NEW Deployment
+  // POST /builds/workspaces/:wsId/deployments/:id/scale    → scale in place
   getBuildsGitHubState: 'builds',
   listBuildRepos: 'builds',
   listBuildImports: 'builds',
   createBuildImport: 'builds',
+  updateBuildImport: 'builds',
+  deleteBuildImport: 'builds',
   triggerBuild: 'builds',
   listBuilds: 'builds',
   getBuild: 'builds',
+  getBuildLogs: 'builds',
   deployBuild: 'builds',
   listBuildDeployments: 'builds',
+  rollbackDeployment: 'builds',
+  scaleDeployment: 'builds',
+  // Subscribe: 'build-status-changed' + 'deployment-status-changed' socket events.
+  subscribeWorkspaceBuilds: 'builds',
 
   // Project custom-domain lifecycle (server PR #440 — API-owned check/status/
   // instructions on /core/projects/:projectId/domains/*). Extends the existing
