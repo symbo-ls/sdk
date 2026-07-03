@@ -28,7 +28,8 @@ import {
   CreditsService,
   CanvasLayoutService,
   MeetService,
-  CalendarService
+  CalendarService,
+  BuildsService
 } from '../../index.js'
 
 // service-name → ServiceClass — the same wiring `_initService` does in
@@ -62,7 +63,8 @@ const SERVICES = {
   credits: CreditsService,
   canvasLayout: CanvasLayoutService,
   meet: MeetService,
-  calendar: CalendarService
+  calendar: CalendarService,
+  builds: BuildsService
 }
 
 // Methods that intentionally exist on a service but are NOT flat-exposed via

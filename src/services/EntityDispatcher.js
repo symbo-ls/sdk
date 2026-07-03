@@ -1175,7 +1175,105 @@ const ENTITY_ROUTES = {
     service: 'screenshot',
     methods: { get: 'getScreenshotByKey' },
   },
+
+  // ─── Builds & Deploy (BuildsService — /core/builds/*, workspace-scoped) ──
+  // The Railway-style pipeline behind the /infra canvas: GitHub App install →
+  // repo import (WorkspaceRepo) → Cloud Build → Cloud Run. Every op threads
+  // `workspaceId` positionally (routes are /builds/workspaces/:workspaceId/*).
+  // Declarative `fetch:` calls arrive packed as { filter, params, ... }
+  // (sdkAdapter._packSelect) — read workspaceId from either bag.
+  'builds.github': {
+    service: 'builds',
+    methods: { state: 'getBuildsGitHubState', get: 'getBuildsGitHubState' },
+    argMap: {
+      state: (a) => [buildsWs(a)],
+      get: (a) => [buildsWs(a)],
+    },
+  },
+  'builds.repos': {
+    service: 'builds',
+    methods: { list: 'listBuildRepos' },
+    argMap: { list: (a) => [buildsWs(a)] },
+  },
+  'builds.imports': {
+    service: 'builds',
+    methods: { list: 'listBuildImports', create: 'createBuildImport' },
+    argMap: {
+      list: (a) => [buildsWs(a)],
+      create: (a) => [buildsWs(a), a?.payload ?? a?.data],
+    },
+  },
+  'builds.builds': {
+    service: 'builds',
+    methods: { list: 'listBuilds', get: 'getBuild', create: 'triggerBuild' },
+    argMap: {
+      list: (a) => [buildsWs(a), { limit: a?.limit }],
+      get: (a) => [buildsWs(a), a?.id ?? a?.buildId ?? a?.params?.id],
+      create: (a) => [buildsWs(a), a?.repoId ?? a?.params?.repoId, a?.payload ?? {}],
+    },
+  },
+  'builds.deployments': {
+    service: 'builds',
+    methods: { list: 'listBuildDeployments', create: 'deployBuild' },
+    argMap: {
+      list: (a) => [buildsWs(a)],
+      create: (a) => [buildsWs(a), a?.buildId ?? a?.params?.buildId, a?.payload ?? {}],
+    },
+  },
+
+  // ─── Project custom domains (DnsService — PR #440 lifecycle) ─────────────
+  // API-owned custom-domain onboarding on /core/projects/:projectId/domains.
+  // `add` PATCHes { customDomains, envKey? } and returns { domains: { map,
+  // statuses }, onboarding[], guidance[], operations, warnings }; `status`
+  // walks needs_dns → pending_hostname_validation → pending_ssl → active.
+  'projectDomains': {
+    service: 'dns',
+    methods: {
+      list: 'getProjectDomains',
+      add: 'addProjectCustomDomains',
+      create: 'addProjectCustomDomains',
+      remove: 'removeProjectCustomDomain',
+      check: 'checkProjectDomain',
+      status: 'getProjectCustomDomainStatus',
+      instructions: 'getProjectDomainInstructions',
+    },
+    argMap: {
+      list: (a) => [domainsProject(a)],
+      add: (a) => [
+        domainsProject(a),
+        a?.customDomains ?? a?.domains ?? a?.hostname,
+        a?.options ?? (a?.envKey ? { envKey: a.envKey } : {}),
+      ],
+      create: (a) => [
+        domainsProject(a),
+        a?.customDomains ?? a?.domains ?? a?.hostname,
+        a?.options ?? (a?.envKey ? { envKey: a.envKey } : {}),
+      ],
+      remove: (a) => [domainsProject(a), domainsHost(a)],
+      check: (a) => [domainsProject(a), domainsHost(a)],
+      status: (a) => [domainsProject(a), domainsHost(a)],
+      instructions: (a) => [domainsProject(a), domainsHost(a)],
+    },
+  },
 }
+
+// Arg resolvers for the builds/projectDomains routes — accept both the
+// imperative shape ({ workspaceId }) and the declarative fetch-adapter shape
+// ({ filter, params }), falling back to a bare string arg.
+const buildsWs = (a) =>
+  a?.workspaceId ??
+  a?.params?.workspaceId ??
+  a?.filter?.workspaceId ??
+  (typeof a === 'string' ? a : undefined)
+
+const domainsProject = (a) =>
+  a?.projectId ??
+  a?.params?.projectId ??
+  a?.filter?.projectId ??
+  (typeof a === 'string' ? a : undefined)
+
+const domainsHost = (a) =>
+  a?.domain ?? a?.hostname ?? a?.params?.domain ?? a?.params?.hostname
 
 const resolveDottedMethod = (target, methodPath) => {
   if (!target || !methodPath) return null

@@ -338,6 +338,92 @@ export class DnsService extends BaseService {
   }
 
   /**
+   * Pre-add onboarding check for a custom domain (server PR #440) — returns
+   * frontend-ready DNS instructions + routing mode WITHOUT mutating state.
+   * GET /projects/:projectId/domains/check/:domain
+   */
+  async checkProjectDomain (projectId, domain) {
+    this._requireReady('checkProjectDomain')
+    if (!projectId) {
+      throw new Error('Project ID is required')
+    }
+    if (!domain) {
+      throw new Error('Domain is required')
+    }
+
+    try {
+      const response = await this._request(`/projects/${projectId}/domains/check/${encodeURIComponent(domain)}`, {
+        method: 'GET',
+        methodName: 'checkProjectDomain'
+      })
+      if (response.success) {
+        return response.data
+      }
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Failed to check project domain: ${error.message}`, { cause: error })
+    }
+  }
+
+  /**
+   * Refresh + persist the Cloudflare validation/SSL state for a configured
+   * custom domain (server PR #440). Poll this while onboarding is pending —
+   * `state` walks needs_dns → pending_hostname_validation → pending_ssl →
+   * active (or failed / orphaned).
+   * GET /projects/:projectId/domains/status/:domain
+   */
+  async getProjectCustomDomainStatus (projectId, domain) {
+    this._requireReady('getProjectCustomDomainStatus')
+    if (!projectId) {
+      throw new Error('Project ID is required')
+    }
+    if (!domain) {
+      throw new Error('Domain is required')
+    }
+
+    try {
+      const response = await this._request(`/projects/${projectId}/domains/status/${encodeURIComponent(domain)}`, {
+        method: 'GET',
+        methodName: 'getProjectCustomDomainStatus'
+      })
+      if (response.success) {
+        return response.data
+      }
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Failed to get project domain status: ${error.message}`, { cause: error })
+    }
+  }
+
+  /**
+   * DNS instructions for a configured custom domain from stored state
+   * (server PR #440) — no Cloudflare round-trip.
+   * GET /projects/:projectId/domains/instructions/:domain
+   */
+  async getProjectDomainInstructions (projectId, domain) {
+    this._requireReady('getProjectDomainInstructions')
+    if (!projectId) {
+      throw new Error('Project ID is required')
+    }
+    if (!domain) {
+      throw new Error('Domain is required')
+    }
+
+    try {
+      const response = await this._request(`/projects/${projectId}/domains/instructions/${encodeURIComponent(domain)}`, {
+        method: 'GET',
+        methodName: 'getProjectDomainInstructions'
+      })
+      if (response.success) {
+        return response.data
+      }
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Failed to get project domain instructions: ${error.message}`, { cause: error })
+    }
+  }
+
+  /**
    * Helper method to format domain for display
    */
   formatDomain (domain) {

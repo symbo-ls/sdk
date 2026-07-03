@@ -31,6 +31,7 @@ import {
   createCanvasLayoutService,
   createMeetService,
   createCalendarService,
+  createBuildsService,
   workspaceProjectBaseUrl,
   createSupabasePassthroughConfig,
   workspaceProjectEdgeFunctionUrl,
@@ -305,6 +306,14 @@ export class SDK {
       this._initService(
         'canvasLayout',
         createCanvasLayoutService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      // Builds & Deploy — /core/builds/* pipeline behind the /infra canvas.
+      this._initService(
+        'builds',
+        createBuildsService({
           context: this._context,
           options: this._options
         })
@@ -694,6 +703,7 @@ export {
   createCanvasLayoutService,
   createMeetService,
   createCalendarService,
+  createBuildsService,
   workspaceProjectBaseUrl,
   createSupabasePassthroughConfig,
   workspaceProjectEdgeFunctionUrl,

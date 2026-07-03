@@ -381,6 +381,7 @@ export const SERVICE_METHODS = {
   updateTeam: 'organization',
   deleteTeam: 'organization',
   listTeamMembers: 'organization',
+  listOrgTeamMembers: 'organization',
   addTeamMember: 'organization',
   updateTeamMember: 'organization',
   removeTeamMember: 'organization',
@@ -527,6 +528,32 @@ export const SERVICE_METHODS = {
   calendarGetEvent: 'calendar',
   calendarCreateEvent: 'calendar',
   calendarUpdateEvent: 'calendar',
-  calendarDeleteEvent: 'calendar'
+  calendarDeleteEvent: 'calendar',
+
+  // Builds & Deploy — workspace-scoped /core/builds/* (GitHub App install →
+  // repo import → Cloud Build/buildpacks → Cloud Run). Backs /infra.
+  // GET  /builds/workspaces/:wsId/github               → connect state
+  // GET  /builds/workspaces/:wsId/repos                → installation repos
+  // GET/POST /builds/workspaces/:wsId/imports          → WorkspaceRepo rows
+  // POST /builds/workspaces/:wsId/imports/:id/trigger  → queue Build
+  // GET  /builds/workspaces/:wsId/builds[/:id]         → Build rows / poll
+  // POST /builds/workspaces/:wsId/builds/:id/deploy    → Cloud Run Deployment
+  // GET  /builds/workspaces/:wsId/deployments          → Deployment rows
+  getBuildsGitHubState: 'builds',
+  listBuildRepos: 'builds',
+  listBuildImports: 'builds',
+  createBuildImport: 'builds',
+  triggerBuild: 'builds',
+  listBuilds: 'builds',
+  getBuild: 'builds',
+  deployBuild: 'builds',
+  listBuildDeployments: 'builds',
+
+  // Project custom-domain lifecycle (server PR #440 — API-owned check/status/
+  // instructions on /core/projects/:projectId/domains/*). Extends the existing
+  // dns-service project-domain methods above.
+  checkProjectDomain: 'dns',
+  getProjectCustomDomainStatus: 'dns',
+  getProjectDomainInstructions: 'dns'
 }
 
