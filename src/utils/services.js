@@ -207,6 +207,7 @@ export const SERVICE_METHODS = {
   removeDnsRecord: 'dns',
   getCustomHost: 'dns',
   addProjectCustomDomains: 'dns',
+  addProjectCustomDomain: 'dns',
   validateDomain: 'dns',
   createDnsRecordWithValidation: 'dns',
   getDnsRecordWithValidation: 'dns',
@@ -564,7 +565,10 @@ export const SERVICE_METHODS = {
   // instructions on /core/projects/:projectId/domains/*). Extends the existing
   // dns-service project-domain methods above.
   checkProjectDomain: 'dns',
+  checkProjectCustomDomain: 'dns',
   getProjectCustomDomainStatus: 'dns',
-  getProjectDomainInstructions: 'dns'
+  getProjectDomainInstructions: 'dns',
+  getProjectCustomDomainInstructions: 'dns',
+  startProjectCustomDomainSetup: 'dns',
+  pollProjectCustomDomainStatus: 'dns'
 }
-

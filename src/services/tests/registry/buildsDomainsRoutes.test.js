@@ -141,6 +141,16 @@ test('projectDomains routes map the PR #440 lifecycle onto DnsService', async (t
   })
   await execute('projectDomains', 'status', { projectId: 'p1', hostname: 'www.example.com' })
   await execute('projectDomains', 'instructions', { projectId: 'p1', domain: 'www.example.com' })
+  await execute('projectDomains', 'setup', {
+    projectId: 'p1',
+    domain: 'setup.example.com',
+    envKey: 'staging'
+  })
+  await execute('projectDomains', 'poll', {
+    projectId: 'p1',
+    domain: 'setup.example.com',
+    options: { timeoutMs: 10, intervalMs: 1 }
+  })
   await execute('projectDomains', 'remove', { projectId: 'p1', domain: 'www.example.com' })
 
   t.deepEqual(calls[0], { service: 'dns', method: 'getProjectDomains', args: ['p1'] })
@@ -165,6 +175,16 @@ test('projectDomains routes map the PR #440 lifecycle onto DnsService', async (t
     args: ['p1', 'www.example.com']
   })
   t.deepEqual(calls[5], {
+    service: 'dns',
+    method: 'startProjectCustomDomainSetup',
+    args: ['p1', 'setup.example.com', { envKey: 'staging' }]
+  })
+  t.deepEqual(calls[6], {
+    service: 'dns',
+    method: 'pollProjectCustomDomainStatus',
+    args: ['p1', 'setup.example.com', { timeoutMs: 10, intervalMs: 1 }]
+  })
+  t.deepEqual(calls[7], {
     service: 'dns',
     method: 'removeProjectCustomDomain',
     args: ['p1', 'www.example.com']
