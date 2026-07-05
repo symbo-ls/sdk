@@ -41,6 +41,7 @@ import { CreditsService } from './CreditsService.js'
 import { CanvasLayoutService } from './CanvasLayoutService.js'
 import { MeetService } from './MeetService.js'
 import { CalendarService } from './CalendarService.js'
+import { BuildsService } from './BuildsService.js'
 
 const createService = (ServiceClass, config) => new ServiceClass(config)
 
@@ -145,6 +146,11 @@ export const createCreditsService = config =>
 export const createCanvasLayoutService = config =>
   createService(CanvasLayoutService, config)
 
+// Builds & Deploy — workspace-scoped /core/builds/* pipeline (GitHub App →
+// Cloud Build/buildpacks → Cloud Run). Backs the /infra deployment canvas.
+export const createBuildsService = config =>
+  createService(BuildsService, config)
+
 // Meet service — guest waiting-room flow (anonymous) + host-side remote
 // mute against /core/meet/* on the main server. Replaces the legacy
 // meet-guest-* Supabase Edge Function raw-fetch calls.
@@ -194,5 +200,6 @@ export {
   CreditsService,
   CanvasLayoutService,
   MeetService,
-  CalendarService
+  CalendarService,
+  BuildsService
 }

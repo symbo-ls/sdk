@@ -178,30 +178,33 @@ export class AiService extends BaseService {
   //   onError(err)
   //
   // Returns: Promise<{
-  //   intent: 'build' | 'answer',
-  //   text?: string,              // ANSWER: full assistant reply
-  //   spec?: { kind, body }       // BUILD: hand off to freestyler / add-app
+  //   intent: 'build' | 'answer' | 'action',
+  //   text?: string,                          // ANSWER: full assistant reply
+  //   spec?: { name, source } | { pages, components }  // BUILD: renderable DOMQL
   // }>
   //
-  // Client-side hint: a prompt starting with `/new` (case-insensitive,
-  // optional trailing space) is forced to BUILD without consulting the
-  // agent — saves a round-trip on the most explicit case. Everything else
-  // streams an answer from the workspace agent. The agent transport is
-  // answer-only today, so ACTION proposals don't come back from here;
-  // authMode is still read for forward-compat but currently unused.
+  // Build gating: a prompt is a BUILD turn when it starts with `/new`
+  // (case-insensitive, optional trailing space) OR the caller passes
+  // `{ build: true }` explicitly. BUILD turns route to the server's
+  // intent-classified `/ai-chat/dispatch` endpoint (AiChatDispatchController),
+  // which runs a code-generation pass and returns a renderable
+  // `{ intent:'build', spec }` — a single `{ name, source }` or a multi-page
+  // `{ pages, components }`. The spec is returned to the caller AS-IS so the
+  // canvas split-view / add-app builder can paint real DOMQL.
+  //
+  // Everything else (ANSWER / ACTION — the shared chat backbone) takes the
+  // UNCHANGED workspace-agent streaming path below. authMode is still read for
+  // forward-compat but currently unused.
   async dispatch (payload = {}, callbacks = {}) {
     const text = String(payload.text || payload.content || '').trim()
-    const forcedBuild = /^\/new(\s|$)/i.test(text)
+    const forcedBuild = /^\/new(\s|$)/i.test(text) || payload.build === true
 
-    // /new prefix is a hard hint — skip the round-trip and return the
-    // build descriptor immediately so the caller can hand off to the
-    // freestyler. Strips the prefix from the text before passing to the
-    // builder so the LLM doesn't see it as part of the spec.
+    // BUILD turn — hit the server build endpoint and pass its { intent, spec }
+    // through untouched. Strip a leading `/new` so the generator sees the bare
+    // description, not the routing prefix.
     if (forcedBuild) {
-      const spec = { kind: 'page', body: text.replace(/^\/new\s*/i, '') }
-      const result = { intent: INTENT_BUILD, spec }
-      callbacks.onDone?.(result)
-      return result
+      const description = text.replace(/^\/new\s*/i, '')
+      return this._dispatchBuild({ ...payload, text: description, content: description }, callbacks)
     }
 
     // Everything else is an ANSWER streamed from the workspace agent. We
@@ -236,6 +239,76 @@ export class AiService extends BaseService {
         // canvas activity from these.
         onProcessActive: callbacks.onProcessActive
       })
+    })
+  }
+
+  // BUILD-only transport. POSTs the prompt to the server's intent-classified
+  // `/ai-chat/dispatch` SSE endpoint (AiChatDispatchController), which runs a
+  // DOMQL code-generation pass and returns the FINAL `{ done:true, intent,
+  // spec, ... }` frame. We pass the server's `{ intent, spec }` through
+  // VERBATIM — no flattening to `intent:'answer'`, no dropping `spec` — so the
+  // canvas split-view / add-app builder receives the renderable spec
+  // (`{ name, source }` or `{ pages, components }`).
+  //
+  // Wire shape — matches AiChatDispatchController.writeEvent: plain `data:`
+  // JSON frames, NO `event:` line, terminated by `data: [DONE]`:
+  //   data: { "done": true, "intent": "build", "spec": {…} }   ← final
+  //   data: [DONE]                                              ← terminator
+  //   data: { "error": "…" }                                   ← failure
+  // `_streamPost` already decodes exactly this: `parsed.done` → onDone,
+  // `parsed.error` → onError, `parsed.text` → onChunk (the endpoint emits no
+  // text chunks today, but wiring onChunk keeps a future progress stream
+  // working without another SDK change). `: ping` comments are skipped.
+  //
+  // Resilience: a transport/HTTP error, an error frame, or a synchronous throw
+  // resolves to a build result with NO spec + an `error` field — the caller
+  // (aiGeneratePages Phase-4 error handling) clears its loader and leaves the
+  // overlay empty rather than throwing. This Promise NEVER rejects.
+  _dispatchBuild (payload, callbacks = {}) {
+    const { onChunk, onDone, onError } = callbacks
+    return new Promise((resolve) => {
+      let settled = false
+      const finish = (result) => {
+        if (settled) return
+        settled = true
+        resolve(result)
+      }
+      try {
+        this._streamPost('/ai-chat/dispatch', {
+          text: payload.text || payload.content || '',
+          mode: 'simone',
+          authMode: this.getAuthMode(),
+          model: payload.model || null,
+          projectId: payload.projectId || (payload.context && payload.context.projectId) || null,
+          context: payload.context || null
+        }, {
+          onChunk: (delta) => { onChunk?.(delta) },
+          onDone: (donePayload) => {
+            // Pass the server envelope through as-is. Default the intent to
+            // build (this path is only entered for build turns) but DO NOT
+            // synthesize or drop the spec.
+            const result = {
+              intent: donePayload?.intent || INTENT_BUILD,
+              spec: donePayload?.spec,
+              ...(donePayload?.text ? { text: donePayload.text } : {}),
+              ...(donePayload?.actions ? { actions: donePayload.actions } : {})
+            }
+            onDone?.(result)
+            finish(result)
+          },
+          onError: (err) => {
+            onError?.(err)
+            // Degrade gracefully — a build with no spec; the caller clears
+            // loading and leaves the overlay empty.
+            finish({ intent: INTENT_BUILD, spec: null, error: err?.message || String(err) })
+          }
+        })
+      } catch (err) {
+        // Synchronous throw out of _streamPost (e.g. service not ready) —
+        // surface to onError and degrade to a spec-less build. Never reject.
+        onError?.(err)
+        finish({ intent: INTENT_BUILD, spec: null, error: err?.message || String(err) })
+      }
     })
   }
 
