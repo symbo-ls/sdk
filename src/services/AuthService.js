@@ -149,10 +149,42 @@ export class AuthService extends BaseService {
     }
   }
 
-  async claimDemoAccount ({ password, name } = {}) {
+  async enterDemo () {
+    try {
+      const response = await this._request('/demo/enter', {
+        method: 'POST',
+        body: JSON.stringify({}),
+        methodName: 'enterDemo'
+      })
+      if (response.success && response.data) {
+        const { accessToken, refreshToken } = response.data
+        if (accessToken && this._tokenManager) {
+          this._tokenManager.setTokens({
+            access_token: accessToken,
+            refresh_token: refreshToken || null,
+            token_type: 'Bearer'
+          })
+        }
+        this._emitAuth?.('SIGNED_IN')
+        return response.data
+      }
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Demo enter failed: ${error.message}`, { cause: error })
+    }
+  }
+
+  async claimDemoAccount ({ email, password, name } = {}) {
     return this._call('claimDemoAccount', '/demo/claim', {
       method: 'POST',
-      body: { password, name }
+      body: { email, password, name }
+    })
+  }
+
+  async cloneDemoWorkspace ({ demoOrgId } = {}) {
+    return this._call('cloneDemoWorkspace', '/demo/clone', {
+      method: 'POST',
+      body: { demoOrgId }
     })
   }
 

@@ -465,6 +465,14 @@ await dns.getDnsRecord(domain)
 await dns.removeDnsRecord(domain)
 await dns.getCustomHost(hostname)
 await dns.addProjectCustomDomains(projectId, customDomains, options)
+await dns.addProjectCustomDomain(projectId, domain, { envKey })
+await dns.checkProjectDomain(projectId, domain)
+await dns.checkProjectCustomDomain(projectId, domain)
+await dns.getProjectCustomDomainStatus(projectId, domain)
+await dns.getProjectDomainInstructions(projectId, domain)
+await dns.getProjectCustomDomainInstructions(projectId, domain)
+await dns.startProjectCustomDomainSetup(projectId, domain, { envKey })
+await dns.pollProjectCustomDomainStatus(projectId, domain, { timeoutMs, intervalMs })
 await dns.isDomainAvailable(domain)
 await dns.getDomainStatus(domain)
 await dns.verifyDomainOwnership(domain)
@@ -473,6 +481,43 @@ await dns.removeProjectCustomDomain(projectId, domain)
 dns.validateDomain(domain)
 dns.formatDomain(domain)
 dns.extractDomainFromUrl(url)
+```
+
+Custom-domain onboarding should use the API-owned workflow:
+
+```javascript
+const dns = sdk.getService('dns')
+
+// 1. Preflight check for exact DNS records and current state.
+const check = await dns.checkProjectDomain(projectId, 'www.customer.com')
+
+// 2. Start setup. This provisions the Cloudflare Custom Hostname and
+// returns the selected onboarding row for immediate UI rendering.
+const setup = await dns.startProjectCustomDomainSetup(projectId, 'www.customer.com', {
+  envKey: 'production'
+})
+
+// 3. Poll while the customer updates DNS.
+const status = await dns.pollProjectCustomDomainStatus(projectId, 'www.customer.com', {
+  timeoutMs: 120000,
+  intervalMs: 2000
+})
+
+// 4. Remove if the user disconnects the domain.
+await dns.removeProjectCustomDomain(projectId, 'www.customer.com')
+
+// Stable server errors are preserved on thrown errors.
+try {
+  await dns.addProjectCustomDomain(projectId, 'www.customer.com')
+} catch (err) {
+  if (err.code === 'domain_already_claimed') {
+    console.log(err.conflicts)
+  }
+}
+
+void check
+void setup
+void status
 ```
 
 ### Admin Service

@@ -44,72 +44,141 @@ export const workspaceProjectBaseUrl = (apiBase) =>
 export class WorkspaceProjectService extends BaseService {
   init({ context }) {
     super.init({ context })
-    this._workspacePrefix = workspaceProjectBaseUrl(context?.workspaceApiUrl || this._apiUrl)
+    this._workspacePrefix = workspaceProjectBaseUrl(
+      context?.workspaceApiUrl || this._apiUrl
+    )
     this._tokenProvider = context?.workspaceProjectTokenProvider || null
-    // Notifications data-store cutover toggle (Supabase → Mongo DORMANT slice).
-    // DEFAULT OFF → notifications.{list,unreadCount,markRead,markAllRead} keep
-    // riding the workspace-project worker `/notifications` surface (which is
-    // itself governed by the server NOTIFICATIONS_STORE flag). When flipped ON
-    // (context.useCoreNotifications === true OR globalThis.__USE_CORE_NOTIFICATIONS__)
-    // the READ + mark methods repoint to the new /core/notifications routes
-    // (same notificationStore dispatcher server-side). create() and the
-    // realtime path are intentionally left on their current transports for
-    // THIS slice — only the data store migrates.
-    this._useCoreNotificationsFlag = context?.useCoreNotifications === true
-    // Announcements data-store cutover toggle (Supabase → Mongo DORMANT slice).
-    // DEFAULT OFF → announcements.{list,get,create,update,remove} keep riding the
-    // generic /sb PostgREST passthrough via _sbCrud (BYTE-IDENTICAL to today —
-    // /sb/rest/v1/announcements, workspace_id-pinned server-side). When flipped ON
-    // (context.useCoreAnnouncements === true OR globalThis.__USE_CORE_ANNOUNCEMENTS__)
-    // they repoint to the new Mongo /core/announcements routes (which are
-    // themselves fail-closed behind the server ANNOUNCEMENTS_STORE flag). The
-    // reader-facing wire shape is byte-identical (the server serializer emits the
-    // same snake_case row PostgREST returned), so consumers don't branch.
-    this._useCoreAnnouncementsFlag = context?.useCoreAnnouncements === true
-    // PREFS-trio data-store cutover toggle (Supabase → Mongo DORMANT slice).
-    // DEFAULT OFF → userPreferences / homeDashboardPrefs / workspaceDashboardDefaults
-    // keep riding the generic /sb PostgREST passthrough via _sb (BYTE-IDENTICAL to
-    // today — /sb/rest/v1/user_preferences|home_dashboard_prefs|workspace_dashboard_defaults,
-    // user_id + workspace_id pinned server-side). When flipped ON
-    // (context.useCorePrefs === true OR globalThis.__USE_CORE_PREFS__) they
-    // repoint to the new Mongo /core/prefs routes (themselves fail-closed behind
-    // the server PREFS_STORE flag). The reader-facing wire shape is byte-identical
-    // (the server serializer emits the same snake_case rows PostgREST returned —
-    // userPrefs flat object, home prefs { hidden_widgets, grid_layout, dashboard_v },
-    // workspace defaults { home_default_panels }), so consumers don't branch.
-    this._useCorePrefsFlag = context?.useCorePrefs === true
+    // Notifications data-store cutover toggle (Supabase → Mongo).
+    // DEFAULT ON since 2026-07-03 (dev cutover — server store defaults flipped
+    // to mongo in lock-step) → notifications.{list,unreadCount,markRead,
+    // markAllRead} route to the /core/notifications routes (same
+    // notificationStore dispatcher server-side). ROLLBACK: set
+    // context.useCoreNotifications = false OR
+    // globalThis.__USE_CORE_NOTIFICATIONS__ = false to ride the legacy
+    // workspace-project worker `/notifications` surface again. An explicit
+    // context boolean wins over the global; absent → the lazy global read
+    // decides (default ON). create() and the realtime path are intentionally
+    // left on their current transports for THIS slice — only the data store
+    // migrates.
+    this._useCoreNotificationsFlag =
+      typeof context?.useCoreNotifications === 'boolean'
+        ? context.useCoreNotifications
+        : null
+    // Announcements data-store cutover toggle (Supabase → Mongo).
+    // DEFAULT ON since 2026-07-03 (dev cutover — server ANNOUNCEMENTS_STORE
+    // flipped to mongo in lock-step) → announcements.{list,get,create,update,
+    // remove} route to the Mongo /core/announcements routes. ROLLBACK: set
+    // context.useCoreAnnouncements = false OR
+    // globalThis.__USE_CORE_ANNOUNCEMENTS__ = false to ride the legacy /sb
+    // PostgREST passthrough via _sbCrud again (/sb/rest/v1/announcements,
+    // workspace_id-pinned server-side). An explicit context boolean wins over
+    // the global; absent → the lazy global read decides (default ON). The
+    // reader-facing wire shape is byte-identical (the server serializer emits
+    // the same snake_case row PostgREST returned), so consumers don't branch.
+    this._useCoreAnnouncementsFlag =
+      typeof context?.useCoreAnnouncements === 'boolean'
+        ? context.useCoreAnnouncements
+        : null
+    // PREFS-trio data-store cutover toggle (Supabase → Mongo).
+    // DEFAULT ON since 2026-07-03 (dev cutover — server PREFS_STORE flipped to
+    // mongo in lock-step) → userPreferences / homeDashboardPrefs /
+    // workspaceDashboardDefaults route to the Mongo /core/prefs routes.
+    // ROLLBACK: set context.useCorePrefs = false OR
+    // globalThis.__USE_CORE_PREFS__ = false to ride the legacy /sb PostgREST
+    // passthrough via _sb again (/sb/rest/v1/user_preferences|
+    // home_dashboard_prefs|workspace_dashboard_defaults, user_id +
+    // workspace_id pinned server-side). An explicit context boolean wins over
+    // the global; absent → the lazy global read decides (default ON). The
+    // reader-facing wire shape is byte-identical (the server serializer emits
+    // the same snake_case rows PostgREST returned — userPrefs flat object,
+    // home prefs { hidden_widgets, grid_layout, dashboard_v }, workspace
+    // defaults { home_default_panels }), so consumers don't branch.
+    this._useCorePrefsFlag =
+      typeof context?.useCorePrefs === 'boolean' ? context.useCorePrefs : null
+    // Storage data-store cutover toggle (Supabase → GCS).
+    // DEFAULT ON since 2026-07-03 (dev cutover — server STORAGE_STORE flipped
+    // to GCS in lock-step) → storage.{createSignedUrl,upload,remove,publicUrl}
+    // route to the GCS-backed /core/storage routes. ROLLBACK: set
+    // context.useCoreStorage = false OR globalThis.__USE_CORE_STORAGE__ =
+    // false to ride the legacy workspace-project worker `/storage/*` Supabase
+    // surface again (multipart upload to _workspacePrefix, JSON
+    // signed-url/public-url/object via _ws). An explicit context boolean wins
+    // over the global; absent → the lazy global read decides (default ON).
+    // Response shapes are un-enveloped + identical ({ bucket, path, url, … } /
+    // { signedUrl, path } / { publicUrl, path } / { ok, path }), so consumers
+    // don't branch.
+    this._useCoreStorageFlag =
+      typeof context?.useCoreStorage === 'boolean'
+        ? context.useCoreStorage
+        : null
   }
 
   // Lazy flag read so a runtime global (set after SDK boot) can flip it
   // without re-init — parity with how server flags are re-read per call.
+  // DEFAULT ON since 2026-07-03; globalThis.__USE_CORE_NOTIFICATIONS__ = false
+  // is the runtime rollback (an explicit ctor context boolean wins over it).
   _useCoreNotifications() {
-    if (this._useCoreNotificationsFlag) return true
+    if (typeof this._useCoreNotificationsFlag === 'boolean') {
+      return this._useCoreNotificationsFlag
+    }
     try {
-      return typeof globalThis !== 'undefined' && globalThis.__USE_CORE_NOTIFICATIONS__ === true
+      return !(
+        typeof globalThis !== 'undefined' &&
+        globalThis.__USE_CORE_NOTIFICATIONS__ === false
+      )
     } catch {
-      return false
+      return true
     }
   }
 
-  // Lazy flag read — parity with _useCoreNotifications. Default OFF keeps the
-  // announcements surface on the byte-identical _sbCrud → /sb path.
+  // Lazy flag read — parity with _useCoreNotifications. DEFAULT ON since
+  // 2026-07-03; globalThis.__USE_CORE_ANNOUNCEMENTS__ = false is the runtime
+  // rollback to the byte-identical _sbCrud → /sb path.
   _useCoreAnnouncements() {
-    if (this._useCoreAnnouncementsFlag) return true
+    if (typeof this._useCoreAnnouncementsFlag === 'boolean') {
+      return this._useCoreAnnouncementsFlag
+    }
     try {
-      return typeof globalThis !== 'undefined' && globalThis.__USE_CORE_ANNOUNCEMENTS__ === true
+      return !(
+        typeof globalThis !== 'undefined' &&
+        globalThis.__USE_CORE_ANNOUNCEMENTS__ === false
+      )
     } catch {
-      return false
+      return true
     }
   }
 
-  // Lazy flag read — parity with _useCoreAnnouncements. Default OFF keeps the
-  // PREFS-trio surfaces on the byte-identical _sb → /sb path.
+  // Lazy flag read — parity with _useCoreAnnouncements. DEFAULT ON since
+  // 2026-07-03; globalThis.__USE_CORE_PREFS__ = false is the runtime rollback
+  // to the byte-identical _sb → /sb path for the PREFS-trio surfaces.
   _useCorePrefs() {
-    if (this._useCorePrefsFlag) return true
+    if (typeof this._useCorePrefsFlag === 'boolean') {
+      return this._useCorePrefsFlag
+    }
     try {
-      return typeof globalThis !== 'undefined' && globalThis.__USE_CORE_PREFS__ === true
+      return !(
+        typeof globalThis !== 'undefined' &&
+        globalThis.__USE_CORE_PREFS__ === false
+      )
     } catch {
-      return false
+      return true
+    }
+  }
+
+  // Lazy flag read — parity with _useCorePrefs. DEFAULT ON since 2026-07-03;
+  // globalThis.__USE_CORE_STORAGE__ = false is the runtime rollback to the
+  // byte-identical _ws / _workspacePrefix worker path.
+  _useCoreStorage() {
+    if (typeof this._useCoreStorageFlag === 'boolean') {
+      return this._useCoreStorageFlag
+    }
+    try {
+      return !(
+        typeof globalThis !== 'undefined' &&
+        globalThis.__USE_CORE_STORAGE__ === false
+      )
+    } catch {
+      return true
     }
   }
 
@@ -158,7 +227,9 @@ export class WorkspaceProjectService extends BaseService {
     // shape as the wrapper's `invalid_token` envelope so error-handling
     // doesn't have to branch on local-vs-server origin.
     if (!init.authHeader) {
-      const err = new Error('[workspaceProject] not authenticated — no bearer token available')
+      const err = new Error(
+        '[workspaceProject] not authenticated — no bearer token available'
+      )
       err.code = 'invalid_token'
       err.status = 401
       err.local = true
@@ -232,7 +303,9 @@ export class WorkspaceProjectService extends BaseService {
           // Operator form: { gte, lte, gt, lt, eq, neq, like, ilike, is }
           for (const [opName, opVal] of Object.entries(val)) {
             if (!/^[a-z]+$/.test(opName)) {
-              throw new Error(`[${methodName}] invalid filter operator: ${opName}`)
+              throw new Error(
+                `[${methodName}] invalid filter operator: ${opName}`
+              )
             }
             _appendKey(rawKey, `${opName}.${_enc(opVal)}`)
           }
@@ -241,7 +314,11 @@ export class WorkspaceProjectService extends BaseService {
         }
       }
     }
-    if ((op === 'get' || op === 'update' || op === 'remove') && idValue !== undefined && !qs.has('id')) {
+    if (
+      (op === 'get' || op === 'update' || op === 'remove') &&
+      idValue !== undefined &&
+      !qs.has('id')
+    ) {
       qs.append('id', `eq.${_enc(idValue)}`)
     }
 
@@ -256,16 +333,23 @@ export class WorkspaceProjectService extends BaseService {
       qs.set('on_conflict', options.upsertOnConflict)
     }
 
-    const httpMethod = (
-      op === 'list' || op === 'get' ? 'GET'
-      : op === 'create' ? 'POST'
-      : op === 'update' ? 'PATCH'
-      : op === 'remove' ? 'DELETE'
-      : op === 'rpc' ? 'POST'
-      : 'GET'
-    )
+    const httpMethod =
+      op === 'list' || op === 'get'
+        ? 'GET'
+        : op === 'create'
+          ? 'POST'
+          : op === 'update'
+            ? 'PATCH'
+            : op === 'remove'
+              ? 'DELETE'
+              : op === 'rpc'
+                ? 'POST'
+                : 'GET'
 
-    const restPath = op === 'rpc' ? `rpc/${encodeURIComponent(table)}` : encodeURIComponent(table)
+    const restPath =
+      op === 'rpc'
+        ? `rpc/${encodeURIComponent(table)}`
+        : encodeURIComponent(table)
     const queryStr = qs.toString()
     const url = `${this._workspacePrefix}/sb/rest/v1/${restPath}${queryStr ? '?' + queryStr : ''}`
 
@@ -296,19 +380,23 @@ export class WorkspaceProjectService extends BaseService {
   // Factory for the common (filter, options) / (id) / (id, payload) shape
   // — most table-only entity namespaces follow it. Each method returns the
   // raw _sb() promise so consumers see the unwrapped Supabase response.
-  _sbCrud (table, listOptions = {}) {
+  _sbCrud(table, listOptions = {}) {
     return {
       list: (filter, options) =>
-        this._sb(`${table}.list`, table, 'list',
-          { filter, options: { ...listOptions, ...(options || {}) } }),
+        this._sb(`${table}.list`, table, 'list', {
+          filter,
+          options: { ...listOptions, ...(options || {}) }
+        }),
       get: (id) =>
-        this._sb(`${table}.get`, table, 'get', { id, options: { single: true } }),
+        this._sb(`${table}.get`, table, 'get', {
+          id,
+          options: { single: true }
+        }),
       create: (payload) =>
         this._sb(`${table}.create`, table, 'create', { payload }),
       update: (id, payload) =>
         this._sb(`${table}.update`, table, 'update', { id, payload }),
-      remove: (id) =>
-        this._sb(`${table}.remove`, table, 'remove', { id }),
+      remove: (id) => this._sb(`${table}.remove`, table, 'remove', { id })
     }
   }
 
@@ -316,96 +404,153 @@ export class WorkspaceProjectService extends BaseService {
   chat = {
     listChannels: () => this._ws('chat.listChannels', '/chat/channels'),
     createChannel: (payload) =>
-      this._ws('chat.createChannel', '/chat/channels', { method: 'POST', body: { payload } }),
+      this._ws('chat.createChannel', '/chat/channels', {
+        method: 'POST',
+        body: { payload }
+      }),
     updateChannel: (channelId, payload) =>
-      this._ws('chat.updateChannel', `/chat/channels/${encodeURIComponent(channelId)}`, {
-        method: 'PATCH',
-        body: { payload },
-      }),
+      this._ws(
+        'chat.updateChannel',
+        `/chat/channels/${encodeURIComponent(channelId)}`,
+        {
+          method: 'PATCH',
+          body: { payload }
+        }
+      ),
     removeChannel: (channelId) =>
-      this._ws('chat.removeChannel', `/chat/channels/${encodeURIComponent(channelId)}`, {
-        method: 'DELETE',
-      }),
+      this._ws(
+        'chat.removeChannel',
+        `/chat/channels/${encodeURIComponent(channelId)}`,
+        {
+          method: 'DELETE'
+        }
+      ),
 
     listMessages: (channelId, options) => {
-      const qs = options && typeof options === 'object'
-        ? new URLSearchParams(
-            Object.entries(options).reduce((acc, [k, v]) => {
-              if (v !== undefined && v !== null) acc[k] = String(v)
-              return acc
-            }, {})
-          ).toString()
-        : ''
+      const qs =
+        options && typeof options === 'object'
+          ? new URLSearchParams(
+              Object.entries(options).reduce((acc, [k, v]) => {
+                if (v !== undefined && v !== null) acc[k] = String(v)
+                return acc
+              }, {})
+            ).toString()
+          : ''
       const tail = qs ? `?${qs}` : ''
       return channelId
-        ? this._ws('chat.listMessages', `/chat/channels/${encodeURIComponent(channelId)}/messages${tail}`)
+        ? this._ws(
+            'chat.listMessages',
+            `/chat/channels/${encodeURIComponent(channelId)}/messages${tail}`
+          )
         : this._ws('chat.listAllMessages', `/chat/messages${tail}`)
     },
     sendMessage: (channelId, payload) =>
-      this._ws('chat.sendMessage', `/chat/channels/${encodeURIComponent(channelId)}/messages`, {
-        method: 'POST',
-        body: { payload },
-      }),
+      this._ws(
+        'chat.sendMessage',
+        `/chat/channels/${encodeURIComponent(channelId)}/messages`,
+        {
+          method: 'POST',
+          body: { payload }
+        }
+      ),
     updateMessage: (messageId, payload) =>
-      this._ws('chat.updateMessage', `/chat/messages/${encodeURIComponent(messageId)}`, {
-        method: 'PATCH',
-        body: { payload },
-      }),
+      this._ws(
+        'chat.updateMessage',
+        `/chat/messages/${encodeURIComponent(messageId)}`,
+        {
+          method: 'PATCH',
+          body: { payload }
+        }
+      ),
     removeMessage: (messageId) =>
-      this._ws('chat.removeMessage', `/chat/messages/${encodeURIComponent(messageId)}`, {
-        method: 'DELETE',
-      }),
+      this._ws(
+        'chat.removeMessage',
+        `/chat/messages/${encodeURIComponent(messageId)}`,
+        {
+          method: 'DELETE'
+        }
+      ),
     toggleReaction: (messageId, emoji, userId) =>
-      this._ws('chat.toggleReaction', `/chat/messages/${encodeURIComponent(messageId)}/reactions`, {
-        method: 'POST',
-        body: { emoji, userId },
-      }),
+      this._ws(
+        'chat.toggleReaction',
+        `/chat/messages/${encodeURIComponent(messageId)}/reactions`,
+        {
+          method: 'POST',
+          body: { emoji, userId }
+        }
+      ),
 
     listMembers: (channelId) =>
       channelId
-        ? this._ws('chat.listMembers', `/chat/channels/${encodeURIComponent(channelId)}/members`)
+        ? this._ws(
+            'chat.listMembers',
+            `/chat/channels/${encodeURIComponent(channelId)}/members`
+          )
         : this._ws('chat.listAllMembers', '/chat/members'),
     addMember: (channelId, payload) =>
       this._ws('chat.addMember', '/chat/members', {
         method: 'POST',
-        body: { payload: { ...payload, channel_id: channelId } },
+        body: { payload: { ...payload, channel_id: channelId } }
       }),
     updateMember: (channelId, userId, payload) =>
-      this._ws('chat.updateMember', `/chat/channels/${encodeURIComponent(channelId)}/members/${encodeURIComponent(userId)}`, {
-        method: 'PATCH',
-        body: { payload },
-      }),
+      this._ws(
+        'chat.updateMember',
+        `/chat/channels/${encodeURIComponent(channelId)}/members/${encodeURIComponent(userId)}`,
+        {
+          method: 'PATCH',
+          body: { payload }
+        }
+      ),
     removeMember: (channelId, userId) =>
-      this._ws('chat.removeMember', `/chat/channels/${encodeURIComponent(channelId)}/members/${encodeURIComponent(userId)}`, {
-        method: 'DELETE',
-      }),
+      this._ws(
+        'chat.removeMember',
+        `/chat/channels/${encodeURIComponent(channelId)}/members/${encodeURIComponent(userId)}`,
+        {
+          method: 'DELETE'
+        }
+      ),
     markRead: (channelId, userId, lastReadAt) =>
-      this._ws('chat.markRead', `/chat/channels/${encodeURIComponent(channelId)}/members/${encodeURIComponent(userId)}/read`, {
-        method: 'POST',
-        body: { lastReadAt },
-      }),
+      this._ws(
+        'chat.markRead',
+        `/chat/channels/${encodeURIComponent(channelId)}/members/${encodeURIComponent(userId)}/read`,
+        {
+          method: 'POST',
+          body: { lastReadAt }
+        }
+      ),
     muteChannel: (channelId, userId, muted) =>
-      this._ws('chat.muteChannel', `/chat/channels/${encodeURIComponent(channelId)}/members/${encodeURIComponent(userId)}/mute`, {
-        method: 'POST',
-        body: { muted },
-      }),
+      this._ws(
+        'chat.muteChannel',
+        `/chat/channels/${encodeURIComponent(channelId)}/members/${encodeURIComponent(userId)}/mute`,
+        {
+          method: 'POST',
+          body: { muted }
+        }
+      ),
 
     listMentions: (filter, options) =>
-      this._ws('chat.listMentions', '/chat/mentions', { method: 'POST', body: { filter, options } }),
+      this._ws('chat.listMentions', '/chat/mentions', {
+        method: 'POST',
+        body: { filter, options }
+      }),
     // Mark every chat_mention for the caller in a channel as read. Wraps the
     // chat_mark_mentions_read SQL function — see migration 0015.
     markMentionsRead: (channelId, callerEmail) =>
-      this._ws('chat.markMentionsRead', `/chat/channels/${encodeURIComponent(channelId)}/mentions/read`, {
-        method: 'POST',
-        body: { callerEmail },
-      }),
+      this._ws(
+        'chat.markMentionsRead',
+        `/chat/channels/${encodeURIComponent(channelId)}/mentions/read`,
+        {
+          method: 'POST',
+          body: { callerEmail }
+        }
+      ),
     // Full-text search over messages in channels the caller belongs to.
     // Wraps the chat_search_messages SQL function — see migration 0014.
     searchMessages: (q, callerEmail) =>
       this._ws('chat.searchMessages', '/chat/search', {
         method: 'POST',
-        body: { q, callerEmail },
-      }),
+        body: { q, callerEmail }
+      })
   }
 
   // --- Calendar ---------------------------------------------------------------
@@ -413,38 +558,60 @@ export class WorkspaceProjectService extends BaseService {
     listEvents: (filter) =>
       this._ws('calendar.listEvents', '/calendar/events', {
         method: 'POST',
-        body: { filter },
+        body: { filter }
       }),
     getEvent: (id) =>
-      this._ws('calendar.getEvent', `/calendar/events/${encodeURIComponent(id)}`),
+      this._ws(
+        'calendar.getEvent',
+        `/calendar/events/${encodeURIComponent(id)}`
+      ),
     createEvent: (payload) =>
-      this._ws('calendar.createEvent', '/calendar/events', { method: 'POST', body: { payload } }),
+      this._ws('calendar.createEvent', '/calendar/events', {
+        method: 'POST',
+        body: { payload }
+      }),
     updateEvent: (id, payload) =>
-      this._ws('calendar.updateEvent', `/calendar/events/${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        body: { payload },
-      }),
+      this._ws(
+        'calendar.updateEvent',
+        `/calendar/events/${encodeURIComponent(id)}`,
+        {
+          method: 'PATCH',
+          body: { payload }
+        }
+      ),
     deleteEvent: (id) =>
-      this._ws('calendar.deleteEvent', `/calendar/events/${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-      }),
+      this._ws(
+        'calendar.deleteEvent',
+        `/calendar/events/${encodeURIComponent(id)}`,
+        {
+          method: 'DELETE'
+        }
+      ),
     // PostgREST upsert via workspace passthrough — caller picks the
     // on_conflict column list (default 'id'). Google-sync writers pass
     // 'google_calendar_id,google_event_id' so re-pulls don't duplicate.
     upsertEvent: (payload, onConflict) =>
       this._sb('calendar.upsertEvent', 'calendar_events', 'create', {
         payload,
-        options: { upsertOnConflict: onConflict || 'id' },
+        options: { upsertOnConflict: onConflict || 'id' }
       }),
-    sync: (params) => this._ws('calendar.sync', '/calendar/sync', { method: 'POST', body: { params } }),
+    sync: (params) =>
+      this._ws('calendar.sync', '/calendar/sync', {
+        method: 'POST',
+        body: { params }
+      })
   }
 
   // --- Meet -------------------------------------------------------------------
   meet = {
     listRooms: () => this._ws('meet.listRooms', '/meet/rooms'),
     createRoom: (payload) =>
-      this._ws('meet.createRoom', '/meet/rooms', { method: 'POST', body: { payload } }),
-    getRoom: (id) => this._ws('meet.getRoom', `/meet/rooms/${encodeURIComponent(id)}`),
+      this._ws('meet.createRoom', '/meet/rooms', {
+        method: 'POST',
+        body: { payload }
+      }),
+    getRoom: (id) =>
+      this._ws('meet.getRoom', `/meet/rooms/${encodeURIComponent(id)}`),
     // Update a meet_rooms row — name, privacy, guest-join policy, etc.
     // Replaces direct sb.from('meet_rooms').update(...).eq('id', id) calls
     // in updateRoomSettings.js. RLS policy meet_rooms_update gates this to
@@ -452,37 +619,54 @@ export class WorkspaceProjectService extends BaseService {
     updateRoom: (id, payload) =>
       this._ws('meet.updateRoom', `/meet/rooms/${encodeURIComponent(id)}`, {
         method: 'PATCH',
-        body: { payload },
+        body: { payload }
       }),
     // Mark the room as ended (sets ended_at). Distinct PATCH ergonomically —
     // callers don't have to construct the timestamp; server stamps it.
     // Reopening a room flips ended_at back to null (see reopenRoom).
     endRoom: (id) =>
       this._ws('meet.endRoom', `/meet/rooms/${encodeURIComponent(id)}/end`, {
-        method: 'POST',
+        method: 'POST'
       }),
     reopenRoom: (id) =>
-      this._ws('meet.reopenRoom', `/meet/rooms/${encodeURIComponent(id)}/reopen`, {
-        method: 'POST',
-      }),
+      this._ws(
+        'meet.reopenRoom',
+        `/meet/rooms/${encodeURIComponent(id)}/reopen`,
+        {
+          method: 'POST'
+        }
+      ),
     listMembers: (id) =>
-      this._ws('meet.listMembers', `/meet/rooms/${encodeURIComponent(id)}/members`),
+      this._ws(
+        'meet.listMembers',
+        `/meet/rooms/${encodeURIComponent(id)}/members`
+      ),
     // Add a member row to a meet room. Replaces direct
     // sb.from('meet_room_members').insert(...) in createRoom.js — the
     // meet_members_insert RLS policy allows user_id = auth.uid() inserts
     // so self-join from a shared URL still works.
     addMember: (roomId, payload) =>
-      this._ws('meet.addMember', `/meet/rooms/${encodeURIComponent(roomId)}/members`, {
-        method: 'POST',
-        body: { payload },
-      }),
+      this._ws(
+        'meet.addMember',
+        `/meet/rooms/${encodeURIComponent(roomId)}/members`,
+        {
+          method: 'POST',
+          body: { payload }
+        }
+      ),
     listTranscripts: (id) =>
-      this._ws('meet.listTranscripts', `/meet/rooms/${encodeURIComponent(id)}/transcripts`),
+      this._ws(
+        'meet.listTranscripts',
+        `/meet/rooms/${encodeURIComponent(id)}/transcripts`
+      ),
     // Raw transcribed utterances (was sb().from('meet_transcripts').select())
     // — individual speech segments, distinct from the higher-level
     // transcript analysis summaries returned by listTranscripts.
     listUtterances: (id) =>
-      this._ws('meet.listUtterances', `/meet/rooms/${encodeURIComponent(id)}/utterances`),
+      this._ws(
+        'meet.listUtterances',
+        `/meet/rooms/${encodeURIComponent(id)}/utterances`
+      ),
     // Combined utterances + cached analysis — the shape the legacy
     // get_meet_transcript_view(uuid) Supabase RPC returned. The
     // workspaceProject.meet.transcriptView entity has mapped to
@@ -494,12 +678,18 @@ export class WorkspaceProjectService extends BaseService {
     // two real endpoints; analysis = newest analyses row or null.
     getTranscriptView: async (id) => {
       const [utterances, analyses] = await Promise.all([
-        this._ws('meet.listUtterances', `/meet/rooms/${encodeURIComponent(id)}/utterances`),
-        this._ws('meet.listTranscripts', `/meet/rooms/${encodeURIComponent(id)}/transcripts`),
-      ]);
-      const u = Array.isArray(utterances) ? utterances : utterances?.data || [];
-      const a = Array.isArray(analyses) ? analyses : analyses?.data || [];
-      return { utterances: u, analysis: a[0] || null };
+        this._ws(
+          'meet.listUtterances',
+          `/meet/rooms/${encodeURIComponent(id)}/utterances`
+        ),
+        this._ws(
+          'meet.listTranscripts',
+          `/meet/rooms/${encodeURIComponent(id)}/transcripts`
+        )
+      ])
+      const u = Array.isArray(utterances) ? utterances : utterances?.data || []
+      const a = Array.isArray(analyses) ? analyses : analyses?.data || []
+      return { utterances: u, analysis: a[0] || null }
     },
     waitingRoom: () => this._ws('meet.waitingRoom', '/meet/waiting-room'),
     // Host actions on a meet_waiting_room row. RLS policy
@@ -507,15 +697,26 @@ export class WorkspaceProjectService extends BaseService {
     // via is_meet_room_owner. Replaces direct sb.from('meet_waiting_room')
     // .update() calls in updateRoomSettings.js.
     admitGuest: (waitingId) =>
-      this._ws('meet.admitGuest', `/meet/waiting-room/${encodeURIComponent(waitingId)}/admit`, {
-        method: 'POST',
-      }),
+      this._ws(
+        'meet.admitGuest',
+        `/meet/waiting-room/${encodeURIComponent(waitingId)}/admit`,
+        {
+          method: 'POST'
+        }
+      ),
     rejectGuest: (waitingId) =>
-      this._ws('meet.rejectGuest', `/meet/waiting-room/${encodeURIComponent(waitingId)}/reject`, {
-        method: 'POST',
-      }),
+      this._ws(
+        'meet.rejectGuest',
+        `/meet/waiting-room/${encodeURIComponent(waitingId)}/reject`,
+        {
+          method: 'POST'
+        }
+      ),
     issueToken: (params) =>
-      this._ws('meet.issueToken', '/meet/token', { method: 'POST', body: { params } }),
+      this._ws('meet.issueToken', '/meet/token', {
+        method: 'POST',
+        body: { params }
+      }),
     // #2226 — owner remote-mutes a participant's published audio. Routes
     // through the worker → meet-mute edge fn → LiveKit
     // RoomServiceClient.mutePublishedTrack. params: { roomId,
@@ -527,17 +728,22 @@ export class WorkspaceProjectService extends BaseService {
     // { utterances, analysis } in a single round-trip; replaces the
     // previous two-query pattern in MeetTranscriptPage.
     getTranscriptView: (roomId) =>
-      this._ws('meet.getTranscriptView',
-        `/meet/rooms/${encodeURIComponent(roomId)}/transcript-view`),
+      this._ws(
+        'meet.getTranscriptView',
+        `/meet/rooms/${encodeURIComponent(roomId)}/transcript-view`
+      ),
     // Patch the `applied_items` array on a meet_transcript_analyses row
     // when the user "applies" a suggestion (saves as note, creates
     // ticket, etc). RLS allows room members to modify this column only.
     updateAnalysisAppliedItems: (roomId, appliedItems) =>
-      this._ws('meet.updateAnalysisAppliedItems',
-        `/meet/rooms/${encodeURIComponent(roomId)}/analysis/applied-items`, {
+      this._ws(
+        'meet.updateAnalysisAppliedItems',
+        `/meet/rooms/${encodeURIComponent(roomId)}/analysis/applied-items`,
+        {
           method: 'PATCH',
-          body: { applied_items: appliedItems },
-        }),
+          body: { applied_items: appliedItems }
+        }
+      )
   }
 
   // Documents alias dropped — canonical surfaces are:
@@ -549,50 +755,66 @@ export class WorkspaceProjectService extends BaseService {
   // --- Presence ---------------------------------------------------------------
   presence = {
     online: () => this._ws('presence.online', '/presence/online'),
-    heartbeat: () => this._ws('presence.heartbeat', '/presence/heartbeat', { method: 'POST' }),
+    heartbeat: () =>
+      this._ws('presence.heartbeat', '/presence/heartbeat', { method: 'POST' })
   }
 
   // --- Notifications ----------------------------------------------------------
-  // DORMANT cutover: when _useCoreNotifications() is true the reads + mark
-  // methods route to the /core/notifications routes (BaseService._request →
-  // `${apiUrl}/core/notifications`, Mongo-token auth); otherwise they ride the
-  // workspace-project worker `/notifications` surface exactly as before. The
-  // wire shapes are identical (the server NotificationController returns
-  // { data } / { count } / { ok } envelopes the same way the worker relay
-  // does), so consumers don't branch. Default OFF → no behavior change.
+  // Cutover (DEFAULT ON since 2026-07-03): when _useCoreNotifications() is
+  // true (the default) the reads + mark methods route to the
+  // /core/notifications routes (BaseService._request →
+  // `${apiUrl}/core/notifications`, Mongo-token auth); when false (the
+  // rollback) they ride the workspace-project worker `/notifications` surface
+  // exactly as before. The wire shapes are identical (the server
+  // NotificationController returns { data } / { count } / { ok } envelopes the
+  // same way the worker relay does), so consumers don't branch.
   notifications = {
     list: () =>
       this._useCoreNotifications()
-        ? this._request('/notifications', { method: 'GET', methodName: 'notifications.list' })
+        ? this._request('/notifications', {
+            method: 'GET',
+            methodName: 'notifications.list'
+          })
         : this._ws('notifications.list', '/notifications'),
     unreadCount: () =>
       this._useCoreNotifications()
         ? this._request('/notifications/unread-count', {
-          method: 'GET',
-          methodName: 'notifications.unreadCount',
-        })
+            method: 'GET',
+            methodName: 'notifications.unreadCount'
+          })
         : this._ws('notifications.unreadCount', '/notifications/unread-count'),
     // create() stays on the worker surface for THIS slice (the realtime
     // INSERT delivery currently keys off the Supabase write — see the slice
     // report). Repointing create is a later increment.
     create: (payload) =>
-      this._ws('notifications.create', '/notifications', { method: 'POST', body: { payload } }),
+      this._ws('notifications.create', '/notifications', {
+        method: 'POST',
+        body: { payload }
+      }),
     markRead: (id) =>
       this._useCoreNotifications()
         ? this._request(`/notifications/${encodeURIComponent(id)}/read`, {
-          method: 'POST',
-          methodName: 'notifications.markRead',
-        })
-        : this._ws('notifications.markRead', `/notifications/${encodeURIComponent(id)}/read`, {
-          method: 'POST',
-        }),
+            method: 'POST',
+            methodName: 'notifications.markRead'
+          })
+        : this._ws(
+            'notifications.markRead',
+            `/notifications/${encodeURIComponent(id)}/read`,
+            {
+              method: 'POST'
+            }
+          ),
     markAllRead: () =>
       this._useCoreNotifications()
         ? this._request('/notifications/mark-all-read', {
-          method: 'POST',
-          methodName: 'notifications.markAllRead',
-        })
-        : this._ws('notifications.markAllRead', '/notifications/mark-all-read', { method: 'POST' }),
+            method: 'POST',
+            methodName: 'notifications.markAllRead'
+          })
+        : this._ws(
+            'notifications.markAllRead',
+            '/notifications/mark-all-read',
+            { method: 'POST' }
+          )
   }
 
   // --- Search -----------------------------------------------------------------
@@ -605,37 +827,40 @@ export class WorkspaceProjectService extends BaseService {
     check: (action, resource) =>
       this._ws('permissions.check', '/permissions/check', {
         method: 'POST',
-        body: { action, resource },
-      }),
+        body: { action, resource }
+      })
   }
 
   // --- System -----------------------------------------------------------------
   system = {
     status: () => this._ws('system.status', '/system/status'),
-    featureFlags: () => this._ws('system.featureFlags', '/system/feature-flags'),
+    featureFlags: () => this._ws('system.featureFlags', '/system/feature-flags')
   }
-
 
   // --- People -----------------------------------------------------------------
   people = {
     list: () => this._ws('people.list', '/people'),
     get: (id) => this._ws('people.get', `/people/${encodeURIComponent(id)}`),
-    me: () => this._ws('people.me', '/people/me'),
+    me: () => this._ws('people.me', '/people/me')
   }
 
   // --- Activity ---------------------------------------------------------------
   activity = {
     listNotes: () => this._ws('activity.listNotes', '/activity/notes'),
     addNote: (payload) =>
-      this._ws('activity.addNote', '/activity/notes', { method: 'POST', body: { payload } }),
-    scoringConfig: () => this._ws('activity.scoringConfig', '/activity/scoring-config'),
+      this._ws('activity.addNote', '/activity/notes', {
+        method: 'POST',
+        body: { payload }
+      }),
+    scoringConfig: () =>
+      this._ws('activity.scoringConfig', '/activity/scoring-config'),
     // Bulk PATCH activity_scoring_config rows. The body shape is
     // { rows: [{ activity_type, enabled, score, … }, …] } — server iterates
     // and applies each (admin-gated). Returns { ok: true } on success.
     updateScoringConfig: (payload) =>
       this._ws('activity.updateScoringConfig', '/activity/scoring-config', {
         method: 'PATCH',
-        body: { payload },
+        body: { payload }
       }),
     // Aggregated activity_events count grid for the heatmap UI. Returns
     // rows from public.activity_events scoped to the caller and a date
@@ -645,15 +870,15 @@ export class WorkspaceProjectService extends BaseService {
     heatmap: (filter) =>
       this._ws('activity.heatmap', '/activity/heatmap', {
         method: 'POST',
-        body: { filter },
+        body: { filter }
       }),
     // Per-day activity_events list for one user. Used by the heatmap
     // tooltip / details drawer.
     listEvents: (filter) =>
       this._ws('activity.listEvents', '/activity/events', {
         method: 'POST',
-        body: { filter },
-      }),
+        body: { filter }
+      })
   }
 
   // ────────────────────────────────────────────────────────────────────────
@@ -672,51 +897,54 @@ export class WorkspaceProjectService extends BaseService {
   // validation, denormalization, or composition.
   // ────────────────────────────────────────────────────────────────────────
 
-  // DORMANT cutover (Supabase → Mongo). When _useCoreAnnouncements() is FALSE
-  // (the DEFAULT) every method delegates to the original _sbCrud('announcements')
-  // surface — BYTE-IDENTICAL to today (generic /sb passthrough, workspace_id
-  // pinned server-side). When TRUE the methods repoint to the Mongo
-  // /core/announcements routes (BaseService._request → `${apiUrl}/core/...`,
-  // Mongo-token auth) and unwrap the `{ announcements } / { announcement }`
-  // envelope back to the exact array / row shape the readers consume, so
-  // loadPrivateData.js's `.map(...)` is unchanged. The default _sbCrud surface
-  // is constructed once and held so the default branch is a pure pass-through.
+  // Cutover (Supabase → Mongo, DEFAULT ON since 2026-07-03). When
+  // _useCoreAnnouncements() is TRUE (the default) the methods route to the
+  // Mongo /core/announcements routes (BaseService._request →
+  // `${apiUrl}/core/...`, Mongo-token auth) and unwrap the `{ announcements }
+  // / { announcement }` envelope back to the exact array / row shape the
+  // readers consume, so loadPrivateData.js's `.map(...)` is unchanged. When
+  // FALSE (the rollback) every method delegates to the original
+  // _sbCrud('announcements') surface — byte-identical legacy behavior (generic
+  // /sb passthrough, workspace_id pinned server-side). The _sbCrud surface is
+  // constructed once and held so the rollback branch is a pure pass-through.
   _announcementsSb = this._sbCrud('announcements')
   announcements = {
     list: (filter, options) =>
       this._useCoreAnnouncements()
-        ? this._request('/announcements', { method: 'GET', methodName: 'announcements.list' })
-          .then((r) => (Array.isArray(r) ? r : r?.announcements ?? []))
+        ? this._request('/announcements', {
+            method: 'GET',
+            methodName: 'announcements.list'
+          }).then((r) => (Array.isArray(r) ? r : (r?.announcements ?? [])))
         : this._announcementsSb.list(filter, options),
     get: (id) =>
       this._useCoreAnnouncements()
         ? this._request(`/announcements/${encodeURIComponent(id)}`, {
-          method: 'GET',
-          methodName: 'announcements.get',
-        }).then((r) => r?.announcement ?? r)
+            method: 'GET',
+            methodName: 'announcements.get'
+          }).then((r) => r?.announcement ?? r)
         : this._announcementsSb.get(id),
     create: (payload) =>
       this._useCoreAnnouncements()
         ? this._request('/announcements', {
-          method: 'POST',
-          body: JSON.stringify({ payload }),
-          methodName: 'announcements.create',
-        }).then((r) => r?.announcement ?? r)
+            method: 'POST',
+            body: JSON.stringify({ payload }),
+            methodName: 'announcements.create'
+          }).then((r) => r?.announcement ?? r)
         : this._announcementsSb.create(payload),
     update: (id, payload) =>
       this._useCoreAnnouncements()
         ? this._request(`/announcements/${encodeURIComponent(id)}`, {
-          method: 'PUT',
-          body: JSON.stringify({ payload }),
-          methodName: 'announcements.update',
-        }).then((r) => r?.announcement ?? r)
+            method: 'PUT',
+            body: JSON.stringify({ payload }),
+            methodName: 'announcements.update'
+          }).then((r) => r?.announcement ?? r)
         : this._announcementsSb.update(id, payload),
     remove: (id) =>
       this._useCoreAnnouncements()
         ? this._request(`/announcements/${encodeURIComponent(id)}`, {
-          method: 'DELETE',
-          methodName: 'announcements.remove',
-        })
+            method: 'DELETE',
+            methodName: 'announcements.remove'
+          })
         : this._announcementsSb.remove(id),
     // Reactions fold — Mongo-only. The DEFAULT path has no persisted reactions
     // (the announcement_reactions table is dead + IntranetRows mutates local
@@ -726,16 +954,22 @@ export class WorkspaceProjectService extends BaseService {
     toggleReaction: (id, emoji, reactor) =>
       this._useCoreAnnouncements()
         ? this._request(`/announcements/${encodeURIComponent(id)}/reactions`, {
-          method: 'POST',
-          body: JSON.stringify({ emoji, reactor }),
-          methodName: 'announcements.toggleReaction',
-        }).then((r) => r?.announcement ?? r)
-        : Promise.resolve(null),
+            method: 'POST',
+            body: JSON.stringify({ emoji, reactor }),
+            methodName: 'announcements.toggleReaction'
+          }).then((r) => r?.announcement ?? r)
+        : Promise.resolve(null)
   }
-  birthdays     = this._sbCrud('birthdays')
-  stories       = this._sbCrud('stories')
-  valuations    = this._sbCrud('valuations')
-  fileCanvas    = this._sbCrud('file_canvas')
+  birthdays = this._sbCrud('birthdays')
+  // stories entity removed — stories table dropped in migration 0162 (feature retired 2026-06-02; no Mongo successor).
+  valuations = this._sbCrud('valuations')
+  fileCanvas = this._sbCrud('file_canvas')
+  // Generic record store backing AI-generated extensions (migration 0163,
+  // table workspace_records). list/get/create/update/remove via the standard
+  // _sbCrud → /sb PostgREST passthrough; the `collection` namespace is just a
+  // filter column (records.list({ collection: 'policies' })). Workspace_id is
+  // pinned by the proxy (sb.js WORKSPACE_SCOPED_TABLES).
+  records = this._sbCrud('workspace_records')
 
   // --- Analyzed (observability) ----------------------------------------------
   // Replaces Grafana Faro for symbo.ls apps. Browser → workspace-project
@@ -755,30 +989,48 @@ export class WorkspaceProjectService extends BaseService {
     // Browser SDK ships its batched envelope through here. Body shape is
     // documented at server/workers/workspace-project/src/surfaces/analyzed.js.
     ingest: (envelope) =>
-      this._ws('analyzed.ingest', '/analyzed/ingest', { method: 'POST', body: envelope }),
+      this._ws('analyzed.ingest', '/analyzed/ingest', {
+        method: 'POST',
+        body: envelope
+      }),
 
     listSessions: (filter, options) =>
-      this._sb('analyzed.listSessions', 'analyzed_session_summaries', 'list',
-        { filter, options: { order: 'started_at.desc', limit: 100, ...(options || {}) } }),
+      this._sb('analyzed.listSessions', 'analyzed_session_summaries', 'list', {
+        filter,
+        options: { order: 'started_at.desc', limit: 100, ...(options || {}) }
+      }),
 
     getSession: (id) =>
-      this._sb('analyzed.getSession', 'analyzed_session_summaries', 'list',
-        { filter: { id }, options: { single: true } }),
+      this._sb('analyzed.getSession', 'analyzed_session_summaries', 'list', {
+        filter: { id },
+        options: { single: true }
+      }),
 
     listEvents: (filter, options) =>
-      this._sb('analyzed.listEvents', 'analyzed_events', 'list',
-        { filter, options: { order: 'ts.asc', limit: 500, ...(options || {}) } }),
+      this._sb('analyzed.listEvents', 'analyzed_events', 'list', {
+        filter,
+        options: { order: 'ts.asc', limit: 500, ...(options || {}) }
+      }),
 
     // Per-user aggregate view (server@9d207d98 migration 0133) — one row
     // per (workspace_id, project_id, user_id). Backs the by-user paginated
     // /logs view (WORKSPACE-LOGS-USERS-PAGINATED).
     listUsers: (filter, options) =>
-      this._sb('analyzed.listUsers', 'analyzed_user_summaries', 'list',
-        { filter, options: { order: 'last_seen.desc', limit: 20, ...(options || {}) } }),
+      this._sb('analyzed.listUsers', 'analyzed_user_summaries', 'list', {
+        filter,
+        options: { order: 'last_seen.desc', limit: 20, ...(options || {}) }
+      }),
 
     clusters: ({ workspaceId, appKey, since, limit = 200, offset = 0 } = {}) =>
-      this._sb('analyzed.clusters', 'fn_analyzed_bug_clusters', 'rpc',
-        { payload: { p_workspace: workspaceId, p_app_key: appKey || null, p_since: since || null, p_max_rows: limit, p_offset: offset } }),
+      this._sb('analyzed.clusters', 'fn_analyzed_bug_clusters', 'rpc', {
+        payload: {
+          p_workspace: workspaceId,
+          p_app_key: appKey || null,
+          p_since: since || null,
+          p_max_rows: limit,
+          p_offset: offset
+        }
+      })
   }
 
   // Single-row org metadata — companyInfo (key/value pairs) + companySettings
@@ -788,13 +1040,16 @@ export class WorkspaceProjectService extends BaseService {
     list: (filter, options) =>
       this._sb('companyInfo.list', 'company_info', 'list', { filter, options }),
     upsert: (payload) =>
-      this._sb('companyInfo.upsert', 'company_info', 'create',
-        { payload, options: { upsertOnConflict: 'key' } }),
+      this._sb('companyInfo.upsert', 'company_info', 'create', {
+        payload,
+        options: { upsertOnConflict: 'key' }
+      })
   }
   companySettings = {
     get: () =>
-      this._sb('companySettings.get', 'company_settings', 'list',
-        { options: { single: true } }),
+      this._sb('companySettings.get', 'company_settings', 'list', {
+        options: { single: true }
+      }),
     // Singleton table — exactly one row per workspace, RLS-scoped by tenant.
     // We resolve the live id at call time rather than hardcoding `1`, so a
     // brief multi-row state (failed migration, manual seed) doesn't silently
@@ -815,13 +1070,11 @@ export class WorkspaceProjectService extends BaseService {
           { payload }
         )
       }
-      return this._sb(
-        'companySettings.update',
-        'company_settings',
-        'update',
-        { id: row.id, payload }
-      )
-    },
+      return this._sb('companySettings.update', 'company_settings', 'update', {
+        id: row.id,
+        payload
+      })
+    }
   }
 
   // Per-user preferences — one row keyed by user_id. RLS scopes to caller.
@@ -829,30 +1082,40 @@ export class WorkspaceProjectService extends BaseService {
   // PostgREST "Cannot coerce the result to a single JSON object" error.
   // Caller treats null as "no prefs yet" and renders defaults.
   userPreferences = {
-    // DORMANT cutover: when _useCorePrefs() is FALSE (the DEFAULT) both methods
-    // delegate to the BYTE-IDENTICAL _sb('user_preferences') path. When TRUE they
-    // repoint to GET/PUT /core/prefs/user and unwrap the `{ prefs }` envelope back
-    // to the flat object the reader (root.userPrefs) consumes. The /core path
-    // persists ad-hoc keys (homeWelcomeDismissed, …) the typed Supabase columns
-    // silently dropped — same wire shape, fixed persistence.
+    // Cutover (DEFAULT ON since 2026-07-03): when _useCorePrefs() is TRUE (the
+    // default) both methods route to GET/PUT /core/prefs/user and unwrap the
+    // `{ prefs }` envelope back to the flat object the reader (root.userPrefs)
+    // consumes. When FALSE (the rollback) they delegate to the byte-identical
+    // _sb('user_preferences') path. The /core path persists ad-hoc keys
+    // (homeWelcomeDismissed, …) the typed Supabase columns silently dropped —
+    // same wire shape, fixed persistence.
     get: async () => {
       if (this._useCorePrefs()) {
-        const r = await this._request('/prefs/user', { method: 'GET', methodName: 'userPreferences.get' })
+        const r = await this._request('/prefs/user', {
+          method: 'GET',
+          methodName: 'userPreferences.get'
+        })
         return r?.prefs ?? null
       }
-      const rows = await this._sb('userPreferences.get', 'user_preferences', 'list',
-        { options: { limit: 1 } })
-      return Array.isArray(rows) ? (rows[0] || null) : (rows || null)
+      const rows = await this._sb(
+        'userPreferences.get',
+        'user_preferences',
+        'list',
+        { options: { limit: 1 } }
+      )
+      return Array.isArray(rows) ? rows[0] || null : rows || null
     },
     upsert: (payload) =>
       this._useCorePrefs()
         ? this._request('/prefs/user', {
-          method: 'PUT',
-          body: JSON.stringify({ payload }),
-          methodName: 'userPreferences.upsert',
-        }).then((r) => r?.prefs ?? r)
-        : this._sb('userPreferences.upsert', 'user_preferences', 'create',
-          { payload, options: { upsertOnConflict: 'user_id' } }),
+            method: 'PUT',
+            body: JSON.stringify({ payload }),
+            methodName: 'userPreferences.upsert'
+          }).then((r) => r?.prefs ?? r)
+        : this._sb('userPreferences.upsert', 'user_preferences', 'create', {
+            payload,
+            options: { upsertOnConflict: 'user_id' }
+          })
   }
 
   // Per-user, per-workspace home dashboard prefs (hidden_widgets / grid_layout /
@@ -870,23 +1133,31 @@ export class WorkspaceProjectService extends BaseService {
       if (this._useCorePrefs()) {
         const r = await this._request('/prefs/home-dashboard', {
           method: 'GET',
-          methodName: 'homeDashboardPrefs.get',
+          methodName: 'homeDashboardPrefs.get'
         })
         return r?.prefs ?? null
       }
-      const rows = await this._sb('homeDashboardPrefs.get', 'home_dashboard_prefs', 'list',
-        { options: { limit: 1 } })
-      return Array.isArray(rows) ? (rows[0] || null) : (rows || null)
+      const rows = await this._sb(
+        'homeDashboardPrefs.get',
+        'home_dashboard_prefs',
+        'list',
+        { options: { limit: 1 } }
+      )
+      return Array.isArray(rows) ? rows[0] || null : rows || null
     },
     upsert: (payload) =>
       this._useCorePrefs()
         ? this._request('/prefs/home-dashboard', {
-          method: 'PUT',
-          body: JSON.stringify({ payload }),
-          methodName: 'homeDashboardPrefs.upsert',
-        }).then((r) => r?.prefs ?? r)
-        : this._sb('homeDashboardPrefs.upsert', 'home_dashboard_prefs', 'create',
-          { payload, options: { upsertOnConflict: 'user_id,workspace_id' } }),
+            method: 'PUT',
+            body: JSON.stringify({ payload }),
+            methodName: 'homeDashboardPrefs.upsert'
+          }).then((r) => r?.prefs ?? r)
+        : this._sb(
+            'homeDashboardPrefs.upsert',
+            'home_dashboard_prefs',
+            'create',
+            { payload, options: { upsertOnConflict: 'user_id,workspace_id' } }
+          )
   }
 
   // Per-workspace admin default panel set (one row per workspace). Members read
@@ -903,57 +1174,79 @@ export class WorkspaceProjectService extends BaseService {
       if (this._useCorePrefs()) {
         const r = await this._request('/prefs/workspace-defaults', {
           method: 'GET',
-          methodName: 'workspaceDashboardDefaults.get',
+          methodName: 'workspaceDashboardDefaults.get'
         })
         return r?.defaults ?? null
       }
-      const rows = await this._sb('workspaceDashboardDefaults.get', 'workspace_dashboard_defaults',
-        'list', { options: { limit: 1 } })
-      return Array.isArray(rows) ? (rows[0] || null) : (rows || null)
+      const rows = await this._sb(
+        'workspaceDashboardDefaults.get',
+        'workspace_dashboard_defaults',
+        'list',
+        { options: { limit: 1 } }
+      )
+      return Array.isArray(rows) ? rows[0] || null : rows || null
     },
     upsert: (payload) =>
       this._useCorePrefs()
         ? this._request('/prefs/workspace-defaults', {
-          method: 'PUT',
-          body: JSON.stringify({ payload }),
-          methodName: 'workspaceDashboardDefaults.upsert',
-        }).then((r) => r?.defaults ?? r)
-        : this._sb('workspaceDashboardDefaults.upsert', 'workspace_dashboard_defaults', 'create',
-          { payload, options: { upsertOnConflict: 'workspace_id' } }),
+            method: 'PUT',
+            body: JSON.stringify({ payload }),
+            methodName: 'workspaceDashboardDefaults.upsert'
+          }).then((r) => r?.defaults ?? r)
+        : this._sb(
+            'workspaceDashboardDefaults.upsert',
+            'workspace_dashboard_defaults',
+            'create',
+            { payload, options: { upsertOnConflict: 'workspace_id' } }
+          )
   }
 
-  userGrants     = this._sbCrud('user_grants')
+  userGrants = this._sbCrud('user_grants')
 
   // user_profiles is keyed by user_id, not numeric id. Override get/update.
   userProfiles = {
     list: (filter, options) =>
-      this._sb('userProfiles.list', 'user_profiles', 'list', { filter, options }),
+      this._sb('userProfiles.list', 'user_profiles', 'list', {
+        filter,
+        options
+      }),
     get: (userId) =>
-      this._sb('userProfiles.get', 'user_profiles', 'list',
-        { filter: { user_id: userId }, options: { single: true } }),
+      this._sb('userProfiles.get', 'user_profiles', 'list', {
+        filter: { user_id: userId },
+        options: { single: true }
+      }),
     update: (userId, payload) =>
-      this._sb('userProfiles.update', 'user_profiles', 'update',
-        { filter: { user_id: userId }, payload }),
+      this._sb('userProfiles.update', 'user_profiles', 'update', {
+        filter: { user_id: userId },
+        payload
+      })
   }
 
   // Daily standup rows — one per (author_email, date). Upsert merges on
   // the unique index from migration 0033 so idempotent re-submits replace.
   standups = {
     list: (filter, options) =>
-      this._sb('standups.list', 'standup_activity', 'list', { filter, options }),
-    get: (id) =>
-      this._sb('standups.get', 'standup_activity', 'get', { id }),
+      this._sb('standups.list', 'standup_activity', 'list', {
+        filter,
+        options
+      }),
+    get: (id) => this._sb('standups.get', 'standup_activity', 'get', { id }),
     create: (payload) =>
       this._sb('standups.create', 'standup_activity', 'create', { payload }),
     update: (id, payload) =>
-      this._sb('standups.update', 'standup_activity', 'update', { id, payload }),
+      this._sb('standups.update', 'standup_activity', 'update', {
+        id,
+        payload
+      }),
     upsert: (payload) =>
       // SDK-WORKSPACE-STANDUPS-UPSERT-WRONG-CONFLICT-COL — table is keyed
       // on `(author, date)` per migration 0033_standup_activity.sql:13-25.
       // The legacy `author_email` token caused PostgREST to reject every
       // upsert with `column "author_email" does not exist` (/logs id=77428).
-      this._sb('standups.upsert', 'standup_activity', 'create',
-        { payload, options: { upsertOnConflict: 'author,date' } }),
+      this._sb('standups.upsert', 'standup_activity', 'create', {
+        payload,
+        options: { upsertOnConflict: 'author,date' }
+      })
   }
 
   // Audit log — backend table is `activity_events`. Filter shape passes
@@ -962,14 +1255,14 @@ export class WorkspaceProjectService extends BaseService {
     list: (filter, options) =>
       this._sb('auditLog.list', 'activity_events', 'list', {
         filter,
-        options: { order: 'created_at.desc', ...(options || {}) },
-      }),
+        options: { order: 'created_at.desc', ...(options || {}) }
+      })
   }
 
   // rolePermissions entity removed — dead SDK surface with zero callers
   // (the /admin/permissions UI retired the role_permissions fetch). The
-  // role_permissions table itself is NOT dropped (still read by the curated
-  // GET /admin/role-permissions route); see migration 0159 header.
+  // role_permissions table itself WAS dropped in migration 0161 (2026-06);
+  // the Mongo successor is Team.permissions[].
 
   // --- AI surface retired 2026-05-20 -----------------------------------------
   // Both ai.chat and ai.meetAnalyze moved off Supabase. All AI inference
@@ -997,7 +1290,7 @@ export class WorkspaceProjectService extends BaseService {
     list: (filter, options) =>
       this._sb('feed.list', 'feed_posts', 'list', {
         filter,
-        options: { order: 'created_at.desc', limit: 50, ...(options || {}) },
+        options: { order: 'created_at.desc', limit: 50, ...(options || {}) }
       }),
     get: (id) => this._sb('feed.get', 'feed_posts', 'get', { id }),
     create: (payload) =>
@@ -1008,55 +1301,73 @@ export class WorkspaceProjectService extends BaseService {
 
     likes: {
       list: (postId) =>
-        this._sb('feed.likes.list', 'feed_post_likes', 'list',
-          { filter: { post_id: postId } }),
+        this._sb('feed.likes.list', 'feed_post_likes', 'list', {
+          filter: { post_id: postId }
+        }),
       create: (postId, userEmail) =>
-        this._sb('feed.likes.create', 'feed_post_likes', 'create',
-          { payload: { post_id: postId, user_email: userEmail } }),
+        this._sb('feed.likes.create', 'feed_post_likes', 'create', {
+          payload: { post_id: postId, user_email: userEmail }
+        }),
       remove: (id) =>
-        this._sb('feed.likes.remove', 'feed_post_likes', 'remove', { id }),
+        this._sb('feed.likes.remove', 'feed_post_likes', 'remove', { id })
     },
 
     comments: {
       list: (postId, options) =>
         this._sb('feed.comments.list', 'feed_post_comments', 'list', {
           filter: { post_id: postId },
-          options: { order: 'created_at.asc', ...(options || {}) },
+          options: { order: 'created_at.asc', ...(options || {}) }
         }),
       create: (postId, payload) =>
-        this._sb('feed.comments.create', 'feed_post_comments', 'create',
-          { payload: { post_id: postId, ...(payload || {}) } }),
+        this._sb('feed.comments.create', 'feed_post_comments', 'create', {
+          payload: { post_id: postId, ...(payload || {}) }
+        }),
       update: (id, payload) =>
-        this._sb('feed.comments.update', 'feed_post_comments', 'update',
-          { id, payload }),
+        this._sb('feed.comments.update', 'feed_post_comments', 'update', {
+          id,
+          payload
+        }),
       remove: (id) =>
-        this._sb('feed.comments.remove', 'feed_post_comments', 'remove', { id }),
-    },
+        this._sb('feed.comments.remove', 'feed_post_comments', 'remove', { id })
+    }
   }
 
   follows = {
     list: (filter, options) =>
       this._sb('follows.list', 'user_follows', 'list', {
         filter,
-        options: { order: 'created_at.desc', ...(options || {}) },
+        options: { order: 'created_at.desc', ...(options || {}) }
       }),
     create: (followerEmail, followeeEmail) =>
       this._sb('follows.create', 'user_follows', 'create', {
-        payload: { follower_email: followerEmail, followee_email: followeeEmail },
+        payload: {
+          follower_email: followerEmail,
+          followee_email: followeeEmail
+        }
       }),
-    remove: (id) => this._sb('follows.remove', 'user_follows', 'remove', { id }),
+    remove: (id) =>
+      this._sb('follows.remove', 'user_follows', 'remove', { id }),
     // Convenience helper — many UIs only have the (follower, followee) tuple
     // and would otherwise have to do a list+find before remove.
     removeByPair: async (followerEmail, followeeEmail) => {
-      const rows = await this._sb('follows.removeByPair.find', 'user_follows', 'list', {
-        filter: { follower_email: followerEmail, followee_email: followeeEmail },
-        options: { limit: 1 },
-      })
+      const rows = await this._sb(
+        'follows.removeByPair.find',
+        'user_follows',
+        'list',
+        {
+          filter: {
+            follower_email: followerEmail,
+            followee_email: followeeEmail
+          },
+          options: { limit: 1 }
+        }
+      )
       const row = Array.isArray(rows) ? rows[0] : null
       if (!row) return null
-      return this._sb('follows.removeByPair.remove', 'user_follows', 'remove',
-        { id: row.id })
-    },
+      return this._sb('follows.removeByPair.remove', 'user_follows', 'remove', {
+        id: row.id
+      })
+    }
   }
 
   // --- i18n (translation stream) --------------------------------------------
@@ -1065,10 +1376,11 @@ export class WorkspaceProjectService extends BaseService {
   // backend ships an i18n stream, fill in subscribeTranslations.
   i18n = {
     subscribeTranslations: (_filter, _cb) => {
-      void _filter; void _cb
+      void _filter
+      void _cb
       // TODO[sdk-i18n-stream]: dispatch through socket/SSE once backend ships.
       return () => {}
-    },
+    }
   }
 
   // ────────────────────────────────────────────────────────────────────────
@@ -1093,20 +1405,24 @@ export class WorkspaceProjectService extends BaseService {
   // crash) keep working.
   // ────────────────────────────────────────────────────────────────────────
 
-  setRealtimeProvider (fn) {
+  setRealtimeProvider(fn) {
     this._realtimeProvider = typeof fn === 'function' ? fn : null
   }
 
-  _realtimeSubscribe (op, filter, callback) {
+  _realtimeSubscribe(op, filter, callback) {
     const p = this._realtimeProvider
-    if (typeof p !== 'function' || typeof callback !== 'function') return () => {}
+    if (typeof p !== 'function' || typeof callback !== 'function')
+      return () => {}
     try {
       const unsub = p({ op, filter: filter || {}, callback })
-      return typeof unsub === 'function' ? unsub : (() => {})
+      return typeof unsub === 'function' ? unsub : () => {}
     } catch (err) {
       // Don't crash callers on provider errors — log + return noop.
       // eslint-disable-next-line no-console
-      console.warn(`[sdk.workspaceProject.realtime] provider failed for op '${op}':`, err?.message || err)
+      console.warn(
+        `[sdk.workspaceProject.realtime] provider failed for op '${op}':`,
+        err?.message || err
+      )
       return () => {}
     }
   }
@@ -1160,7 +1476,11 @@ export class WorkspaceProjectService extends BaseService {
       // consumer branch — the page's own fetch reconciles).
       const deliver = (framed) => {
         if (!framed || !framed.kind) return
-        try { cb(framed.kind, framed.payload) } catch (_) { /* listener errors don't propagate */ }
+        try {
+          cb(framed.kind, framed.payload)
+        } catch (_) {
+          /* listener errors don't propagate */
+        }
       }
 
       // The server `data` is ALREADY `{ eventType, new, old }`; pass it
@@ -1194,10 +1514,14 @@ export class WorkspaceProjectService extends BaseService {
       const filter = {}
       if (roomId) filter.roomId = roomId
       if (workspaceId && !roomId) filter.workspaceId = workspaceId
-      if (Array.isArray(tables) && tables.length) filter.tables = tables.join(',')
+      if (Array.isArray(tables) && tables.length)
+        filter.tables = tables.join(',')
       else if (typeof tables === 'string' && tables) filter.tables = tables
 
-      return this._sseSubscribe('/meet/stream', filter, deliver, { events, flatParams: true })
+      return this._sseSubscribe('/meet/stream', filter, deliver, {
+        events,
+        flatParams: true
+      })
     },
 
     // Server-SSE chat subscription (chat-realtime-spec §5 — the SSE transport
@@ -1239,26 +1563,36 @@ export class WorkspaceProjectService extends BaseService {
       // a frame returning undefined is swallowed.
       const deliver = (framed) => {
         if (!framed || !framed.kind) return
-        try { cb(framed.kind, framed.payload) } catch (_) { /* listener errors don't propagate */ }
+        try {
+          cb(framed.kind, framed.payload)
+        } catch (_) {
+          /* listener errors don't propagate */
+        }
       }
 
       // Optional client-side channel filter (the drawer subscribes to ONE
       // channel; the stream is per-session, so filter the message/member
       // events here — parity with the Supabase `channel_id=eq.` filter).
-      const channelSet = Array.isArray(channelIds) && channelIds.length
-        ? new Set(channelIds.map((x) => String(x)))
-        : null
-      const _chanOf = (row) => row && (row.channel_id != null ? String(row.channel_id) : null)
-      const _passesChannel = (row) => !channelSet || (row != null && channelSet.has(_chanOf(row)))
+      const channelSet =
+        Array.isArray(channelIds) && channelIds.length
+          ? new Set(channelIds.map((x) => String(x)))
+          : null
+      const _chanOf = (row) =>
+        row && (row.channel_id != null ? String(row.channel_id) : null)
+      const _passesChannel = (row) =>
+        !channelSet || (row != null && channelSet.has(_chanOf(row)))
 
       // Build the Supabase-style envelope for an entity row + verb.
       const entityFrame = (kind, verb, key) => (data) => {
         const row = data?.[key]
-        if (verb !== 'DELETE' && channelSet && !_passesChannel(row)) return undefined
-        if (verb === 'DELETE' && channelSet && !_passesChannel(row)) return undefined
-        const payload = verb === 'DELETE'
-          ? { eventType: 'DELETE', new: null, old: row }
-          : { eventType: verb, new: row, old: null }
+        if (verb !== 'DELETE' && channelSet && !_passesChannel(row))
+          return undefined
+        if (verb === 'DELETE' && channelSet && !_passesChannel(row))
+          return undefined
+        const payload =
+          verb === 'DELETE'
+            ? { eventType: 'DELETE', new: null, old: row }
+            : { eventType: verb, new: row, old: null }
         return { kind, payload }
       }
       // Members carry the same envelope plus the `_kind:'member'` tag the
@@ -1272,22 +1606,46 @@ export class WorkspaceProjectService extends BaseService {
 
       const events = [
         // snapshot — reconcile sidebar-critical state on connect/reconnect.
-        { name: 'chat.snapshot', frame: (data) => ({ kind: 'chat.snapshot', payload: data || {} }) },
+        {
+          name: 'chat.snapshot',
+          frame: (data) => ({ kind: 'chat.snapshot', payload: data || {} })
+        },
 
-        { name: 'chat.message.insert', frame: entityFrame('chat.messages', 'INSERT', 'message') },
-        { name: 'chat.message.update', frame: entityFrame('chat.messages', 'UPDATE', 'message') },
-        { name: 'chat.message.delete', frame: entityFrame('chat.messages', 'DELETE', 'message') },
+        {
+          name: 'chat.message.insert',
+          frame: entityFrame('chat.messages', 'INSERT', 'message')
+        },
+        {
+          name: 'chat.message.update',
+          frame: entityFrame('chat.messages', 'UPDATE', 'message')
+        },
+        {
+          name: 'chat.message.delete',
+          frame: entityFrame('chat.messages', 'DELETE', 'message')
+        },
 
-        { name: 'chat.channel.insert', frame: entityFrame('chat.channels', 'INSERT', 'channel') },
-        { name: 'chat.channel.update', frame: entityFrame('chat.channels', 'UPDATE', 'channel') },
-        { name: 'chat.channel.delete', frame: entityFrame('chat.channels', 'DELETE', 'channel') },
+        {
+          name: 'chat.channel.insert',
+          frame: entityFrame('chat.channels', 'INSERT', 'channel')
+        },
+        {
+          name: 'chat.channel.update',
+          frame: entityFrame('chat.channels', 'UPDATE', 'channel')
+        },
+        {
+          name: 'chat.channel.delete',
+          frame: entityFrame('chat.channels', 'DELETE', 'channel')
+        },
 
         { name: 'chat.member.insert', frame: memberFrame('INSERT') },
         { name: 'chat.member.update', frame: memberFrame('UPDATE') },
         { name: 'chat.member.delete', frame: memberFrame('DELETE') },
 
         // mentions are INSERT-only (own-mention, server-enriched channel_id).
-        { name: 'chat.mention.insert', frame: entityFrame('chat.mentions', 'INSERT', 'mention') },
+        {
+          name: 'chat.mention.insert',
+          frame: entityFrame('chat.mentions', 'INSERT', 'mention')
+        },
 
         // post-header handler error: no consumer branch — swallow.
         { name: 'error', frame: () => undefined }
@@ -1297,11 +1655,15 @@ export class WorkspaceProjectService extends BaseService {
       // directly (NOT filter[workspaceId]). Only forward defined scope keys.
       const filter = {}
       if (workspaceId) filter.workspaceId = workspaceId
-      if (Array.isArray(tables) && tables.length) filter.tables = tables.join(',')
+      if (Array.isArray(tables) && tables.length)
+        filter.tables = tables.join(',')
       else if (typeof tables === 'string' && tables) filter.tables = tables
 
-      return this._sseSubscribe('/chat/stream', filter, deliver, { events, flatParams: true })
-    },
+      return this._sseSubscribe('/chat/stream', filter, deliver, {
+        events,
+        flatParams: true
+      })
+    }
     // subscribeAgentMessages removed — agent_messages table dropped in
     // migration 0159; the agentMessages entity had zero live callers.
   }
@@ -1315,25 +1677,46 @@ export class WorkspaceProjectService extends BaseService {
   // Three-arg signed-URL: bucket + path + ttl (seconds). Default TTL 5 min
   // matches the legacy `sb.storage.from('contracts').createSignedUrl(path, 300)`
   // call site in MemberProfile so callers don't need to pass it explicitly.
+  //
+  // Cutover (DEFAULT ON since 2026-07-03): when _useCoreStorage() is TRUE (the
+  // default) every method routes to the GCS-backed /core/storage routes
+  // (BaseService._request prepends /core for JSON; the multipart upload
+  // raw-fetches the /core base directly because _request can't carry FormData
+  // cleanly). When FALSE (the rollback) they delegate to the byte-identical
+  // worker path (_ws for JSON, the _workspacePrefix raw-fetch for the
+  // multipart upload). Response shapes are un-enveloped + identical in both
+  // directions, so no unwrap is needed.
   storage = {
     createSignedUrl: (bucket, path, ttl = 300) =>
-      this._ws('storage.createSignedUrl',
-        `/storage/${encodeURIComponent(bucket)}/signed-url`, {
-          method: 'POST',
-          body: { path, ttl },
-        }),
+      this._useCoreStorage()
+        ? this._request(`/storage/${encodeURIComponent(bucket)}/signed-url`, {
+            method: 'POST',
+            body: JSON.stringify({ path, ttl }),
+            methodName: 'storage.createSignedUrl'
+          })
+        : this._ws(
+            'storage.createSignedUrl',
+            `/storage/${encodeURIComponent(bucket)}/signed-url`,
+            {
+              method: 'POST',
+              body: { path, ttl }
+            }
+          ),
     // multipart upload — body must be a FormData carrying { file, path? }.
-    // The wrapper extracts `file` and forwards to the storage backend.
+    // The backend extracts `file` and forwards to the storage backend.
     upload: (bucket, formData, options = {}) => {
-      // Bypass the JSON-body branch in `_ws` by composing the request here.
+      // Bypass the JSON-body branch by composing the request here. ON → the
+      // /core base; OFF (default) → the workspace-project worker prefix.
       const _doUpload = async () => {
         this._requireReady('storage.upload')
-        const url = `${this._workspacePrefix}/storage/${encodeURIComponent(bucket)}/upload`
+        const base = this._useCoreStorage()
+          ? `${this._apiUrl}/core/storage/${encodeURIComponent(bucket)}/upload`
+          : `${this._workspacePrefix}/storage/${encodeURIComponent(bucket)}/upload`
         const init = { method: 'POST', body: formData, headers: {} }
         const auth = await this._resolveAuthHeader()
         if (auth) init.headers.Authorization = auth
         // Don't set Content-Type — browser sets multipart boundary itself.
-        const res = await fetch(url, init)
+        const res = await fetch(base, init)
         const json = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(json?.message || `HTTP ${res.status}`)
         return json
@@ -1341,19 +1724,37 @@ export class WorkspaceProjectService extends BaseService {
       return _doUpload()
     },
     remove: (bucket, path) =>
-      this._ws('storage.remove',
-        `/storage/${encodeURIComponent(bucket)}/object`, {
-          method: 'DELETE',
-          body: { path },
-        }),
-    // Public download URL for a stored object — wraps the wrapper's signed
-    // GET endpoint so callers don't need the bucket service-role key.
+      this._useCoreStorage()
+        ? this._request(`/storage/${encodeURIComponent(bucket)}/object`, {
+            method: 'DELETE',
+            body: JSON.stringify({ path }),
+            methodName: 'storage.remove'
+          })
+        : this._ws(
+            'storage.remove',
+            `/storage/${encodeURIComponent(bucket)}/object`,
+            {
+              method: 'DELETE',
+              body: { path }
+            }
+          ),
+    // Public download URL for a stored object — wraps the backend's public-url
+    // endpoint so callers don't need the bucket service-role key.
     publicUrl: (bucket, path) =>
-      this._ws('storage.publicUrl',
-        `/storage/${encodeURIComponent(bucket)}/public-url`, {
-          method: 'POST',
-          body: { path },
-        }),
+      this._useCoreStorage()
+        ? this._request(`/storage/${encodeURIComponent(bucket)}/public-url`, {
+            method: 'POST',
+            body: JSON.stringify({ path }),
+            methodName: 'storage.publicUrl'
+          })
+        : this._ws(
+            'storage.publicUrl',
+            `/storage/${encodeURIComponent(bucket)}/public-url`,
+            {
+              method: 'POST',
+              body: { path }
+            }
+          )
   }
 
   // --- Generic escape hatch ---------------------------------------------------

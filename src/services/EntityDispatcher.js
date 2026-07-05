@@ -654,8 +654,8 @@ const ENTITY_ROUTES = {
 
   // workspaceProject.rolePermissions entity removed — dead SDK surface with
   // zero callers (the /admin/permissions UI retired the role_permissions
-  // fetch). The role_permissions TABLE is not dropped (still read by the
-  // curated GET /admin/role-permissions route); see migration 0159.
+  // fetch). The role_permissions TABLE was dropped in migration 0161
+  // (2026-06); the Mongo successor is Team.permissions[].
 
   // ─── Analyzed (observability) ──────────────────────────────────────────────
   // Replaces Grafana Faro. Browser → workspace-project worker →
@@ -721,13 +721,14 @@ const ENTITY_ROUTES = {
   // WorkspaceProjectService once that method ships. For now the route is
   // reserved so callers (DOMQL fetch:, sdk.execute) compile against the
   // final entity name and we can flip the implementation under them.
-  // Announcements — DORMANT Supabase → Mongo cutover. The route is STATIC; the
-  // engine choice (byte-identical /sb passthrough vs new Mongo /core path) lives
-  // inside WorkspaceProjectService.announcements behind _useCoreAnnouncements()
+  // Announcements — Supabase → Mongo cutover. The route is STATIC; the engine
+  // choice (byte-identical /sb passthrough vs Mongo /core path) lives inside
+  // WorkspaceProjectService.announcements behind _useCoreAnnouncements()
   // (context.useCoreAnnouncements / globalThis.__USE_CORE_ANNOUNCEMENTS__).
-  // Default OFF → no behavior change. The `react` op (toggle a reactor on one
-  // emoji) is Mongo-only — it resolves to a no-op off-flag, so the historical
-  // local-only IntranetRows reaction behavior is preserved in the default path.
+  // Default ON since 2026-07-03 (rollback: flag === false). The `react` op
+  // (toggle a reactor on one emoji) is Mongo-only — it resolves to a no-op
+  // off-flag, preserving the historical local-only IntranetRows reaction
+  // behavior in the rollback path.
   'workspaceProject.announcements': {
     service: 'workspaceProject',
     methods: {
@@ -748,17 +749,7 @@ const ENTITY_ROUTES = {
     methods: { list: 'birthdays.list' },
     argMap: { list: () => [] },
   },
-  'workspaceProject.stories': {
-    service: 'workspaceProject',
-    methods: {
-      list: 'stories.list',
-      get: 'stories.get',
-      create: 'stories.create',
-      update: 'stories.update',
-      remove: 'stories.remove',
-    },
-    argMap: CRUD_ARG_MAP,
-  },
+  // workspaceProject.stories entity removed — stories table dropped in migration 0162 (feature retired 2026-06-02; no Mongo successor).
   'workspaceProject.fileCanvas': {
     service: 'workspaceProject',
     methods: {
@@ -767,6 +758,20 @@ const ENTITY_ROUTES = {
       create: 'fileCanvas.create',
       update: 'fileCanvas.update',
       remove: 'fileCanvas.remove',
+    },
+    argMap: CRUD_ARG_MAP,
+  },
+  // Generic record store backing AI-generated extensions (migration 0163,
+  // table workspace_records). Standard CRUD; the `collection` namespace rides
+  // in the list filter (records.list({ filter: { collection: 'policies' } })).
+  'workspaceProject.records': {
+    service: 'workspaceProject',
+    methods: {
+      list: 'records.list',
+      get: 'records.get',
+      create: 'records.create',
+      update: 'records.update',
+      remove: 'records.remove',
     },
     argMap: CRUD_ARG_MAP,
   },
@@ -780,13 +785,13 @@ const ENTITY_ROUTES = {
     methods: { get: 'companySettings.get', update: 'companySettings.update' },
     argMap: { get: () => [], update: argMaps.payload },
   },
-  // PREFS trio — DORMANT Supabase → Mongo cutover. These routes are STATIC; the
-  // engine choice (byte-identical /sb passthrough vs new Mongo /core/prefs path)
+  // PREFS trio — Supabase → Mongo cutover. These routes are STATIC; the
+  // engine choice (byte-identical /sb passthrough vs Mongo /core/prefs path)
   // lives inside WorkspaceProjectService.{userPreferences,homeDashboardPrefs,
   // workspaceDashboardDefaults} behind _useCorePrefs() (context.useCorePrefs /
-  // globalThis.__USE_CORE_PREFS__). Default OFF → no behavior change. The
-  // serialized wire shape is byte-identical either way, so the dispatcher's
-  // update→upsert mapping + payload argMap are unchanged.
+  // globalThis.__USE_CORE_PREFS__). Default ON since 2026-07-03 (rollback:
+  // flag === false). The serialized wire shape is byte-identical either way,
+  // so the dispatcher's update→upsert mapping + payload argMap are unchanged.
   'workspaceProject.userPreferences': {
     service: 'workspaceProject',
     methods: { get: 'userPreferences.get', update: 'userPreferences.upsert' },
@@ -1170,7 +1175,158 @@ const ENTITY_ROUTES = {
     service: 'screenshot',
     methods: { get: 'getScreenshotByKey' },
   },
+
+  // ─── Builds & Deploy (BuildsService — /core/builds/*, workspace-scoped) ──
+  // The Railway-style pipeline behind the /infra canvas: GitHub App install →
+  // repo import (WorkspaceRepo) → Cloud Build → Cloud Run. Every op threads
+  // `workspaceId` positionally (routes are /builds/workspaces/:workspaceId/*).
+  // Declarative `fetch:` calls arrive packed as { filter, params, ... }
+  // (sdkAdapter._packSelect) — read workspaceId from either bag.
+  'builds.github': {
+    service: 'builds',
+    methods: { state: 'getBuildsGitHubState', get: 'getBuildsGitHubState' },
+    argMap: {
+      state: (a) => [buildsWs(a)],
+      get: (a) => [buildsWs(a)],
+    },
+  },
+  'builds.repos': {
+    service: 'builds',
+    methods: { list: 'listBuildRepos' },
+    argMap: { list: (a) => [buildsWs(a)] },
+  },
+  'builds.imports': {
+    service: 'builds',
+    methods: {
+      list: 'listBuildImports',
+      create: 'createBuildImport',
+      update: 'updateBuildImport',
+      remove: 'deleteBuildImport',
+    },
+    argMap: {
+      list: (a) => [buildsWs(a)],
+      create: (a) => [buildsWs(a), a?.payload ?? a?.data],
+      update: (a) => [buildsWs(a), buildsRepo(a), a?.payload ?? a?.data ?? {}],
+      remove: (a) => [buildsWs(a), buildsRepo(a)],
+    },
+  },
+  'builds.builds': {
+    service: 'builds',
+    methods: {
+      list: 'listBuilds',
+      get: 'getBuild',
+      create: 'triggerBuild',
+      logs: 'getBuildLogs',
+      // Workspace-level build/deploy status stream — the handlers bag
+      // ({ onBuildStatus?, onDeploymentStatus?, workspaceId? }) passes
+      // through as the single argument.
+      subscribe: 'subscribeWorkspaceBuilds',
+    },
+    argMap: {
+      list: (a) => [buildsWs(a), { limit: a?.limit }],
+      get: (a) => [buildsWs(a), a?.id ?? a?.buildId ?? a?.params?.id],
+      create: (a) => [buildsWs(a), a?.repoId ?? a?.params?.repoId, a?.payload ?? {}],
+      logs: (a) => [buildsWs(a), buildsBuild(a), { tailBytes: a?.tailBytes ?? a?.params?.tailBytes }],
+      subscribe: (a) => [a],
+    },
+  },
+  'builds.deployments': {
+    service: 'builds',
+    methods: {
+      list: 'listBuildDeployments',
+      create: 'deployBuild',
+      rollback: 'rollbackDeployment',
+      scale: 'scaleDeployment',
+      // Same workspace-level stream as builds.builds — one subscription
+      // covers both build and deployment status events.
+      subscribe: 'subscribeWorkspaceBuilds',
+    },
+    argMap: {
+      list: (a) => [buildsWs(a)],
+      create: (a) => [buildsWs(a), a?.buildId ?? a?.params?.buildId, a?.payload ?? {}],
+      rollback: (a) => [buildsWs(a), buildsDeployment(a)],
+      scale: (a) => [buildsWs(a), buildsDeployment(a), a?.payload ?? a?.data ?? {}],
+      subscribe: (a) => [a],
+    },
+  },
+
+  // ─── Project custom domains (DnsService — PR #440 lifecycle) ─────────────
+  // API-owned custom-domain onboarding on /core/projects/:projectId/domains.
+  // `add` PATCHes { customDomains, envKey? } and returns { domains: { map,
+  // statuses }, onboarding[], guidance[], operations, warnings }; `status`
+  // walks needs_dns → pending_hostname_validation → pending_ssl → active.
+  'projectDomains': {
+    service: 'dns',
+    methods: {
+      list: 'getProjectDomains',
+      add: 'addProjectCustomDomains',
+      create: 'addProjectCustomDomains',
+      setup: 'startProjectCustomDomainSetup',
+      poll: 'pollProjectCustomDomainStatus',
+      remove: 'removeProjectCustomDomain',
+      check: 'checkProjectDomain',
+      status: 'getProjectCustomDomainStatus',
+      instructions: 'getProjectDomainInstructions',
+    },
+    argMap: {
+      list: (a) => [domainsProject(a)],
+      add: (a) => [
+        domainsProject(a),
+        a?.customDomains ?? a?.domains ?? a?.hostname,
+        a?.options ?? (a?.envKey ? { envKey: a.envKey } : {}),
+      ],
+      create: (a) => [
+        domainsProject(a),
+        a?.customDomains ?? a?.domains ?? a?.hostname,
+        a?.options ?? (a?.envKey ? { envKey: a.envKey } : {}),
+      ],
+      setup: (a) => [
+        domainsProject(a),
+        domainsHost(a),
+        a?.options ?? (a?.envKey ? { envKey: a.envKey } : {}),
+      ],
+      poll: (a) => [
+        domainsProject(a),
+        domainsHost(a),
+        a?.options ?? {},
+      ],
+      remove: (a) => [domainsProject(a), domainsHost(a)],
+      check: (a) => [domainsProject(a), domainsHost(a)],
+      status: (a) => [domainsProject(a), domainsHost(a)],
+      instructions: (a) => [domainsProject(a), domainsHost(a)],
+    },
+  },
 }
+
+// Arg resolvers for the builds/projectDomains routes — accept both the
+// imperative shape ({ workspaceId }) and the declarative fetch-adapter shape
+// ({ filter, params }), falling back to a bare string arg.
+const buildsWs = (a) =>
+  a?.workspaceId ??
+  a?.params?.workspaceId ??
+  a?.filter?.workspaceId ??
+  (typeof a === 'string' ? a : undefined)
+
+// Row-id resolvers for the builds control-plane verbs — same dual-shape
+// tolerance as buildsWs (imperative bag OR fetch-adapter { params } pack),
+// with `id` as the generic fallback key.
+const buildsRepo = (a) =>
+  a?.repoId ?? a?.params?.repoId ?? a?.id ?? a?.params?.id
+
+const buildsBuild = (a) =>
+  a?.buildId ?? a?.params?.buildId ?? a?.id ?? a?.params?.id
+
+const buildsDeployment = (a) =>
+  a?.deploymentId ?? a?.params?.deploymentId ?? a?.id ?? a?.params?.id
+
+const domainsProject = (a) =>
+  a?.projectId ??
+  a?.params?.projectId ??
+  a?.filter?.projectId ??
+  (typeof a === 'string' ? a : undefined)
+
+const domainsHost = (a) =>
+  a?.domain ?? a?.hostname ?? a?.params?.domain ?? a?.params?.hostname
 
 const resolveDottedMethod = (target, methodPath) => {
   if (!target || !methodPath) return null

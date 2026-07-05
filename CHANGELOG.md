@@ -1,5 +1,79 @@
 # @symbo.ls/sdk
 
+## 3.14.562
+
+### Patch Changes
+
+- Auto-generated cross-repo patch release.
+
+## 3.14.561
+
+### Patch Changes
+
+- Auto-generated cross-repo patch release.
+
+## 3.14.560
+
+### Patch Changes
+
+- Auto-generated cross-repo patch release.
+- Updated dependencies
+  - @symbo.ls/workspace-project-supabase@3.14.560
+
+## 3.14.558
+
+### Patch Changes
+
+- Auto-generated cross-repo patch release.
+- Updated dependencies
+  - @symbo.ls/workspace-project-supabase@3.14.558
+
+## 3.14.533
+
+### Patch Changes
+
+- Auto-generated cross-repo patch release.
+- Updated dependencies
+  - @symbo.ls/workspace-project-supabase@3.14.533
+
+## 3.14.529
+
+### Patch Changes
+
+- Auto-generated cross-repo patch release.
+
+## 3.14.519
+
+### Patch Changes
+
+- Auto-generated cross-repo patch release.
+
+## 3.14.517
+
+### Patch Changes
+
+- Auto-generated cross-repo patch release.
+
+## 3.14.512
+
+### Patch Changes
+
+- Auto-generated cross-repo patch release.
+
+## 3.14.504
+
+### Patch Changes
+
+- Auto-generated cross-repo patch release.
+
+## 3.14.497
+
+### Patch Changes
+
+- Auto-generated cross-repo patch release.
+- Updated dependencies
+  - @symbo.ls/workspace-project-supabase@3.14.497
+
 ## 3.14.489
 
 ### Patch Changes

@@ -1,5 +1,55 @@
 import { BaseService } from './BaseService.js'
 
+const TERMINAL_CUSTOM_DOMAIN_STATES = new Set(['active', 'failed', 'orphaned'])
+
+function readErrorBody (error) {
+  const candidate = error?.cause?.cause ?? error?.cause ?? null
+  if (candidate && typeof candidate === 'object' && !(candidate instanceof Error)) {
+    return candidate
+  }
+  return {}
+}
+
+function wrapProjectDomainError (message, error) {
+  const body = readErrorBody(error)
+  const wrapped = new Error(`${message}: ${error.message}`, { cause: error })
+  if (error?.status) wrapped.status = error.status
+  if (body?.error) wrapped.code = body.error
+  if (body && Object.keys(body).length) wrapped.body = body
+  if (body?.conflicts) wrapped.conflicts = body.conflicts
+  if (body?.failures) wrapped.failures = body.failures
+  if (body?.operations) wrapped.operations = body.operations
+  if (body?.warnings) wrapped.warnings = body.warnings
+  return wrapped
+}
+
+function unwrapProjectDomainResponse (response) {
+  if (!response?.success) {
+    throw new Error(response?.message || response?.error || 'Project domain request failed')
+  }
+
+  const data = response.data
+  if (data && typeof data === 'object' && !Array.isArray(data)) {
+    return {
+      ...data,
+      ...(response.warnings && !data.warnings ? { warnings: response.warnings } : {})
+    }
+  }
+  return data
+}
+
+function findOnboardingForDomain (result, domain) {
+  const target = String(domain || '').toLowerCase()
+  const onboarding = Array.isArray(result?.onboarding)
+    ? result.onboarding
+    : Array.isArray(result?.domains?.statuses)
+      ? result.domains.statuses
+      : []
+  return onboarding.find(entry => String(entry?.hostname || '').toLowerCase() === target) || onboarding[0] || null
+}
+
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
+
 export class DnsService extends BaseService {
   // ==================== DNS METHODS ====================
 
@@ -107,15 +157,17 @@ export class DnsService extends BaseService {
         ...(headers ? { headers } : {}),
         methodName: 'addProjectCustomDomains'
       })
-      if (response.success) {
-        return response.data
-      }
-      throw new Error(response.message)
+      return unwrapProjectDomainResponse(response)
     } catch (error) {
-      throw new Error(
-        `Failed to update project custom domains: ${error.message}`, { cause: error }
-      )
+      throw wrapProjectDomainError('Failed to update project custom domains', error)
     }
+  }
+
+  /**
+   * Singular alias for the self-serve custom-domain add flow.
+   */
+  async addProjectCustomDomain (projectId, domain, options = {}) {
+    return await this.addProjectCustomDomains(projectId, domain, options)
   }
 
   // ==================== DNS HELPER METHODS ====================
@@ -302,12 +354,9 @@ export class DnsService extends BaseService {
         method: 'GET',
         methodName: 'getProjectDomains'
       })
-      if (response.success) {
-        return response.data
-      }
-      throw new Error(response.message)
+      return unwrapProjectDomainResponse(response)
     } catch (error) {
-      throw new Error(`Failed to get project domains: ${error.message}`, { cause: error })
+      throw wrapProjectDomainError('Failed to get project domains', error)
     }
   }
 
@@ -328,13 +377,175 @@ export class DnsService extends BaseService {
         method: 'DELETE',
         methodName: 'removeProjectCustomDomain'
       })
-      if (response.success) {
-        return response.data
-      }
-      throw new Error(response.message)
+      return unwrapProjectDomainResponse(response)
     } catch (error) {
-      throw new Error(`Failed to remove project custom domain: ${error.message}`, { cause: error })
+      throw wrapProjectDomainError('Failed to remove project custom domain', error)
     }
+  }
+
+  /**
+   * Pre-add onboarding check for a custom domain (server PR #440) — returns
+   * frontend-ready DNS instructions + routing mode WITHOUT mutating state.
+   * GET /projects/:projectId/domains/check/:domain
+   */
+  async checkProjectDomain (projectId, domain) {
+    this._requireReady('checkProjectDomain')
+    if (!projectId) {
+      throw new Error('Project ID is required')
+    }
+    if (!domain) {
+      throw new Error('Domain is required')
+    }
+
+    try {
+      const response = await this._request(`/projects/${projectId}/domains/check/${encodeURIComponent(domain)}`, {
+        method: 'GET',
+        methodName: 'checkProjectDomain'
+      })
+      return unwrapProjectDomainResponse(response)
+    } catch (error) {
+      throw wrapProjectDomainError('Failed to check project domain', error)
+    }
+  }
+
+  /**
+   * Alias that mirrors the server controller name.
+   */
+  async checkProjectCustomDomain (projectId, domain) {
+    return await this.checkProjectDomain(projectId, domain)
+  }
+
+  /**
+   * Refresh + persist the Cloudflare validation/SSL state for a configured
+   * custom domain (server PR #440). Poll this while onboarding is pending —
+   * `state` walks needs_dns → pending_hostname_validation → pending_ssl →
+   * active (or failed / orphaned).
+   * GET /projects/:projectId/domains/status/:domain
+   */
+  async getProjectCustomDomainStatus (projectId, domain) {
+    this._requireReady('getProjectCustomDomainStatus')
+    if (!projectId) {
+      throw new Error('Project ID is required')
+    }
+    if (!domain) {
+      throw new Error('Domain is required')
+    }
+
+    try {
+      const response = await this._request(`/projects/${projectId}/domains/status/${encodeURIComponent(domain)}`, {
+        method: 'GET',
+        methodName: 'getProjectCustomDomainStatus'
+      })
+      return unwrapProjectDomainResponse(response)
+    } catch (error) {
+      throw wrapProjectDomainError('Failed to get project domain status', error)
+    }
+  }
+
+  /**
+   * DNS instructions for a configured custom domain from stored state
+   * (server PR #440) — no Cloudflare round-trip.
+   * GET /projects/:projectId/domains/instructions/:domain
+   */
+  async getProjectDomainInstructions (projectId, domain) {
+    this._requireReady('getProjectDomainInstructions')
+    if (!projectId) {
+      throw new Error('Project ID is required')
+    }
+    if (!domain) {
+      throw new Error('Domain is required')
+    }
+
+    try {
+      const response = await this._request(`/projects/${projectId}/domains/instructions/${encodeURIComponent(domain)}`, {
+        method: 'GET',
+        methodName: 'getProjectDomainInstructions'
+      })
+      return unwrapProjectDomainResponse(response)
+    } catch (error) {
+      throw wrapProjectDomainError('Failed to get project domain instructions', error)
+    }
+  }
+
+  /**
+   * Alias that mirrors the server controller name.
+   */
+  async getProjectCustomDomainInstructions (projectId, domain) {
+    return await this.getProjectDomainInstructions(projectId, domain)
+  }
+
+  /**
+   * High-level frontend helper for the self-serve add flow:
+   * 1. preflight DNS/instruction check
+   * 2. Cloudflare-backed add/provision
+   * 3. return the selected onboarding row for immediate rendering
+   */
+  async startProjectCustomDomainSetup (projectId, domain, options = {}) {
+    this._requireReady('startProjectCustomDomainSetup')
+    if (!projectId) {
+      throw new Error('Project ID is required')
+    }
+    if (!domain) {
+      throw new Error('Domain is required')
+    }
+
+    const check = await this.checkProjectDomain(projectId, domain)
+    const add = await this.addProjectCustomDomains(projectId, domain, options)
+    const status = findOnboardingForDomain(add, domain)
+
+    return {
+      projectId,
+      domain,
+      hostname: status?.hostname || check?.hostname || domain,
+      env: status?.env || options.envKey || check?.env || null,
+      state: status?.state || check?.state || null,
+      configured: status?.configured ?? check?.configured ?? false,
+      check,
+      add,
+      status,
+      instructions: status?.instructions || check?.instructions || null,
+      records: status?.records || check?.records || [],
+      warnings: [
+        ...(Array.isArray(add?.warnings) ? add.warnings : []),
+        ...(Array.isArray(status?.warnings) ? status.warnings : [])
+      ]
+    }
+  }
+
+  /**
+   * Poll the authoritative API status endpoint until the domain reaches a
+   * terminal state or the timeout elapses.
+   */
+  async pollProjectCustomDomainStatus (projectId, domain, options = {}) {
+    this._requireReady('pollProjectCustomDomainStatus')
+    if (!projectId) {
+      throw new Error('Project ID is required')
+    }
+    if (!domain) {
+      throw new Error('Domain is required')
+    }
+
+    const {
+      intervalMs = 2000,
+      timeoutMs = 120000,
+      terminalStates = TERMINAL_CUSTOM_DOMAIN_STATES
+    } = options
+    const terminals = terminalStates instanceof Set ? terminalStates : new Set(terminalStates)
+    const deadline = Date.now() + timeoutMs
+    let lastStatus = null
+
+    while (Date.now() <= deadline) {
+      lastStatus = await this.getProjectCustomDomainStatus(projectId, domain)
+      if (terminals.has(lastStatus?.state)) {
+        return lastStatus
+      }
+      await sleep(intervalMs)
+    }
+
+    const error = new Error(`Timed out waiting for custom domain '${domain}' to become ready`)
+    error.code = 'custom_domain_status_timeout'
+    error.lastStatus = lastStatus
+    throw error
   }
 
   /**
