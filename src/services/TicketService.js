@@ -36,9 +36,10 @@ export class TicketService extends BaseService {
    * @returns {Promise<Array>} Array of ticket documents
    */
   list (filter = {}, options = {}) {
-    const scoped = (filter.workspaceId || filter.workspace || filter.workspace_id)
-      ? filter
-      : { ...filter, workspaceId: this._workspaceScope() || undefined }
+    const wid = (filter.workspaceId || filter.workspace || filter.workspace_id)
+      ? null
+      : this._workspaceScope()
+    const scoped = wid ? { ...filter, workspaceId: wid } : filter
     return this._call('tickets.list', '/tickets/list', {
       method: 'POST',
       body: { filter: scoped, options }
@@ -54,9 +55,10 @@ export class TicketService extends BaseService {
    * @returns {Promise<object>} Map of columnKey → count
    */
   columnCounts (filter = {}) {
-    const scoped = (filter.workspaceId || filter.workspace || filter.workspace_id)
-      ? filter
-      : { ...filter, workspaceId: this._workspaceScope() || undefined }
+    const wid = (filter.workspaceId || filter.workspace || filter.workspace_id)
+      ? null
+      : this._workspaceScope()
+    const scoped = wid ? { ...filter, workspaceId: wid } : filter
     return this._call('tickets.columnCounts', '/tickets/column-counts', {
       method: 'POST',
       body: { filter: scoped }
@@ -609,9 +611,10 @@ export class TicketService extends BaseService {
     // didn't pass one, and serialize flat (`?workspaceId=…&project=…`) so the
     // server's `req.query.workspaceId` resolves — the controller was migrated
     // from nested `filter[key]` to flat params in the workspace-scope rewrite.
-    const scoped = (filter.workspaceId || filter.workspace || filter.workspace_id)
-      ? filter
-      : { ...filter, workspaceId: this._workspaceScope() || undefined }
+    const wid = (filter.workspaceId || filter.workspace || filter.workspace_id)
+      ? null
+      : this._workspaceScope()
+    const scoped = wid ? { ...filter, workspaceId: wid } : filter
     return this._sseSubscribe('/tickets/stream', scoped, onEvent, { flatParams: true })
   }
 }
