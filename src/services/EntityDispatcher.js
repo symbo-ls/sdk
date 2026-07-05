@@ -810,6 +810,14 @@ const ENTITY_ROUTES = {
     },
     argMap: { get: () => [], update: argMaps.payload },
   },
+  'workspaceProject.workspaceSettings': {
+    service: 'workspaceProject',
+    methods: {
+      get: 'workspaceSettings.get',
+      update: 'workspaceSettings.upsert',
+    },
+    argMap: { get: () => [], update: argMaps.payload },
+  },
   'workspaceProject.userGrants': {
     service: 'workspaceProject',
     methods: {
