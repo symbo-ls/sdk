@@ -1304,6 +1304,37 @@ const ENTITY_ROUTES = {
       instructions: (a) => [domainsProject(a), domainsHost(a)],
     },
   },
+
+  // ─── Org integrations — external Supabase dispatch ───────────────────────
+  // Generic data plane against a client-owned Supabase project connected as
+  // an OrgIntegration row (kind `supabase_project`). One wire verb:
+  // POST /org-integrations/:idOrSlug/call with { op, table, filter, order,
+  // limit, values }. Op names mirror the server vocabulary (introspect/
+  // select/insert/update/delete); `remove` aliases `delete` so callers using
+  // the dispatcher's standard CRUD vocabulary work too. The server enforces
+  // the per-table op allowlist (config.tableAllowlist) + per-op role policy
+  // (read = org member, write = owner/admin) — never rely on the client.
+  //   sdk.execute('orgIntegration.supabase', 'select',
+  //     { slug: 'acme', table: 'listings', filter, order, limit })
+  'orgIntegration.supabase': {
+    service: 'integration',
+    methods: {
+      introspect: 'supabaseProjectCall',
+      select: 'supabaseProjectCall',
+      insert: 'supabaseProjectCall',
+      update: 'supabaseProjectCall',
+      delete: 'supabaseProjectCall',
+      remove: 'supabaseProjectCall',
+    },
+    argMap: {
+      introspect: (a) => [orgIntegrationSupabaseCall('introspect', a)],
+      select: (a) => [orgIntegrationSupabaseCall('select', a)],
+      insert: (a) => [orgIntegrationSupabaseCall('insert', a)],
+      update: (a) => [orgIntegrationSupabaseCall('update', a)],
+      delete: (a) => [orgIntegrationSupabaseCall('delete', a)],
+      remove: (a) => [orgIntegrationSupabaseCall('delete', a)],
+    },
+  },
 }
 
 // Arg resolvers for the builds/projectDomains routes — accept both the
@@ -1335,6 +1366,28 @@ const domainsProject = (a) =>
 
 const domainsHost = (a) =>
   a?.domain ?? a?.hostname ?? a?.params?.domain ?? a?.params?.hostname
+
+// Bag builder for the orgIntegration.supabase route — accepts both the
+// imperative shape ({ slug, table, filter, ... }) and the declarative
+// fetch-adapter pack ({ filter, params }). `slug` (or `idOrSlug`/`id` — the
+// server route accepts either) resolves the OrgIntegration row; the op is
+// authoritative from the dispatcher verb, never from the caller's bag.
+// IntegrationService.supabaseProjectCall drops undefined fields from the body.
+const orgIntegrationSupabaseCall = (op, a) => ({
+  idOrSlug:
+    a?.idOrSlug ??
+    a?.slug ??
+    a?.id ??
+    a?.params?.idOrSlug ??
+    a?.params?.slug ??
+    a?.params?.id,
+  op,
+  table: a?.table ?? a?.params?.table,
+  filter: a?.filter ?? a?.params?.filter,
+  order: a?.order ?? a?.params?.order,
+  limit: a?.limit ?? a?.params?.limit,
+  values: a?.values ?? a?.params?.values,
+})
 
 const resolveDottedMethod = (target, methodPath) => {
   if (!target || !methodPath) return null

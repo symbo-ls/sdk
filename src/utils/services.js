@@ -356,6 +356,9 @@ export const SERVICE_METHODS = {
   getGitHubRepo: 'integration',
   listGitHubRepos: 'integration',
   syncGitHubIntegration: 'integration',
+  // Generic external-Supabase dispatch (OrgIntegration kind
+  // `supabase_project`) — POST /org-integrations/:idOrSlug/call.
+  supabaseProjectCall: 'integration',
 
   // Feature flag methods (system-level + experiments)
   getFeatureFlags: 'featureFlag',

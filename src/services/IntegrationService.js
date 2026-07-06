@@ -629,6 +629,50 @@ export class IntegrationService extends BaseService {
     }
   }
 
+  // ==================== ORG-INTEGRATION DISPATCH (EXTERNAL SUPABASE) ====================
+
+  /**
+   * Generic call against an org-connected external Supabase project
+   * (OrgIntegration row, kind `supabase_project`) — one wire verb for the
+   * whole external data plane. The server routes by kind, enforces the
+   * per-table op allowlist (integration `config.tableAllowlist`) and the
+   * per-op role policy (read = org member, write = owner/admin), and logs
+   * every call (IntegrationCallLog).
+   *
+   * Mirrors: POST /org-integrations/:idOrSlug/call
+   * Body: { op, table, filter, order, limit, values } — only defined fields.
+   *
+   * Reachable declaratively via
+   * sdk.execute('orgIntegration.supabase', op, { slug, table, ... }).
+   *
+   * @param {object} args
+   * @param {string} args.idOrSlug — OrgIntegration row id or slug (e.g. 'acme')
+   * @param {'introspect'|'select'|'insert'|'update'|'delete'} args.op
+   * @param {string} [args.table] — required by every op except introspect
+   * @param {object} [args.filter] — column → value / operator-grammar match
+   * @param {object|Array} [args.order] — e.g. { column, ascending }
+   * @param {number} [args.limit]
+   * @param {object|Array<object>} [args.values] — insert/update payload
+   * @returns {Promise<*>} unwrapped `data` from the { success, data, message } envelope
+   */
+  supabaseProjectCall ({ idOrSlug, op, table, filter, order, limit, values } = {}) {
+    if (!idOrSlug) throw new Error('idOrSlug is required')
+    if (!op) throw new Error('op is required')
+
+    const body = { op }
+    if (table !== undefined) body.table = table
+    if (filter !== undefined) body.filter = filter
+    if (order !== undefined) body.order = order
+    if (limit !== undefined) body.limit = limit
+    if (values !== undefined) body.values = values
+
+    return this._call(
+      'supabaseProjectCall',
+      `/org-integrations/${encodeURIComponent(idOrSlug)}/call`,
+      { method: 'POST', body }
+    )
+  }
+
   /**
    * Trigger a manual "Pull now" sync for an org's GitHub Projects v2 board.
    *
