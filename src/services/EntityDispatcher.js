@@ -156,6 +156,29 @@ const ENTITY_ROUTES = {
     service: 'workspace',
     methods: { list: 'listWorkspaceMembers', create: 'addWorkspaceMember' },
   },
+  // Merge-safe partial settings write — PATCH /workspaces/:id/settings. The
+  // single writer for settings.{workspaceModule,navbar,apps,
+  // home_default_panels,designSystem,language,layoutDirection,modules} that
+  // deep-merges per key server-side. Distinct from the 'workspace' route's
+  // `update` (whole-doc PATCH /workspaces/:id, which whole-bag REPLACES the
+  // settings object). Threads the workspace id like the canvasLayout.patch
+  // route: id from workspaceId|id; the flat partial-settings object is
+  // `.payload` or the remaining bag keys (id/workspaceId stripped).
+  //   sdk.execute('workspace.settings', 'update', { workspaceId, navbar, apps })
+  //   sdk.execute('workspace.settings', 'update', { workspaceId, payload: { designSystem } })
+  'workspace.settings': {
+    service: 'workspace',
+    methods: { update: 'updateWorkspaceSettings' },
+    argMap: {
+      update: (a) => [
+        a?.workspaceId ?? a?.id,
+        a?.payload ?? (() => {
+          const { workspaceId, id, ...rest } = a || {}
+          return rest
+        })(),
+      ],
+    },
+  },
 
   // ─── Tickets (TicketService — Mongo-backed, SSE realtime) ────────────────
   // The tickets surface lives on its own service. Workspace UI calls go
@@ -1305,6 +1328,38 @@ const ENTITY_ROUTES = {
     },
   },
 
+  // ─── Org integrations — CRUD (connect / grant / scope lifecycle) ─────────
+  // Org-scoped integration rows (OrgIntegration model) behind /org-integrations/*.
+  // Ops map to IntegrationService's org-integration CRUD methods. The server
+  // gates mutations (upsert/remove/assignScope/reorder) to owner/admin, `list`
+  // to any org member, and `kinds` to any authenticated user. An `upsert`
+  // payload's `config.tableAllowlist` carries the per-table op grants the
+  // supabase_project data plane (the sibling 'orgIntegration.supabase' route)
+  // enforces. Distinct from that data-plane route: this is the management
+  // surface, that is the .../call dispatch verb.
+  //   sdk.execute('orgIntegration', 'list', { orgId, scopeType, scopeId })
+  //   sdk.execute('orgIntegration', 'upsert', { orgId, kind, slug, config, secret })
+  //   sdk.execute('orgIntegration', 'kinds')
+  'orgIntegration': {
+    service: 'integration',
+    methods: {
+      list: 'listOrgIntegrations',
+      upsert: 'upsertOrgIntegration',
+      remove: 'deleteOrgIntegration',
+      assignScope: 'assignOrgIntegrationScope',
+      reorder: 'reorderOrgIntegrations',
+      kinds: 'listOrgIntegrationKinds',
+    },
+    argMap: {
+      list: (a) => [orgIntegrationListArgs(a)],
+      upsert: argMaps.payload,
+      remove: argMaps.payload,
+      assignScope: argMaps.payload,
+      reorder: argMaps.payload,
+      kinds: () => [],
+    },
+  },
+
   // ─── Org integrations — external Supabase dispatch ───────────────────────
   // Generic data plane against a client-owned Supabase project connected as
   // an OrgIntegration row (kind `supabase_project`). One wire verb:
@@ -1366,6 +1421,18 @@ const domainsProject = (a) =>
 
 const domainsHost = (a) =>
   a?.domain ?? a?.hostname ?? a?.params?.domain ?? a?.params?.hostname
+
+// Query-param bag builder for the orgIntegration.list op — accepts both the
+// imperative shape ({ orgId, scopeType, ... }) and the declarative
+// fetch-adapter pack ({ filter, params }). listOrgIntegrations drops
+// undefined fields from the query string.
+const orgIntegrationListArgs = (a) => ({
+  orgId: a?.orgId ?? a?.params?.orgId ?? a?.filter?.orgId,
+  scopeType: a?.scopeType ?? a?.params?.scopeType ?? a?.filter?.scopeType,
+  scopeId: a?.scopeId ?? a?.params?.scopeId ?? a?.filter?.scopeId,
+  includeParents:
+    a?.includeParents ?? a?.params?.includeParents ?? a?.filter?.includeParents,
+})
 
 // Bag builder for the orgIntegration.supabase route — accepts both the
 // imperative shape ({ slug, table, filter, ... }) and the declarative

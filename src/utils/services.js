@@ -359,6 +359,15 @@ export const SERVICE_METHODS = {
   // Generic external-Supabase dispatch (OrgIntegration kind
   // `supabase_project`) — POST /org-integrations/:idOrSlug/call.
   supabaseProjectCall: 'integration',
+  // Org-integration CRUD (OrgIntegration rows) — the connect/grant/scope/order
+  // lifecycle behind /org-integrations/*. Distinct from the OAuth-app
+  // /integrations/* methods above and the supabase_project data-plane dispatch.
+  listOrgIntegrations: 'integration',
+  upsertOrgIntegration: 'integration',
+  deleteOrgIntegration: 'integration',
+  assignOrgIntegrationScope: 'integration',
+  reorderOrgIntegrations: 'integration',
+  listOrgIntegrationKinds: 'integration',
 
   // Feature flag methods (system-level + experiments)
   getFeatureFlags: 'featureFlag',
@@ -424,6 +433,7 @@ export const SERVICE_METHODS = {
   listWorkspaces: 'workspace',
   getWorkspace: 'workspace',
   updateWorkspace: 'workspace',
+  updateWorkspaceSettings: 'workspace',
   deleteWorkspace: 'workspace',
   listWorkspaceMembers: 'workspace',
   addWorkspaceMember: 'workspace',

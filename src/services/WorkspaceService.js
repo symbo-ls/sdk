@@ -35,6 +35,40 @@ export class WorkspaceService extends BaseService {
     })
   }
 
+  /**
+   * Merge-safe partial write of a workspace's `settings` bag. Mirrors
+   * PATCH /workspaces/:id/settings
+   * (WorkspaceController.updateWorkspaceSettings) — the server deep-merges
+   * each provided key into `Workspace.settings` via a per-key `$set`
+   * (`settings.<key>`), so a UI write of ONE key never clobbers its
+   * siblings the way `updateWorkspace` (whole-doc PATCH /workspaces/:id →
+   * `$set` REPLACE of the whole `settings` object) would.
+   *
+   * `partialSettings` is a FLAT object of settings keys — only the keys you
+   * pass are touched. Server whitelist:
+   * `navbar`, `apps`, `home_default_panels`, `designSystem`,
+   * `workspaceModule`, `language`, `layoutDirection`, `modules`
+   * (unknown keys are rejected). Owner/admin gated server-side (same
+   * `requireWorkspaceRole(['owner','admin'])` as `updateWorkspace`). When
+   * `workspaceModule` is present the server validates the module reference
+   * (project resolves, is `metadata.workspaceModule`, org-readable) and
+   * clamps its `tier` before persisting.
+   *
+   * @param {string} workspaceId
+   * @param {{ navbar?: any, apps?: any, home_default_panels?: any, designSystem?: any, workspaceModule?: any, language?: any, layoutDirection?: any, modules?: any }} partialSettings
+   * @returns {Promise<{ settings: object }>} unwrapped server data (server sends `{ settings }`)
+   */
+  async updateWorkspaceSettings (workspaceId, partialSettings) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!partialSettings || typeof partialSettings !== 'object' || Array.isArray(partialSettings)) {
+      throw new Error('partialSettings object is required')
+    }
+    return this._call('updateWorkspaceSettings', `/workspaces/${workspaceId}/settings`, {
+      method: 'PATCH',
+      body: partialSettings,
+    })
+  }
+
   async deleteWorkspace (workspaceId) {
     if (!workspaceId) throw new Error('workspaceId is required')
     return this._call('deleteWorkspace', `/workspaces/${workspaceId}`, { method: 'DELETE' })

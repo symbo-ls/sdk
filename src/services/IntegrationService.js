@@ -673,6 +673,172 @@ export class IntegrationService extends BaseService {
     )
   }
 
+  // ==================== ORG-INTEGRATION CRUD (/org-integrations/*) ==============
+  //
+  // Org-scoped integration rows (OrgIntegration model) — the connect / grant /
+  // scope / order lifecycle. Distinct from BOTH the /integrations/* OAuth-app
+  // surface above AND the data-plane dispatch verb `supabaseProjectCall`
+  // (POST /org-integrations/:idOrSlug/call). These mirror the shared
+  // integrations facade (workspace/packages/shared/integrations/index.js), moved
+  // into the SDK proper so UI callers obey the SDK-only-transport rule.
+  //
+  // Server gating (server/src/domains/integrations/routes/orgIntegrations.js):
+  //   GET  /org-integrations        — any org member  (ALL_ORG_TIERS)
+  //   GET  /org-integrations/kinds  — any authenticated user (pre-org onboarding)
+  //   POST/DELETE + assign-scope/reorder — owner/admin only
+  //
+  // These routes emit BARE payloads (`{ items }`, `{ kinds }`, `{ ok, ... }`),
+  // not the `{ success, data, message }` envelope. `_call` tolerates both —
+  // it returns a bare payload verbatim and only unwraps `data` when a
+  // `success` key is present — so every method below returns the server JSON
+  // as-is.
+
+  /**
+   * List an org's configured integration rows, with optional scope
+   * inheritance (project ⊇ workspace ⊇ org). Undefined params are omitted
+   * from the query string.
+   *
+   * Mirrors: GET /org-integrations?orgId=&scopeType=&scopeId=&includeParents=
+   *
+   * @param {object} [args]
+   * @param {string} args.orgId — required; org ObjectId
+   * @param {'org'|'workspace'|'project'} [args.scopeType]
+   * @param {string} [args.scopeId] — required by the server when scopeType is workspace|project
+   * @param {boolean} [args.includeParents] — server default true
+   * @returns {Promise<{ items: object[] }>}
+   */
+  listOrgIntegrations ({ orgId, scopeType, scopeId, includeParents } = {}) {
+    if (!orgId) throw new Error('orgId is required')
+    const params = new URLSearchParams()
+    params.set('orgId', String(orgId))
+    if (scopeType !== undefined) params.set('scopeType', String(scopeType))
+    if (scopeId !== undefined) params.set('scopeId', String(scopeId))
+    if (includeParents !== undefined) params.set('includeParents', String(includeParents))
+    return this._call('listOrgIntegrations', `/org-integrations?${params.toString()}`)
+  }
+
+  /**
+   * Upsert an org integration row by its natural key
+   * (org, scopeType, scope, kind, slug). A `secret` (e.g. a Supabase service
+   * key) is written to the server-side secret store and NEVER returned.
+   * `config` carries the per-table op grants (`config.tableAllowlist` +
+   * optional `config.writeRoles`) the `supabase_project` data plane enforces.
+   * `payload` is sent VERBATIM.
+   *
+   * Mirrors: POST /org-integrations
+   *
+   * @param {object} payload
+   * @param {string} payload.orgId
+   * @param {string} payload.kind — e.g. 'supabase_project'
+   * @param {string} [payload.slug] — server default 'default'
+   * @param {'org'|'workspace'|'project'} [payload.scopeType] — server default 'org'
+   * @param {string} [payload.scopeId] — required when scopeType is workspace|project
+   * @param {string} [payload.displayName]
+   * @param {string} [payload.secret] — write-only; → server secret store, never echoed
+   * @param {object} [payload.config] — e.g. { tableAllowlist, writeRoles }
+   * @param {boolean} [payload.enabled]
+   * @returns {Promise<{ ok: boolean, kind: string, slug: string, scopeType: string, scopeId: string|null, hasSecret: boolean, wroteSecret: boolean }>}
+   */
+  upsertOrgIntegration (payload = {}) {
+    if (!payload.orgId) throw new Error('orgId is required')
+    if (!payload.kind) throw new Error('kind is required')
+    return this._call('upsertOrgIntegration', '/org-integrations', {
+      method: 'POST',
+      body: payload,
+    })
+  }
+
+  /**
+   * Delete an org integration row. Must match the row's scope EXACTLY (no
+   * inheritance on delete); the server also deletes its stored secret
+   * (best-effort). The identifying fields ride in the request BODY (not the
+   * path) — only defined fields are sent.
+   *
+   * Mirrors: DELETE /org-integrations
+   *
+   * @param {object} args
+   * @param {string} args.orgId
+   * @param {string} args.kind
+   * @param {string} [args.slug] — server default 'default'
+   * @param {'org'|'workspace'|'project'} [args.scopeType] — server default 'org'
+   * @param {string} [args.scopeId]
+   * @returns {Promise<{ ok: boolean, kind: string, slug: string, scopeType: string, scopeId: string|null }>}
+   */
+  deleteOrgIntegration ({ orgId, kind, slug, scopeType, scopeId } = {}) {
+    if (!orgId) throw new Error('orgId is required')
+    if (!kind) throw new Error('kind is required')
+    const body = { orgId, kind }
+    if (slug !== undefined) body.slug = slug
+    if (scopeType !== undefined) body.scopeType = scopeType
+    if (scopeId !== undefined) body.scopeId = scopeId
+    return this._call('deleteOrgIntegration', '/org-integrations', {
+      method: 'DELETE',
+      body,
+    })
+  }
+
+  /**
+   * Move an integration row from one scope to another. The row keeps its id
+   * (and therefore its stored secret). `payload` is sent VERBATIM.
+   *
+   * Mirrors: POST /org-integrations/assign-scope
+   *
+   * @param {object} payload
+   * @param {string} payload.orgId
+   * @param {string} payload.kind
+   * @param {string} [payload.slug] — server default 'default'
+   * @param {'org'|'workspace'|'project'} [payload.fromScopeType] — server default 'org'
+   * @param {string} [payload.fromScopeId]
+   * @param {'org'|'workspace'|'project'} payload.toScopeType
+   * @param {string} [payload.toScopeId] — required when toScopeType is workspace|project
+   * @returns {Promise<object>}
+   */
+  assignOrgIntegrationScope (payload = {}) {
+    if (!payload.orgId) throw new Error('orgId is required')
+    if (!payload.kind) throw new Error('kind is required')
+    return this._call('assignOrgIntegrationScope', '/org-integrations/assign-scope', {
+      method: 'POST',
+      body: payload,
+    })
+  }
+
+  /**
+   * Persist a drag-and-drop reorder of an org's integration instances
+   * (§I12). `slugs` is the new ordered array for the given
+   * (orgId, kind, scopeType, scopeId); each slug at index i gets position=i,
+   * so the list endpoint returns them in order. `payload` is sent VERBATIM.
+   *
+   * Mirrors: POST /org-integrations/reorder
+   *
+   * @param {object} payload
+   * @param {string} payload.orgId
+   * @param {string} payload.kind
+   * @param {string[]} payload.slugs
+   * @param {'org'|'workspace'|'project'} [payload.scopeType] — server default 'org'
+   * @param {string} [payload.scopeId]
+   * @returns {Promise<{ ok: boolean, kind: string, slugs: string[] }>}
+   */
+  reorderOrgIntegrations (payload = {}) {
+    if (!payload.orgId) throw new Error('orgId is required')
+    if (!payload.kind) throw new Error('kind is required')
+    return this._call('reorderOrgIntegrations', '/org-integrations/reorder', {
+      method: 'POST',
+      body: payload,
+    })
+  }
+
+  /**
+   * Read the integration-kinds catalogue. Any authenticated user — no org
+   * membership required (onboarding renders this pre-org).
+   *
+   * Mirrors: GET /org-integrations/kinds
+   *
+   * @returns {Promise<{ kinds: object[] }>}
+   */
+  listOrgIntegrationKinds () {
+    return this._call('listOrgIntegrationKinds', '/org-integrations/kinds')
+  }
+
   /**
    * Trigger a manual "Pull now" sync for an org's GitHub Projects v2 board.
    *
