@@ -234,6 +234,11 @@ export class AiService extends BaseService {
         // it to resume the loop. Without a handler, the server gets an error
         // result and the model adapts.
         onToolCall: callbacks.onToolCall,
+        // Structured tool-activity frames ({ phase:'started'|'completed',
+        // callId, tool, args?, ok?, summary? }) for EVERY tool the loop runs —
+        // the consumer renders these as the live agentic timeline instead of
+        // any tool traffic ever appearing as message text.
+        onToolEvent: callbacks.onToolEvent,
         // Live active-process events (delegated/chained sub-agents starting +
         // finishing) — informational; the consumer renders the process panel +
         // canvas activity from these.
@@ -391,7 +396,7 @@ export class AiService extends BaseService {
   //
   // Returns cancel() — aborts the SSE stream and marks the turn cancelled.
   _streamWorkspaceTurn (payload, callbacks = {}) {
-    const { onChunk, onDone, onError, onToolCall, onProcessActive } = callbacks
+    const { onChunk, onDone, onError, onToolCall, onToolEvent, onProcessActive } = callbacks
 
     // Scope: workspace is the DEFAULT ("most common"); a project-scoped
     // conversation is used when a projectId is supplied — agents work on both.
@@ -516,6 +521,14 @@ export class AiService extends BaseService {
                 })
               )
               .finally(() => { clientToolPending = false })
+            return
+          }
+          // Structured tool-activity frames — the loop opened ('started') or
+          // closed ('completed') a tool row. PURELY INFORMATIONAL like the
+          // process events; the consumer renders the live agentic timeline
+          // from these (never from message text).
+          if (event === 'tool.activity') {
+            onToolEvent?.(data || {})
             return
           }
           // Active-process events: a delegated/chained sub-agent started or
