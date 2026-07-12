@@ -440,7 +440,9 @@ const ENTITY_ROUTES = {
       remove: 'chat.removeChannel',
     },
     argMap: {
-      list: () => [],
+      // workspaceId is optional — WorkspaceProjectService.chat.listChannels
+      // defaults to the SDK's activeWorkspaceId when undefined.
+      list: (a) => [a?.workspaceId],
       create: argMaps.payload,
       update: argMaps.idPayload,
       remove: argMaps.id,
@@ -449,7 +451,9 @@ const ENTITY_ROUTES = {
   'workspaceProject.chat.members': {
     service: 'workspaceProject',
     methods: {
-      // listMembers(channelId?) — undefined channelId routes to bulk GET /chat/members
+      // listMembers(channelId?, { bulk, workspaceId }?) — undefined channelId
+      // + bulk:true routes to bulk GET /chat/members; the service throws if
+      // channelId is falsy and bulk isn't explicitly true.
       list: 'chat.listMembers',
       create: 'chat.addMember',
       update: 'chat.updateMember',
@@ -458,8 +462,15 @@ const ENTITY_ROUTES = {
       mute: 'chat.muteChannel',
     },
     argMap: {
-      // Pass channelId (possibly undefined) — service routes to bulk or per-channel
-      list: (a) => [a?.channelId ?? a?.filter?.channelId],
+      // No silent channel→workspace escalation at the service layer (see
+      // WorkspaceProjectService.chat.listMembers) — this route is the
+      // trusted internal caller that keeps the historical "no channelId ⇒
+      // bulk" behavior working for declarative fetch: consumers by passing
+      // `bulk: true` explicitly whenever channelId is absent.
+      list: (a) => {
+        const channelId = a?.channelId ?? a?.filter?.channelId
+        return [channelId, { bulk: !channelId, workspaceId: a?.workspaceId }]
+      },
       create: (a) => [a?.channelId, a?.payload ?? { user_id: a?.userId, role: a?.role }],
       update: (a) => [a?.channelId, a?.userId, a?.payload ?? a?.data ?? a],
       remove: (a) => [a?.channelId, a?.userId],
@@ -470,7 +481,9 @@ const ENTITY_ROUTES = {
   'workspaceProject.chat.messages': {
     service: 'workspaceProject',
     methods: {
-      // listMessages(channelId?, options?) — undefined channelId routes to bulk GET /chat/messages
+      // listMessages(channelId?, options?) — options.bulk:true (set below
+      // when channelId is absent) routes to bulk GET /chat/messages; the
+      // service throws if channelId is falsy and bulk isn't explicit.
       list: 'chat.listMessages',
       create: 'chat.sendMessage',
       update: 'chat.updateMessage',
@@ -478,11 +491,23 @@ const ENTITY_ROUTES = {
       react: 'chat.toggleReaction',
     },
     argMap: {
-      // Pass channelId (possibly undefined) — service routes to bulk or per-channel
-      list: (a) => [
-        a?.channelId ?? a?.filter?.channelId ?? a?.params?.channelId,
-        { single: a?.single, limit: a?.limit, offset: a?.offset, order: a?.order, ...(a?.options || {}) }
-      ],
+      // Same "no silent escalation" contract as chat.members.list above —
+      // this route sets `bulk: true` for its callers so
+      // sdk.execute('workspaceProject.chat.messages', 'list', {...}) with
+      // no channelId keeps working byte-identically for declarative
+      // fetch: consumers (the chat page's 500-row bulk load).
+      list: (a) => {
+        const channelId = a?.channelId ?? a?.filter?.channelId ?? a?.params?.channelId
+        return [
+          channelId,
+          {
+            single: a?.single, limit: a?.limit, offset: a?.offset, order: a?.order,
+            ...(a?.options || {}),
+            bulk: !channelId,
+            workspaceId: a?.workspaceId ?? a?.options?.workspaceId,
+          }
+        ]
+      },
       create: (a) => [a?.channelId ?? a?.filter?.channelId, a?.payload ?? a?.data ?? (() => {
         const { channelId, filter, options, ...rest } = a || {}; return rest
       })()],
@@ -500,7 +525,17 @@ const ENTITY_ROUTES = {
       markRead: 'chat.markMentionsRead',
     },
     argMap: {
-      list: argMaps.filterOptions,
+      // workspaceId threads into options.workspaceId — WorkspaceProjectService
+      // .chat.listMentions pulls it back out and sends it as a query param
+      // (not folded into the POST body) before defaulting to activeWorkspaceId.
+      list: (a) => [
+        a?.filter ?? a?.params,
+        {
+          single: a?.single, limit: a?.limit, offset: a?.offset, order: a?.order,
+          ...(a?.options || {}),
+          workspaceId: a?.workspaceId ?? a?.options?.workspaceId,
+        }
+      ],
       markRead: (a) => [a?.channelId, a?.callerEmail ?? a?.userId ?? a?.email],
     },
   },
@@ -510,7 +545,7 @@ const ENTITY_ROUTES = {
     service: 'workspaceProject',
     methods: { rpc: 'chat.searchMessages' },
     argMap: {
-      rpc: (a) => [a?.q ?? a?.query, a?.callerEmail ?? a?.userId ?? a?.email],
+      rpc: (a) => [a?.q ?? a?.query, a?.callerEmail ?? a?.userId ?? a?.email, a?.workspaceId],
     },
   },
   'workspaceProject.calendar': {

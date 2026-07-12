@@ -13,6 +13,43 @@ import { BaseService } from '../../../src/services/BaseService.js'
 
 const WORKSPACE_PROJECT_PREFIX = '/workspace-project'
 
+// Decode a JWT payload without verifying the signature, mirroring
+// TokenManager._decodeJwtExpMs's base64url→JSON pattern (sdk/src/utils/
+// TokenManager.js) but pulling the workspace claim instead of `exp`. Used by
+// `_resolveAuthHeader`'s staleness guard below. Precedence matches the
+// server's own extraction (server/workers/workspace-project/src/auth.js
+// `claimsToScope`): top-level `workspace_id`/`workspaceId` first, then
+// `app_metadata.workspace_id` / `app_metadata.active_workspace_id`.
+//
+// Returns `null` for anything that isn't a 3-part JWT, fails to parse, or
+// carries no workspace claim — callers MUST treat `null` as "unknown", not
+// "no workspace", so an opaque/undecodable token never gets treated as
+// stale.
+const _decodeJwtWorkspaceId = (token) => {
+  if (!token || typeof token !== 'string') return null
+  const parts = token.split('.')
+  if (parts.length !== 3) return null
+  try {
+    let payload = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    while (payload.length % 4) payload += '='
+    const json =
+      typeof atob === 'function'
+        ? atob(payload)
+        : Buffer.from(payload, 'base64').toString('utf8')
+    const claims = JSON.parse(json)
+    const appMeta = claims?.app_metadata || {}
+    return (
+      claims?.workspace_id ??
+      claims?.workspaceId ??
+      appMeta.workspace_id ??
+      appMeta.active_workspace_id ??
+      null
+    )
+  } catch {
+    return null
+  }
+}
+
 // Compose a workspace-project base URL given an api base. Public so any
 // consumer that needs the full `${apiBase}/workspace-project` URL (e.g.
 // the Supabase passthrough adapter) reads it from the SDK rather than
@@ -194,10 +231,45 @@ export class WorkspaceProjectService extends BaseService {
         // Returning null here would send the request with no Authorization
         // header and 401 the user, even though they have a perfectly valid
         // session token.
-        if (result) {
-          if (typeof result === 'string') return `Bearer ${result}`
-          if (result.token) return `Bearer ${result.token}`
-          if (result.access_token) return `Bearer ${result.access_token}`
+        const federatedToken = result
+          ? typeof result === 'string'
+            ? result
+            : result.token || result.access_token || null
+          : null
+        if (federatedToken) {
+          // Workspace-scoping guard ("workspace-scoping gaps in the chat
+          // transport" ticket, 2026-07-13): a cached/localStorage federated
+          // JWT can outlive a `switchOrg`/`switchWorkspace` call — it keeps
+          // the OLD workspace claim until the background re-mint lands,
+          // which can stall indefinitely while the federation Supabase
+          // plane is paused (current dev/local reality). The SDK's own
+          // `activeWorkspaceId` is updated SYNCHRONOUSLY by
+          // sdk.switchOrg/switchWorkspace (see index.js), so it's the
+          // freshest signal available. When it disagrees with the JWT's
+          // decoded workspace claim, the Mongo access token (scoped via
+          // Mongo `User.activeOrganization`/`activeWorkspace`, never
+          // stale) is more trustworthy — prefer it. An undecodable JWT or
+          // an unset activeWorkspaceId is "unknown" (not "stale") and
+          // keeps the historical precedence (federated JWT wins).
+          const activeWorkspaceId = this._context?.activeWorkspaceId
+          const claimedWorkspaceId = _decodeJwtWorkspaceId(federatedToken)
+          const staleWorkspaceClaim =
+            activeWorkspaceId != null &&
+            claimedWorkspaceId != null &&
+            String(claimedWorkspaceId) !== String(activeWorkspaceId)
+          if (!staleWorkspaceClaim) return `Bearer ${federatedToken}`
+          // Stale — try the Mongo token first, but fall back to the stale
+          // federated JWT if the TokenManager can't produce one, so we
+          // still send SOME auth header rather than 401ing a user with a
+          // valid (if momentarily mis-scoped) session.
+          if (this._tokenManager) {
+            try {
+              await this._tokenManager.ensureValidToken()
+              const mongoHeader = this._tokenManager.getAuthHeader()
+              if (mongoHeader) return mongoHeader
+            } catch {}
+          }
+          return `Bearer ${federatedToken}`
         }
       } catch {}
     }
@@ -208,6 +280,33 @@ export class WorkspaceProjectService extends BaseService {
       } catch {}
     }
     return null
+  }
+
+  // switchOrg/switchWorkspace hooks — sdk.switchOrg/switchWorkspace
+  // (sdk/src/index.js) walk every service that implements these after
+  // updating `_context.activeWorkspaceId`. Best-effort invalidate any
+  // cache the token provider keeps internally (e.g. the workspace app's
+  // workspaceTokenProvider 30s localStorage cache) so the NEXT
+  // `_resolveAuthHeader()` call re-reads a fresh federated JWT instead of
+  // serving a stale one for up to the cache TTL. Providers opt in by
+  // attaching an `.invalidate()` method to the function passed as
+  // `context.workspaceProjectTokenProvider`; providers that don't expose
+  // one are unaffected — the staleness guard in `_resolveAuthHeader` above
+  // is the primary defense either way, this is just belt-and-suspenders.
+  switchOrg() {
+    this._invalidateTokenProviderCache()
+  }
+
+  switchWorkspace() {
+    this._invalidateTokenProviderCache()
+  }
+
+  _invalidateTokenProviderCache() {
+    try {
+      if (typeof this._tokenProvider?.invalidate === 'function') {
+        this._tokenProvider.invalidate()
+      }
+    } catch {}
   }
 
   async _ws(methodName, endpoint, { method = 'GET', body, headers } = {}) {
@@ -400,9 +499,29 @@ export class WorkspaceProjectService extends BaseService {
     }
   }
 
+  // Resolve the workspaceId a chat READ should scope to: an explicit
+  // caller-supplied value wins; otherwise fall back to the SDK's own
+  // `activeWorkspaceId` context (kept fresh by sdk.switchOrg/
+  // switchWorkspace — see the staleness guard in `_resolveAuthHeader`
+  // above). The server-side wrapper still authorizes off the bearer
+  // token; this query param additionally lets it enforce the caller's
+  // chosen tenant instead of trusting whichever workspace the (possibly
+  // stale) federated JWT claims. Returns `undefined` when neither source
+  // has a value, so callers can omit the param entirely.
+  _chatWorkspaceId(workspaceId) {
+    return workspaceId ?? this._context?.activeWorkspaceId ?? undefined
+  }
+
   // --- Chat -------------------------------------------------------------------
   chat = {
-    listChannels: () => this._ws('chat.listChannels', '/chat/channels'),
+    // workspaceId is optional — defaults to `this._context.activeWorkspaceId`
+    // via `_chatWorkspaceId` (see "workspace-scoping gaps in the chat
+    // transport" ticket, 2026-07-13).
+    listChannels: (workspaceId) => {
+      const wsId = this._chatWorkspaceId(workspaceId)
+      const qs = wsId ? `?workspaceId=${encodeURIComponent(wsId)}` : ''
+      return this._ws('chat.listChannels', `/chat/channels${qs}`)
+    },
     createChannel: (payload) =>
       this._ws('chat.createChannel', '/chat/channels', {
         method: 'POST',
@@ -426,16 +545,28 @@ export class WorkspaceProjectService extends BaseService {
         }
       ),
 
+    // No silent channel→workspace read escalation: a falsy `channelId`
+    // ONLY routes to the workspace-wide bulk dump when the caller passes
+    // `{ bulk: true }` explicitly. The declarative entity-dispatch route
+    // (EntityDispatcher.js `workspaceProject.chat.messages`) sets `bulk`
+    // for its callers so `sdk.execute(..., 'list', {})` (no channelId)
+    // keeps working byte-identically; direct `svc.chat.listMessages()`
+    // callers must opt in.
     listMessages: (channelId, options) => {
-      const qs =
-        options && typeof options === 'object'
-          ? new URLSearchParams(
-              Object.entries(options).reduce((acc, [k, v]) => {
-                if (v !== undefined && v !== null) acc[k] = String(v)
-                return acc
-              }, {})
-            ).toString()
-          : ''
+      const { bulk, workspaceId, ...queryOptions } =
+        options && typeof options === 'object' ? options : {}
+      if (!channelId && bulk !== true) {
+        throw new Error(
+          '[chat.listMessages] channelId is required — pass { bulk: true } explicitly for a workspace-wide read'
+        )
+      }
+      const params = Object.entries(queryOptions).reduce((acc, [k, v]) => {
+        if (v !== undefined && v !== null) acc[k] = String(v)
+        return acc
+      }, {})
+      const wsId = this._chatWorkspaceId(workspaceId)
+      if (wsId) params.workspaceId = String(wsId)
+      const qs = new URLSearchParams(params).toString()
       const tail = qs ? `?${qs}` : ''
       return channelId
         ? this._ws(
@@ -480,13 +611,25 @@ export class WorkspaceProjectService extends BaseService {
         }
       ),
 
-    listMembers: (channelId) =>
-      channelId
+    // No silent channel→workspace read escalation — see listMessages above;
+    // same `{ bulk: true }` contract.
+    listMembers: (channelId, options) => {
+      const { bulk, workspaceId } =
+        options && typeof options === 'object' ? options : {}
+      if (!channelId && bulk !== true) {
+        throw new Error(
+          '[chat.listMembers] channelId is required — pass { bulk: true } explicitly for a workspace-wide read'
+        )
+      }
+      const wsId = this._chatWorkspaceId(workspaceId)
+      const qs = wsId ? `?workspaceId=${encodeURIComponent(wsId)}` : ''
+      return channelId
         ? this._ws(
             'chat.listMembers',
-            `/chat/channels/${encodeURIComponent(channelId)}/members`
+            `/chat/channels/${encodeURIComponent(channelId)}/members${qs}`
           )
-        : this._ws('chat.listAllMembers', '/chat/members'),
+        : this._ws('chat.listAllMembers', `/chat/members${qs}`)
+    },
     addMember: (channelId, payload) =>
       this._ws('chat.addMember', '/chat/members', {
         method: 'POST',
@@ -528,11 +671,20 @@ export class WorkspaceProjectService extends BaseService {
         }
       ),
 
-    listMentions: (filter, options) =>
-      this._ws('chat.listMentions', '/chat/mentions', {
+    // workspaceId (options.workspaceId, defaulting to activeWorkspaceId) is
+    // sent as a query param — NOT folded into the POST body — so the
+    // server can enforce it the same way as the GET-based chat reads
+    // above, independent of the filter/options body shape.
+    listMentions: (filter, options) => {
+      const hasOptions = !!(options && typeof options === 'object')
+      const { workspaceId, ...restOptions } = hasOptions ? options : {}
+      const wsId = this._chatWorkspaceId(workspaceId)
+      const qs = wsId ? `?workspaceId=${encodeURIComponent(wsId)}` : ''
+      return this._ws('chat.listMentions', `/chat/mentions${qs}`, {
         method: 'POST',
-        body: { filter, options }
-      }),
+        body: { filter, options: hasOptions ? restOptions : options }
+      })
+    },
     // Mark every chat_mention for the caller in a channel as read. Wraps the
     // chat_mark_mentions_read SQL function — see migration 0015.
     markMentionsRead: (channelId, callerEmail) =>
@@ -546,11 +698,16 @@ export class WorkspaceProjectService extends BaseService {
       ),
     // Full-text search over messages in channels the caller belongs to.
     // Wraps the chat_search_messages SQL function — see migration 0014.
-    searchMessages: (q, callerEmail) =>
-      this._ws('chat.searchMessages', '/chat/search', {
+    // workspaceId (optional 3rd arg, defaulting to activeWorkspaceId) is
+    // sent as a query param — same contract as listMentions above.
+    searchMessages: (q, callerEmail, workspaceId) => {
+      const wsId = this._chatWorkspaceId(workspaceId)
+      const qs = wsId ? `?workspaceId=${encodeURIComponent(wsId)}` : ''
+      return this._ws('chat.searchMessages', `/chat/search${qs}`, {
         method: 'POST',
         body: { q, callerEmail }
       })
+    }
   }
 
   // --- Calendar ---------------------------------------------------------------
@@ -1668,8 +1825,13 @@ export class WorkspaceProjectService extends BaseService {
 
       // FLAT query params — the controller reads req.query.workspaceId / .tables
       // directly (NOT filter[workspaceId]). Only forward defined scope keys.
+      // workspaceId defaults to the SDK's own activeWorkspaceId context when
+      // the caller omits it (see _chatWorkspaceId / _resolveAuthHeader's
+      // staleness guard above) so a subscribe() call after switchWorkspace
+      // scopes to the NEW workspace even before any explicit caller update.
       const filter = {}
-      if (workspaceId) filter.workspaceId = workspaceId
+      const wsId = this._chatWorkspaceId(workspaceId)
+      if (wsId) filter.workspaceId = wsId
       if (Array.isArray(tables) && tables.length)
         filter.tables = tables.join(',')
       else if (typeof tables === 'string' && tables) filter.tables = tables
