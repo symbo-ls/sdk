@@ -424,6 +424,9 @@ export class AiService extends BaseService {
     let clientToolPending = false
     let cancelStream = () => {}
     let fallbackTimer = null
+    // Client tools handled this turn — the same call can arrive over BOTH the
+    // SSE frame (fast-path) and a POST response (reliable path); run it once.
+    const handledCalls = new Set()
 
     const stopStream = () => { try { cancelStream() } catch (_) {} }
     const clearFallback = () => {
@@ -457,6 +460,49 @@ export class AiService extends BaseService {
       clearFallback()
       onError?.(err)
       stopStream()
+    }
+
+    // Run one client (browser) tool and submit its outcome to resume the loop.
+    // Reached from the SSE `tool.call_required` frame AND from suspended POST
+    // responses — the latter is the reliable path: a proxied/idle stream can
+    // die between suspensions, and a chained client tool whose frame is lost
+    // used to strand the turn (observed: ask_user confirm → follow-on
+    // aiDeleteTicket never delivered). The resume response likewise carries
+    // either the NEXT suspension (chain again) or the final answer (finish).
+    const runClientTool = (call) => {
+      const id = String(call?.callId || '')
+      if (!id || handledCalls.has(id) || answered || cancelled) return
+      handledCalls.add(id)
+      clientToolPending = true
+      clearFallback()
+      Promise.resolve(
+        onToolCall
+          ? onToolCall(id, call.tool, call.args, call)
+          : { ok: false, error: 'No client-tool handler registered for this surface.' }
+      )
+        .then((result) =>
+          this.submitToolResult(resolvedConvId, id, result === undefined ? { ok: true } : result, {
+            projectId: payload?.projectId
+          })
+        )
+        .catch((err) =>
+          this.submitToolResult(resolvedConvId, id, { ok: false, error: String(err?.message || err) }, {
+            projectId: payload?.projectId
+          })
+        )
+        .then((resume) => {
+          if (!resume) return
+          if (resume.suspended) {
+            if (resume.fn && resume.callId) runClientTool(resume)
+            return
+          }
+          const txt = blocksToText(resume.assistantMessage?.content)
+          if (txt) {
+            finishAnswer(txt, resume.assistantMessage?._id || resume.assistantMessage?.id || null)
+          }
+        })
+        .catch(() => { /* resume-response consumption is best-effort */ })
+        .finally(() => { clientToolPending = false })
     }
 
     ;(async () => {
@@ -497,49 +543,10 @@ export class AiService extends BaseService {
             onChunk?.(data.message)
             return
           }
-          // Client (browser) tool: the server suspended the loop and wants the
-          // browser to run a platform action (el.call), then POST the result so
-          // the loop resumes. Keep the stream open across the round-trip (the
-          // real answer arrives later) and suppress the post-POST fallback so an
-          // intermediate tool_call frame isn't mistaken for the final answer.
-          //
-          // RELIABILITY: the resume POST's response ALREADY carries the loop's
-          // outcome ({ assistantMessage, suspended }). Consume it — the SSE
-          // message.created frame becomes a fast-path, not a dependency. Turns
-          // used to hang forever ("Thinking…", typing stuck) whenever that one
-          // frame was missed after a round-trip, even though the server had
-          // completed and persisted the final answer. finishAnswer's `answered`
-          // guard dedupes whichever of frame/POST-response lands first.
+          // Client (browser) tool fast-path — the reliable path is the POST
+          // responses (see runClientTool); dedupe by callId.
           if (event === 'tool.call_required' && data?.callId) {
-            clientToolPending = true
-            clearFallback()
-            Promise.resolve(
-              onToolCall
-                ? onToolCall(data.callId, data.tool, data.args, data)
-                : { ok: false, error: 'No client-tool handler registered for this surface.' }
-            )
-              .then((result) =>
-                this.submitToolResult(conversationId, data.callId, result === undefined ? { ok: true } : result, {
-                  projectId: payload?.projectId
-                })
-              )
-              .catch((err) =>
-                this.submitToolResult(conversationId, data.callId, { ok: false, error: String(err?.message || err) }, {
-                  projectId: payload?.projectId
-                })
-              )
-              .then((resume) => {
-                // A still-suspended resume means ANOTHER client tool is coming
-                // over the stream — keep waiting. A final assistantMessage with
-                // text ends the turn here even if its frame never arrives.
-                if (!resume || resume.suspended) return
-                const txt = blocksToText(resume.assistantMessage?.content)
-                if (txt) {
-                  finishAnswer(txt, resume.assistantMessage?._id || resume.assistantMessage?.id || null)
-                }
-              })
-              .catch(() => { /* resume-response consumption is best-effort */ })
-              .finally(() => { clientToolPending = false })
+            runClientTool(data)
             return
           }
           // Structured tool-activity frames — the loop opened ('started') or
@@ -586,15 +593,28 @@ export class AiService extends BaseService {
           context: (payload && payload.context) || null
         },
         methodName: 'ai.appendMessage'
-      }).then(() => {
+      }).then((res) => {
         if (answered || cancelled) return
+        // The POST response is the RELIABLE turn outcome: it carries either a
+        // client-tool suspension (run it here — the SSE frame is a fast-path
+        // that dies with the stream) or the final assistant message.
+        const outcome = this._unwrap(res)
+        if (outcome && outcome.suspended && outcome.fn && outcome.callId) {
+          runClientTool(outcome)
+          return
+        }
+        const finalTxt = blocksToText(outcome?.assistantMessage?.content)
+        if (finalTxt) {
+          finishAnswer(
+            finalTxt,
+            outcome?.assistantMessage?._id || outcome?.assistantMessage?.id || null
+          )
+          return
+        }
         // Race guard: if the assistant frame hasn't arrived shortly after
         // the POST resolves, read the conversation directly and use the
         // latest assistant message.
         clearFallback()
-        // A client-tool turn suspends here (POST resolves with no final answer);
-        // the real answer streams in after the browser round-trip. Don't let the
-        // fallback read the intermediate tool_call frame as the answer.
         if (clientToolPending) return
         fallbackTimer = setTimeout(() => {
           this._fallbackToLatestAssistant(base, conversationId, finishAnswer, fail)
