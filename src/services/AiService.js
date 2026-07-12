@@ -502,6 +502,14 @@ export class AiService extends BaseService {
           // the loop resumes. Keep the stream open across the round-trip (the
           // real answer arrives later) and suppress the post-POST fallback so an
           // intermediate tool_call frame isn't mistaken for the final answer.
+          //
+          // RELIABILITY: the resume POST's response ALREADY carries the loop's
+          // outcome ({ assistantMessage, suspended }). Consume it — the SSE
+          // message.created frame becomes a fast-path, not a dependency. Turns
+          // used to hang forever ("Thinking…", typing stuck) whenever that one
+          // frame was missed after a round-trip, even though the server had
+          // completed and persisted the final answer. finishAnswer's `answered`
+          // guard dedupes whichever of frame/POST-response lands first.
           if (event === 'tool.call_required' && data?.callId) {
             clientToolPending = true
             clearFallback()
@@ -520,6 +528,17 @@ export class AiService extends BaseService {
                   projectId: payload?.projectId
                 })
               )
+              .then((resume) => {
+                // A still-suspended resume means ANOTHER client tool is coming
+                // over the stream — keep waiting. A final assistantMessage with
+                // text ends the turn here even if its frame never arrives.
+                if (!resume || resume.suspended) return
+                const txt = blocksToText(resume.assistantMessage?.content)
+                if (txt) {
+                  finishAnswer(txt, resume.assistantMessage?._id || resume.assistantMessage?.id || null)
+                }
+              })
+              .catch(() => { /* resume-response consumption is best-effort */ })
               .finally(() => { clientToolPending = false })
             return
           }
