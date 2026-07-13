@@ -369,8 +369,9 @@ export class SDK {
       debug: false,
       tracking: {
         // Off by default. TrackingService is now backed by @symbo.ls/analyzing
-        // → workspace-project worker → analyzed_* tables. The workspace shell
-        // boots its own analyzing instance directly (workspace/packages/
+        // → AnalyzedService → the main server's Mongo-backed
+        // /core/analyzed/ingest route. The workspace shell boots its own
+        // analyzing instance directly (workspace/packages/
         // workspace/analyzing.js), so leaving TrackingService disabled by
         // default avoids double-instrumentation. Consumers that want
         // tracking on the SDK surface itself can opt in via

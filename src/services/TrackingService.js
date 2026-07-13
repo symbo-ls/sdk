@@ -11,10 +11,10 @@
  * Under the hood, every Faro-shaped call routes through createAnalyzing's
  * native primitives (capture / captureError / captureMessage / addMeasurement
  * / identify / setContext / setTag), which batch into envelopes and ship
- * to the workspace-project worker via the in-SDK transport at flush time
- * (this._context.services.workspaceProject.analyzed.ingest). RLS in
- * Supabase (0114_analyzed_rls.sql) gates rows by workspace_id from the
- * caller's JWT — clients can't lie about tenant scope.
+ * to the main server's Mongo-backed /core/analyzed/ingest route via the
+ * in-SDK transport at flush time (this._context.services.analyzed.ingest).
+ * The server resolves the workspace scope from the caller's auth (or the
+ * envelope's workspace_id stamp) — clients can't lie about tenant scope.
  *
  * The legacy Grafana URL + transports + instrumentations config still work
  * as inert pass-through so consumers that override transports (e.g. local
@@ -41,7 +41,7 @@ const DEFAULT_TRACKING_OPTIONS = {
   maxQueueSize: DEFAULT_MAX_QUEUE_SIZE,
   // `transport` lets callers override the default SDK-routed transport
   // with their own (envelope) => Promise<{ok}> fn. When set, the analyzing
-  // client uses it instead of routing through workspaceProject.analyzed.
+  // client uses it instead of routing through the analyzed service.
   transport: null,
   globalAttributes: {},
   user: null
@@ -749,8 +749,10 @@ export class TrackingService extends BaseService {
 
   // Resolves a transport function on demand. Callers can override the SDK
   // route by passing their own `tracking.transport` in options; otherwise
-  // the envelope flows through the same workspace-project worker every
-  // other workspace SDK call uses.
+  // the envelope ships through AnalyzedService.ingest → the main server's
+  // Mongo-backed /core/analyzed/ingest route. (The legacy
+  // workspaceProject.analyzed worker surface was deleted server-side —
+  // server@fb183f5b — so /core is the only ingest path.)
   //
   // Stamps `workspace_id` from runtimeConfig.workspaceId onto every
   // outbound envelope unless the caller already set one. The server's
@@ -766,9 +768,9 @@ export class TrackingService extends BaseService {
         : envelope
     return async (envelope) => {
       try {
-        const wp = this._context?.services?.workspaceProject
-        if (!wp?.analyzed?.ingest) return { ok: false }
-        const res = await wp.analyzed.ingest(stampWorkspace(envelope))
+        const analyzed = this._context?.services?.analyzed
+        if (typeof analyzed?.ingest !== 'function') return { ok: false }
+        const res = await analyzed.ingest(stampWorkspace(envelope))
         return { ok: !res?.error }
       } catch (error) {
         logger.warn('[TrackingService] transport failed:', error?.message || error)

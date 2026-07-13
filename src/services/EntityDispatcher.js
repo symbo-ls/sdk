@@ -556,11 +556,9 @@ const ENTITY_ROUTES = {
       create: 'calendar.createEvent',
       update: 'calendar.updateEvent',
       remove: 'calendar.deleteEvent',
-      // upsert routes through the workspace PostgREST passthrough rather
-      // than the worker /calendar/events endpoint — keeps the on_conflict
-      // column list caller-controlled (default 'id'; google-sync writers
-      // pass 'google_calendar_id,google_event_id').
-      upsert: 'calendar.upsertEvent',
+      // upsert op removed 2026-07 — calendar.upsertEvent was the last
+      // PostgREST-upsert path on the calendar namespace (dropped with the
+      // workspace-project Supabase org retirement).
     },
     argMap: {
       list: (a) => [a?.filter ?? a?.params],
@@ -568,7 +566,6 @@ const ENTITY_ROUTES = {
       create: argMaps.payload,
       update: argMaps.idPayload,
       remove: argMaps.id,
-      upsert: (a) => [a?.payload ?? a?.data ?? a, a?.onConflict],
     },
   },
   // workspaceProject.documents{,.kb,.notes,.userDocuments,.resourceLinks}
@@ -774,19 +771,10 @@ const ENTITY_ROUTES = {
     },
   },
 
-  // ─── Workspace tables that don't yet have a dedicated service namespace.
-  // These route through the generic _ws fall-through method on
-  // WorkspaceProjectService once that method ships. For now the route is
-  // reserved so callers (DOMQL fetch:, sdk.execute) compile against the
-  // final entity name and we can flip the implementation under them.
-  // Announcements — Supabase → Mongo cutover. The route is STATIC; the engine
-  // choice (byte-identical /sb passthrough vs Mongo /core path) lives inside
-  // WorkspaceProjectService.announcements behind _useCoreAnnouncements()
-  // (context.useCoreAnnouncements / globalThis.__USE_CORE_ANNOUNCEMENTS__).
-  // Default ON since 2026-07-03 (rollback: flag === false). The `react` op
-  // (toggle a reactor on one emoji) is Mongo-only — it resolves to a no-op
-  // off-flag, preserving the historical local-only IntranetRows reaction
-  // behavior in the rollback path.
+  // Announcements — Mongo cutover complete (2026-07).
+  // WorkspaceProjectService.announcements routes unconditionally to the
+  // /core/announcements routes; the `react` op toggles a reactor on one
+  // emoji and persists via /core.
   'workspaceProject.announcements': {
     service: 'workspaceProject',
     methods: {
@@ -802,11 +790,9 @@ const ENTITY_ROUTES = {
       react: (a) => [a?.id ?? a?.number, a?.emoji, a?.reactor],
     },
   },
-  'workspaceProject.birthdays': {
-    service: 'workspaceProject',
-    methods: { list: 'birthdays.list' },
-    argMap: { list: () => [] },
-  },
+  // workspaceProject.birthdays entity removed 2026-07 — table dropped with the
+  // workspace-project Supabase org retirement; the shell derives birthdays
+  // from the roster.
   // workspaceProject.stories entity removed — stories table dropped in migration 0162 (feature retired 2026-06-02; no Mongo successor).
   'workspaceProject.fileCanvas': {
     service: 'workspaceProject',
@@ -833,23 +819,15 @@ const ENTITY_ROUTES = {
     },
     argMap: CRUD_ARG_MAP,
   },
-  'workspaceProject.companyInfo': {
-    service: 'workspaceProject',
-    methods: { list: 'companyInfo.list', update: 'companyInfo.upsert' },
-    argMap: { list: () => [], update: argMaps.payload },
-  },
-  'workspaceProject.companySettings': {
-    service: 'workspaceProject',
-    methods: { get: 'companySettings.get', update: 'companySettings.update' },
-    argMap: { get: () => [], update: argMaps.payload },
-  },
-  // PREFS trio — Supabase → Mongo cutover. These routes are STATIC; the
-  // engine choice (byte-identical /sb passthrough vs Mongo /core/prefs path)
-  // lives inside WorkspaceProjectService.{userPreferences,homeDashboardPrefs,
-  // workspaceDashboardDefaults} behind _useCorePrefs() (context.useCorePrefs /
-  // globalThis.__USE_CORE_PREFS__). Default ON since 2026-07-03 (rollback:
-  // flag === false). The serialized wire shape is byte-identical either way,
-  // so the dispatcher's update→upsert mapping + payload argMap are unchanged.
+  // workspaceProject.companyInfo + workspaceProject.companySettings entities
+  // removed 2026-07 — tables dropped with the workspace-project Supabase org
+  // retirement; the shell reads workspace.settings.companyInfo (canonical
+  // writer: the merge-safe 'workspace.settings' PATCH route above).
+  // PREFS trio — Mongo cutover complete (2026-07).
+  // WorkspaceProjectService.{userPreferences,homeDashboardPrefs,
+  // workspaceDashboardDefaults} route unconditionally to the Mongo
+  // /core/prefs routes; the dispatcher's update→upsert mapping + payload
+  // argMap are unchanged.
   'workspaceProject.userPreferences': {
     service: 'workspaceProject',
     methods: { get: 'userPreferences.get', update: 'userPreferences.upsert' },
@@ -868,30 +846,13 @@ const ENTITY_ROUTES = {
     },
     argMap: { get: () => [], update: argMaps.payload },
   },
-  'workspaceProject.workspaceSettings': {
-    service: 'workspaceProject',
-    methods: {
-      get: 'workspaceSettings.get',
-      update: 'workspaceSettings.upsert',
-    },
-    argMap: { get: () => [], update: argMaps.payload },
-  },
-  'workspaceProject.userGrants': {
-    service: 'workspaceProject',
-    methods: {
-      list: 'userGrants.list',
-      get: 'userGrants.get',
-      create: 'userGrants.create',
-      update: 'userGrants.update',
-      remove: 'userGrants.remove',
-    },
-    argMap: CRUD_ARG_MAP,
-  },
-  'workspaceProject.valuations': {
-    service: 'workspaceProject',
-    methods: { list: 'valuations.list' },
-    argMap: { list: () => [] },
-  },
+  // workspaceProject.workspaceSettings entity removed 2026-07 — table dropped
+  // with the workspace-project Supabase org retirement. The canonical
+  // settings writer is the merge-safe 'workspace.settings' PATCH route above
+  // (WorkspaceService.updateWorkspaceSettings).
+  // workspaceProject.userGrants + workspaceProject.valuations entities
+  // removed 2026-07 — tables dropped with the org retirement; no live
+  // consumers.
   'workspaceProject.userProfiles': {
     service: 'workspaceProject',
     methods: {
@@ -1088,84 +1049,10 @@ const ENTITY_ROUTES = {
   // SDK surface (WorkspaceProjectService.agentMessages) had zero live callers
   // and the referenced shared/functions/agentMessages.js never existed.
 
-  // ─── Community feed + follow graph ────────────────────────────────────────
-  // Backed by migration 0106_community_feed.sql. Tables are read-public and
-  // write-scoped to the caller's email via RLS. Routes thread through the
-  // workspace passthrough; argMap follows the same CRUD shape used elsewhere.
-
-  'workspaceProject.feed': {
-    service: 'workspaceProject',
-    methods: {
-      list: 'feed.list',
-      get: 'feed.get',
-      create: 'feed.create',
-      update: 'feed.update',
-      remove: 'feed.remove',
-    },
-    argMap: CRUD_ARG_MAP,
-  },
-
-  'workspaceProject.feed.likes': {
-    service: 'workspaceProject',
-    methods: {
-      list: 'feed.likes.list',
-      create: 'feed.likes.create',
-      remove: 'feed.likes.remove',
-    },
-    argMap: {
-      list: (a) => [a?.postId ?? a?.post_id ?? a?.filter?.post_id],
-      create: (a) => [
-        a?.postId ?? a?.post_id ?? a?.payload?.post_id,
-        a?.userEmail ?? a?.user_email ?? a?.payload?.user_email,
-      ],
-      remove: argMaps.id,
-    },
-  },
-
-  'workspaceProject.feed.comments': {
-    service: 'workspaceProject',
-    methods: {
-      list: 'feed.comments.list',
-      create: 'feed.comments.create',
-      update: 'feed.comments.update',
-      remove: 'feed.comments.remove',
-    },
-    argMap: {
-      list: (a) => [
-        a?.postId ?? a?.post_id ?? a?.filter?.post_id,
-        { order: a?.order, limit: a?.limit, ...(a?.options || {}) },
-      ],
-      create: (a) => [
-        a?.postId ?? a?.post_id ?? a?.payload?.post_id,
-        a?.payload ?? a?.data ?? a,
-      ],
-      update: argMaps.idPayload,
-      remove: argMaps.id,
-    },
-  },
-
-  'workspaceProject.follows': {
-    service: 'workspaceProject',
-    methods: {
-      list: 'follows.list',
-      create: 'follows.create',
-      remove: 'follows.remove',
-      // Custom op for the (follower, followee) tuple convenience helper.
-      removePair: 'follows.removeByPair',
-    },
-    argMap: {
-      list: argMaps.filterOptions,
-      create: (a) => [
-        a?.followerEmail ?? a?.follower_email ?? a?.payload?.follower_email,
-        a?.followeeEmail ?? a?.followee_email ?? a?.payload?.followee_email,
-      ],
-      remove: argMaps.id,
-      removePair: (a) => [
-        a?.followerEmail ?? a?.follower_email,
-        a?.followeeEmail ?? a?.followee_email,
-      ],
-    },
-  },
+  // workspaceProject.feed (+ .likes / .comments) and workspaceProject.follows
+  // entities removed 2026-07 — the community feed + follow graph tables
+  // (0106_community_feed.sql) were dropped with the workspace-project
+  // Supabase org retirement; no live consumers and no Mongo successor.
 
   // Generic escape-hatch for one-off RPCs that don't have a dedicated route.
   // sdk.execute('workspaceProject.query', 'rpc', { body }) calls

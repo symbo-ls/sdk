@@ -85,138 +85,6 @@ export class WorkspaceProjectService extends BaseService {
       context?.workspaceApiUrl || this._apiUrl
     )
     this._tokenProvider = context?.workspaceProjectTokenProvider || null
-    // Notifications data-store cutover toggle (Supabase → Mongo).
-    // DEFAULT ON since 2026-07-03 (dev cutover — server store defaults flipped
-    // to mongo in lock-step) → notifications.{list,unreadCount,markRead,
-    // markAllRead} route to the /core/notifications routes (same
-    // notificationStore dispatcher server-side). ROLLBACK: set
-    // context.useCoreNotifications = false OR
-    // globalThis.__USE_CORE_NOTIFICATIONS__ = false to ride the legacy
-    // workspace-project worker `/notifications` surface again. An explicit
-    // context boolean wins over the global; absent → the lazy global read
-    // decides (default ON). create() and the realtime path are intentionally
-    // left on their current transports for THIS slice — only the data store
-    // migrates.
-    this._useCoreNotificationsFlag =
-      typeof context?.useCoreNotifications === 'boolean'
-        ? context.useCoreNotifications
-        : null
-    // Announcements data-store cutover toggle (Supabase → Mongo).
-    // DEFAULT ON since 2026-07-03 (dev cutover — server ANNOUNCEMENTS_STORE
-    // flipped to mongo in lock-step) → announcements.{list,get,create,update,
-    // remove} route to the Mongo /core/announcements routes. ROLLBACK: set
-    // context.useCoreAnnouncements = false OR
-    // globalThis.__USE_CORE_ANNOUNCEMENTS__ = false to ride the legacy /sb
-    // PostgREST passthrough via _sbCrud again (/sb/rest/v1/announcements,
-    // workspace_id-pinned server-side). An explicit context boolean wins over
-    // the global; absent → the lazy global read decides (default ON). The
-    // reader-facing wire shape is byte-identical (the server serializer emits
-    // the same snake_case row PostgREST returned), so consumers don't branch.
-    this._useCoreAnnouncementsFlag =
-      typeof context?.useCoreAnnouncements === 'boolean'
-        ? context.useCoreAnnouncements
-        : null
-    // PREFS-trio data-store cutover toggle (Supabase → Mongo).
-    // DEFAULT ON since 2026-07-03 (dev cutover — server PREFS_STORE flipped to
-    // mongo in lock-step) → userPreferences / homeDashboardPrefs /
-    // workspaceDashboardDefaults route to the Mongo /core/prefs routes.
-    // ROLLBACK: set context.useCorePrefs = false OR
-    // globalThis.__USE_CORE_PREFS__ = false to ride the legacy /sb PostgREST
-    // passthrough via _sb again (/sb/rest/v1/user_preferences|
-    // home_dashboard_prefs|workspace_dashboard_defaults, user_id +
-    // workspace_id pinned server-side). An explicit context boolean wins over
-    // the global; absent → the lazy global read decides (default ON). The
-    // reader-facing wire shape is byte-identical (the server serializer emits
-    // the same snake_case rows PostgREST returned — userPrefs flat object,
-    // home prefs { hidden_widgets, grid_layout, dashboard_v }, workspace
-    // defaults { home_default_panels }), so consumers don't branch.
-    this._useCorePrefsFlag =
-      typeof context?.useCorePrefs === 'boolean' ? context.useCorePrefs : null
-    // Storage data-store cutover toggle (Supabase → GCS).
-    // DEFAULT ON since 2026-07-03 (dev cutover — server STORAGE_STORE flipped
-    // to GCS in lock-step) → storage.{createSignedUrl,upload,remove,publicUrl}
-    // route to the GCS-backed /core/storage routes. ROLLBACK: set
-    // context.useCoreStorage = false OR globalThis.__USE_CORE_STORAGE__ =
-    // false to ride the legacy workspace-project worker `/storage/*` Supabase
-    // surface again (multipart upload to _workspacePrefix, JSON
-    // signed-url/public-url/object via _ws). An explicit context boolean wins
-    // over the global; absent → the lazy global read decides (default ON).
-    // Response shapes are un-enveloped + identical ({ bucket, path, url, … } /
-    // { signedUrl, path } / { publicUrl, path } / { ok, path }), so consumers
-    // don't branch.
-    this._useCoreStorageFlag =
-      typeof context?.useCoreStorage === 'boolean'
-        ? context.useCoreStorage
-        : null
-  }
-
-  // Lazy flag read so a runtime global (set after SDK boot) can flip it
-  // without re-init — parity with how server flags are re-read per call.
-  // DEFAULT ON since 2026-07-03; globalThis.__USE_CORE_NOTIFICATIONS__ = false
-  // is the runtime rollback (an explicit ctor context boolean wins over it).
-  _useCoreNotifications() {
-    if (typeof this._useCoreNotificationsFlag === 'boolean') {
-      return this._useCoreNotificationsFlag
-    }
-    try {
-      return !(
-        typeof globalThis !== 'undefined' &&
-        globalThis.__USE_CORE_NOTIFICATIONS__ === false
-      )
-    } catch {
-      return true
-    }
-  }
-
-  // Lazy flag read — parity with _useCoreNotifications. DEFAULT ON since
-  // 2026-07-03; globalThis.__USE_CORE_ANNOUNCEMENTS__ = false is the runtime
-  // rollback to the byte-identical _sbCrud → /sb path.
-  _useCoreAnnouncements() {
-    if (typeof this._useCoreAnnouncementsFlag === 'boolean') {
-      return this._useCoreAnnouncementsFlag
-    }
-    try {
-      return !(
-        typeof globalThis !== 'undefined' &&
-        globalThis.__USE_CORE_ANNOUNCEMENTS__ === false
-      )
-    } catch {
-      return true
-    }
-  }
-
-  // Lazy flag read — parity with _useCoreAnnouncements. DEFAULT ON since
-  // 2026-07-03; globalThis.__USE_CORE_PREFS__ = false is the runtime rollback
-  // to the byte-identical _sb → /sb path for the PREFS-trio surfaces.
-  _useCorePrefs() {
-    if (typeof this._useCorePrefsFlag === 'boolean') {
-      return this._useCorePrefsFlag
-    }
-    try {
-      return !(
-        typeof globalThis !== 'undefined' &&
-        globalThis.__USE_CORE_PREFS__ === false
-      )
-    } catch {
-      return true
-    }
-  }
-
-  // Lazy flag read — parity with _useCorePrefs. DEFAULT ON since 2026-07-03;
-  // globalThis.__USE_CORE_STORAGE__ = false is the runtime rollback to the
-  // byte-identical _ws / _workspacePrefix worker path.
-  _useCoreStorage() {
-    if (typeof this._useCoreStorageFlag === 'boolean') {
-      return this._useCoreStorageFlag
-    }
-    try {
-      return !(
-        typeof globalThis !== 'undefined' &&
-        globalThis.__USE_CORE_STORAGE__ === false
-      )
-    } catch {
-      return true
-    }
   }
 
   async _resolveAuthHeader() {
@@ -744,14 +612,10 @@ export class WorkspaceProjectService extends BaseService {
           method: 'DELETE'
         }
       ),
-    // PostgREST upsert via workspace passthrough — caller picks the
-    // on_conflict column list (default 'id'). Google-sync writers pass
-    // 'google_calendar_id,google_event_id' so re-pulls don't duplicate.
-    upsertEvent: (payload, onConflict) =>
-      this._sb('calendar.upsertEvent', 'calendar_events', 'create', {
-        payload,
-        options: { upsertOnConflict: onConflict || 'id' }
-      }),
+    // upsertEvent removed 2026-07 — it was the last PostgREST-upsert path on
+    // this namespace (dropped with the workspace-project Supabase org
+    // retirement). Google-sync re-pull dedupe is handled server-side by the
+    // /calendar/sync worker route.
     sync: (params) =>
       this._ws('calendar.sync', '/calendar/sync', {
         method: 'POST',
@@ -917,61 +781,42 @@ export class WorkspaceProjectService extends BaseService {
   }
 
   // --- Notifications ----------------------------------------------------------
-  // Cutover (DEFAULT ON since 2026-07-03): when _useCoreNotifications() is
-  // true (the default) the reads + mark methods route to the
+  // Mongo cutover complete (2026-07): the reads + mark methods route to the
   // /core/notifications routes (BaseService._request →
-  // `${apiUrl}/core/notifications`, Mongo-token auth); when false (the
-  // rollback) they ride the workspace-project worker `/notifications` surface
-  // exactly as before. The wire shapes are identical (the server
-  // NotificationController returns { data } / { count } / { ok } envelopes the
-  // same way the worker relay does), so consumers don't branch.
+  // `${apiUrl}/core/notifications`, Mongo-token auth). The legacy
+  // workspace-project worker rollback arms are gone — the /core path is the
+  // only one. Wire shapes are unchanged (the server NotificationController
+  // returns { data } / { count } / { ok } envelopes the same way the worker
+  // relay did), so consumers don't branch.
   notifications = {
     list: () =>
-      this._useCoreNotifications()
-        ? this._request('/notifications', {
-            method: 'GET',
-            methodName: 'notifications.list'
-          })
-        : this._ws('notifications.list', '/notifications'),
+      this._request('/notifications', {
+        method: 'GET',
+        methodName: 'notifications.list'
+      }),
     unreadCount: () =>
-      this._useCoreNotifications()
-        ? this._request('/notifications/unread-count', {
-            method: 'GET',
-            methodName: 'notifications.unreadCount'
-          })
-        : this._ws('notifications.unreadCount', '/notifications/unread-count'),
-    // create() stays on the worker surface for THIS slice (the realtime
-    // INSERT delivery currently keys off the Supabase write — see the slice
-    // report). Repointing create is a later increment.
+      this._request('/notifications/unread-count', {
+        method: 'GET',
+        methodName: 'notifications.unreadCount'
+      }),
+    // create() stays on the worker surface (Mongo-backed server-side) — the
+    // realtime INSERT delivery keys off that write path. Repointing create
+    // is a later increment.
     create: (payload) =>
       this._ws('notifications.create', '/notifications', {
         method: 'POST',
         body: { payload }
       }),
     markRead: (id) =>
-      this._useCoreNotifications()
-        ? this._request(`/notifications/${encodeURIComponent(id)}/read`, {
-            method: 'POST',
-            methodName: 'notifications.markRead'
-          })
-        : this._ws(
-            'notifications.markRead',
-            `/notifications/${encodeURIComponent(id)}/read`,
-            {
-              method: 'POST'
-            }
-          ),
+      this._request(`/notifications/${encodeURIComponent(id)}/read`, {
+        method: 'POST',
+        methodName: 'notifications.markRead'
+      }),
     markAllRead: () =>
-      this._useCoreNotifications()
-        ? this._request('/notifications/mark-all-read', {
-            method: 'POST',
-            methodName: 'notifications.markAllRead'
-          })
-        : this._ws(
-            'notifications.markAllRead',
-            '/notifications/mark-all-read',
-            { method: 'POST' }
-          )
+      this._request('/notifications/mark-all-read', {
+        method: 'POST',
+        methodName: 'notifications.markAllRead'
+      })
   }
 
   // --- Search -----------------------------------------------------------------
@@ -1054,72 +899,53 @@ export class WorkspaceProjectService extends BaseService {
   // validation, denormalization, or composition.
   // ────────────────────────────────────────────────────────────────────────
 
-  // Cutover (Supabase → Mongo, DEFAULT ON since 2026-07-03). When
-  // _useCoreAnnouncements() is TRUE (the default) the methods route to the
-  // Mongo /core/announcements routes (BaseService._request →
-  // `${apiUrl}/core/...`, Mongo-token auth) and unwrap the `{ announcements }
-  // / { announcement }` envelope back to the exact array / row shape the
-  // readers consume, so loadPrivateData.js's `.map(...)` is unchanged. When
-  // FALSE (the rollback) every method delegates to the original
-  // _sbCrud('announcements') surface — byte-identical legacy behavior (generic
-  // /sb passthrough, workspace_id pinned server-side). The _sbCrud surface is
-  // constructed once and held so the rollback branch is a pure pass-through.
-  _announcementsSb = this._sbCrud('announcements')
+  // Mongo cutover complete (2026-07). Methods route to the Mongo
+  // /core/announcements routes (BaseService._request → `${apiUrl}/core/...`,
+  // Mongo-token auth) and unwrap the `{ announcements } / { announcement }`
+  // envelope back to the exact array / row shape the readers consume, so
+  // loadPrivateData.js's `.map(...)` is unchanged. The legacy
+  // _sbCrud('announcements') rollback arm is gone — /core is the only path.
   announcements = {
-    list: (filter, options) =>
-      this._useCoreAnnouncements()
-        ? this._request('/announcements', {
-            method: 'GET',
-            methodName: 'announcements.list'
-          }).then((r) => (Array.isArray(r) ? r : (r?.announcements ?? [])))
-        : this._announcementsSb.list(filter, options),
+    list: () =>
+      this._request('/announcements', {
+        method: 'GET',
+        methodName: 'announcements.list'
+      }).then((r) => (Array.isArray(r) ? r : (r?.announcements ?? []))),
     get: (id) =>
-      this._useCoreAnnouncements()
-        ? this._request(`/announcements/${encodeURIComponent(id)}`, {
-            method: 'GET',
-            methodName: 'announcements.get'
-          }).then((r) => r?.announcement ?? r)
-        : this._announcementsSb.get(id),
+      this._request(`/announcements/${encodeURIComponent(id)}`, {
+        method: 'GET',
+        methodName: 'announcements.get'
+      }).then((r) => r?.announcement ?? r),
     create: (payload) =>
-      this._useCoreAnnouncements()
-        ? this._request('/announcements', {
-            method: 'POST',
-            body: JSON.stringify({ payload }),
-            methodName: 'announcements.create'
-          }).then((r) => r?.announcement ?? r)
-        : this._announcementsSb.create(payload),
+      this._request('/announcements', {
+        method: 'POST',
+        body: JSON.stringify({ payload }),
+        methodName: 'announcements.create'
+      }).then((r) => r?.announcement ?? r),
     update: (id, payload) =>
-      this._useCoreAnnouncements()
-        ? this._request(`/announcements/${encodeURIComponent(id)}`, {
-            method: 'PUT',
-            body: JSON.stringify({ payload }),
-            methodName: 'announcements.update'
-          }).then((r) => r?.announcement ?? r)
-        : this._announcementsSb.update(id, payload),
+      this._request(`/announcements/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        body: JSON.stringify({ payload }),
+        methodName: 'announcements.update'
+      }).then((r) => r?.announcement ?? r),
     remove: (id) =>
-      this._useCoreAnnouncements()
-        ? this._request(`/announcements/${encodeURIComponent(id)}`, {
-            method: 'DELETE',
-            methodName: 'announcements.remove'
-          })
-        : this._announcementsSb.remove(id),
-    // Reactions fold — Mongo-only. The DEFAULT path has no persisted reactions
-    // (the announcement_reactions table is dead + IntranetRows mutates local
-    // root state only), so toggleReaction is a no-op resolving null off-flag,
-    // preserving the local-only default behavior. On-flag it persists via the
-    // /core route. The server resolves the reactor from the caller's identity.
+      this._request(`/announcements/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        methodName: 'announcements.remove'
+      }),
+    // Toggle a reactor on one emoji — persists via the /core route. The
+    // server resolves the reactor from the caller's identity.
     toggleReaction: (id, emoji, reactor) =>
-      this._useCoreAnnouncements()
-        ? this._request(`/announcements/${encodeURIComponent(id)}/reactions`, {
-            method: 'POST',
-            body: JSON.stringify({ emoji, reactor }),
-            methodName: 'announcements.toggleReaction'
-          }).then((r) => r?.announcement ?? r)
-        : Promise.resolve(null)
+      this._request(`/announcements/${encodeURIComponent(id)}/reactions`, {
+        method: 'POST',
+        body: JSON.stringify({ emoji, reactor }),
+        methodName: 'announcements.toggleReaction'
+      }).then((r) => r?.announcement ?? r)
   }
-  birthdays = this._sbCrud('birthdays')
   // stories entity removed — stories table dropped in migration 0162 (feature retired 2026-06-02; no Mongo successor).
-  valuations = this._sbCrud('valuations')
+  // birthdays + valuations entities removed 2026-07 — tables dropped with the
+  // workspace-project Supabase org retirement; the shell derives birthdays
+  // from the roster by default and valuations had no live consumer.
   fileCanvas = this._sbCrud('file_canvas')
   // Generic record store backing AI-generated extensions (migration 0163,
   // table workspace_records). list/get/create/update/remove via the standard
@@ -1128,252 +954,94 @@ export class WorkspaceProjectService extends BaseService {
   // pinned by the proxy (sb.js WORKSPACE_SCOPED_TABLES).
   records = this._sbCrud('workspace_records')
 
-  // --- Analyzed (observability) ----------------------------------------------
-  // Replaces Grafana Faro for symbo.ls apps. Browser → workspace-project
-  // worker → analyzed_* tables — no separate analyzed Cloudflare worker.
-  //
-  // Writes: `ingest` POSTs to /workspace-project/analyzed/ingest. The wrapper
-  // server-stamps workspace_id from the caller's JWT so clients can't lie
-  // about which workspace the telemetry belongs to.
-  //
-  // Reads: PostgREST passthrough at /workspace-project/sb/rest/v1/*. RLS
-  // (0114_analyzed_rls.sql) gates rows by app_metadata.workspace_id from
-  // the minted Supabase JWT, so reads see only the active workspace.
-  //
-  // Bug clustering uses an RPC (0115_analyzed_rpc.sql) because PostgREST
-  // has no native grouping.
-  analyzed = {
-    // Browser SDK ships its batched envelope through here. Body shape is
-    // documented at server/workers/workspace-project/src/surfaces/analyzed.js.
-    ingest: (envelope) =>
-      this._ws('analyzed.ingest', '/analyzed/ingest', {
-        method: 'POST',
-        body: envelope
-      }),
+  // analyzed entity removed 2026-07 — the workspace-project worker's Supabase
+  // analyzed surface was deleted server-side (server@fb183f5b); the
+  // dispatcher's `workspaceProject.analyzed*` aliases delegate to the
+  // top-level Mongo-backed AnalyzedService (/core/analyzed/*), and
+  // TrackingService's default transport now ships through
+  // context.services.analyzed.ingest directly.
 
-    listSessions: (filter, options) =>
-      this._sb('analyzed.listSessions', 'analyzed_session_summaries', 'list', {
-        filter,
-        options: { order: 'started_at.desc', limit: 100, ...(options || {}) }
-      }),
+  // companyInfo + companySettings entities removed 2026-07 — tables dropped
+  // with the workspace-project Supabase org retirement; the shell reads
+  // workspace.settings.companyInfo (WorkspaceService PATCH writer) instead.
 
-    getSession: (id) =>
-      this._sb('analyzed.getSession', 'analyzed_session_summaries', 'list', {
-        filter: { id },
-        options: { single: true }
-      }),
-
-    listEvents: (filter, options) =>
-      this._sb('analyzed.listEvents', 'analyzed_events', 'list', {
-        filter,
-        options: { order: 'ts.asc', limit: 500, ...(options || {}) }
-      }),
-
-    // Per-user aggregate view (server@9d207d98 migration 0133) — one row
-    // per (workspace_id, project_id, user_id). Backs the by-user paginated
-    // /logs view (WORKSPACE-LOGS-USERS-PAGINATED).
-    listUsers: (filter, options) =>
-      this._sb('analyzed.listUsers', 'analyzed_user_summaries', 'list', {
-        filter,
-        options: { order: 'last_seen.desc', limit: 20, ...(options || {}) }
-      }),
-
-    clusters: ({ workspaceId, appKey, since, limit = 200, offset = 0 } = {}) =>
-      this._sb('analyzed.clusters', 'fn_analyzed_bug_clusters', 'rpc', {
-        payload: {
-          p_workspace: workspaceId,
-          p_app_key: appKey || null,
-          p_since: since || null,
-          p_max_rows: limit,
-          p_offset: offset
-        }
-      })
-  }
-
-  // Single-row org metadata — companyInfo (key/value pairs) + companySettings
-  // (one record per org). Provide list + upsert (PostgREST-merge) shapes
-  // that match the legacy sb().from('company_info').upsert() call sites.
-  companyInfo = {
-    list: (filter, options) =>
-      this._sb('companyInfo.list', 'company_info', 'list', { filter, options }),
-    upsert: (payload) =>
-      this._sb('companyInfo.upsert', 'company_info', 'create', {
-        payload,
-        options: { upsertOnConflict: 'key' }
-      })
-  }
-  companySettings = {
-    get: () =>
-      this._sb('companySettings.get', 'company_settings', 'list', {
-        options: { single: true }
-      }),
-    // Singleton table — exactly one row per workspace, RLS-scoped by tenant.
-    // We resolve the live id at call time rather than hardcoding `1`, so a
-    // brief multi-row state (failed migration, manual seed) doesn't silently
-    // overwrite row #1; first call after a fresh tenant init INSERTs.
-    update: async (payload) => {
-      const current = await this._sb(
-        'companySettings.update.fetch',
-        'company_settings',
-        'list',
-        { options: { limit: 1 } }
-      )
-      const row = Array.isArray(current) ? current[0] : current
-      if (!row?.id) {
-        return this._sb(
-          'companySettings.update.insert',
-          'company_settings',
-          'create',
-          { payload }
-        )
-      }
-      return this._sb('companySettings.update', 'company_settings', 'update', {
-        id: row.id,
-        payload
-      })
-    }
-  }
-
-  // Per-user preferences — one row keyed by user_id. RLS scopes to caller.
-  // Use `list` (not `single`) so a missing row returns [] instead of the
-  // PostgREST "Cannot coerce the result to a single JSON object" error.
-  // Caller treats null as "no prefs yet" and renders defaults.
+  // Per-user preferences — one document keyed by the caller's identity.
+  // Mongo cutover complete (2026-07): both methods route to GET/PUT
+  // /core/prefs/user and unwrap the `{ prefs }` envelope back to the flat
+  // object the reader (root.userPrefs) consumes. The legacy
+  // _sb('user_preferences') rollback arm is gone — /core is the only path.
+  // The /core path persists ad-hoc keys (homeWelcomeDismissed, …) the typed
+  // Supabase columns silently dropped. Caller treats null as "no prefs yet"
+  // and renders defaults.
   userPreferences = {
-    // Cutover (DEFAULT ON since 2026-07-03): when _useCorePrefs() is TRUE (the
-    // default) both methods route to GET/PUT /core/prefs/user and unwrap the
-    // `{ prefs }` envelope back to the flat object the reader (root.userPrefs)
-    // consumes. When FALSE (the rollback) they delegate to the byte-identical
-    // _sb('user_preferences') path. The /core path persists ad-hoc keys
-    // (homeWelcomeDismissed, …) the typed Supabase columns silently dropped —
-    // same wire shape, fixed persistence.
     get: async () => {
-      if (this._useCorePrefs()) {
-        const r = await this._request('/prefs/user', {
-          method: 'GET',
-          methodName: 'userPreferences.get'
-        })
-        return r?.prefs ?? null
-      }
-      const rows = await this._sb(
-        'userPreferences.get',
-        'user_preferences',
-        'list',
-        { options: { limit: 1 } }
-      )
-      return Array.isArray(rows) ? rows[0] || null : rows || null
+      const r = await this._request('/prefs/user', {
+        method: 'GET',
+        methodName: 'userPreferences.get'
+      })
+      return r?.prefs ?? null
     },
     upsert: (payload) =>
-      this._useCorePrefs()
-        ? this._request('/prefs/user', {
-            method: 'PUT',
-            body: JSON.stringify({ payload }),
-            methodName: 'userPreferences.upsert'
-          }).then((r) => r?.prefs ?? r)
-        : this._sb('userPreferences.upsert', 'user_preferences', 'create', {
-            payload,
-            options: { upsertOnConflict: 'user_id' }
-          })
+      this._request('/prefs/user', {
+        method: 'PUT',
+        body: JSON.stringify({ payload }),
+        methodName: 'userPreferences.upsert'
+      }).then((r) => r?.prefs ?? r)
   }
 
   // Per-user, per-workspace home dashboard prefs (hidden_widgets / grid_layout /
-  // dashboard_v) — real cross-device persistence; user_preferences had no home or
-  // workspace columns so its writes always failed. Composite PK
-  // (user_id, workspace_id); the /sb proxy pins BOTH from the caller's auth, so
-  // the upsert must conflict on the full key. `list` + limit:1 (not `single`) so a
-  // missing row returns [] rather than a PostgREST coerce error. See migration 0157.
+  // dashboard_v) — real cross-device persistence, keyed on
+  // (user, workspace). Mongo cutover complete (2026-07): GET/PUT
+  // /core/prefs/home-dashboard, unwrapping `{ prefs }` to the snake_case row
+  // (hidden_widgets / grid_layout / dashboard_v) the reader
+  // (root.userDashboardPrefs) + resolver consume. The legacy
+  // _sb('home_dashboard_prefs') rollback arm is gone — /core is the only path.
   homeDashboardPrefs = {
-    // DORMANT cutover (parity with userPreferences). Default OFF → byte-identical
-    // _sb('home_dashboard_prefs') path; ON → GET/PUT /core/prefs/home-dashboard,
-    // unwrapping `{ prefs }` to the snake_case row (hidden_widgets / grid_layout /
-    // dashboard_v) the reader (root.userDashboardPrefs) + resolver consume.
     get: async () => {
-      if (this._useCorePrefs()) {
-        const r = await this._request('/prefs/home-dashboard', {
-          method: 'GET',
-          methodName: 'homeDashboardPrefs.get'
-        })
-        return r?.prefs ?? null
-      }
-      const rows = await this._sb(
-        'homeDashboardPrefs.get',
-        'home_dashboard_prefs',
-        'list',
-        { options: { limit: 1 } }
-      )
-      return Array.isArray(rows) ? rows[0] || null : rows || null
+      const r = await this._request('/prefs/home-dashboard', {
+        method: 'GET',
+        methodName: 'homeDashboardPrefs.get'
+      })
+      return r?.prefs ?? null
     },
     upsert: (payload) =>
-      this._useCorePrefs()
-        ? this._request('/prefs/home-dashboard', {
-            method: 'PUT',
-            body: JSON.stringify({ payload }),
-            methodName: 'homeDashboardPrefs.upsert'
-          }).then((r) => r?.prefs ?? r)
-        : this._sb(
-            'homeDashboardPrefs.upsert',
-            'home_dashboard_prefs',
-            'create',
-            { payload, options: { upsertOnConflict: 'user_id,workspace_id' } }
-          )
+      this._request('/prefs/home-dashboard', {
+        method: 'PUT',
+        body: JSON.stringify({ payload }),
+        methodName: 'homeDashboardPrefs.upsert'
+      }).then((r) => r?.prefs ?? r)
   }
 
-  // Per-workspace admin default panel set (one row per workspace). Members read
-  // it; org-admins write it (write gated in the proxy via
-  // WORKSPACE_ADMIN_WRITE_TABLES). See migration 0157.
+  // Per-workspace admin default panel set (one document per workspace).
+  // Members read it; org-admins write it (gated server-side). Mongo cutover
+  // complete (2026-07): GET/PUT /core/prefs/workspace-defaults, unwrapping
+  // `{ defaults }` to the snake_case row (home_default_panels) the reader
+  // consumes. The legacy _sb('workspace_dashboard_defaults') rollback arm is
+  // gone — /core is the only path.
   workspaceDashboardDefaults = {
-    // DORMANT cutover (parity with userPreferences). Default OFF → byte-identical
-    // _sb('workspace_dashboard_defaults') path; ON → GET/PUT
-    // /core/prefs/workspace-defaults, unwrapping `{ defaults }` to the snake_case
-    // row (home_default_panels) the reader (root.workspaceSettings) consumes. The
-    // /core writer is org-admin-gated server-side (mirrors the proxy's
-    // WORKSPACE_ADMIN_WRITE_TABLES gate).
     get: async () => {
-      if (this._useCorePrefs()) {
-        const r = await this._request('/prefs/workspace-defaults', {
-          method: 'GET',
-          methodName: 'workspaceDashboardDefaults.get'
-        })
-        return r?.defaults ?? null
-      }
-      const rows = await this._sb(
-        'workspaceDashboardDefaults.get',
-        'workspace_dashboard_defaults',
-        'list',
-        { options: { limit: 1 } }
-      )
-      return Array.isArray(rows) ? rows[0] || null : rows || null
+      const r = await this._request('/prefs/workspace-defaults', {
+        method: 'GET',
+        methodName: 'workspaceDashboardDefaults.get'
+      })
+      return r?.defaults ?? null
     },
     upsert: (payload) =>
-      this._useCorePrefs()
-        ? this._request('/prefs/workspace-defaults', {
-            method: 'PUT',
-            body: JSON.stringify({ payload }),
-            methodName: 'workspaceDashboardDefaults.upsert'
-          }).then((r) => r?.defaults ?? r)
-        : this._sb(
-            'workspaceDashboardDefaults.upsert',
-            'workspace_dashboard_defaults',
-            'create',
-            { payload, options: { upsertOnConflict: 'workspace_id' } }
-          )
+      this._request('/prefs/workspace-defaults', {
+        method: 'PUT',
+        body: JSON.stringify({ payload }),
+        methodName: 'workspaceDashboardDefaults.upsert'
+      }).then((r) => r?.defaults ?? r)
   }
 
-  // Per-workspace personalization (design system / navbar / language / dir /
-  // modules). Member-read, org-admin-write. workspace_id is pinned by the /sb
-  // proxy from the caller's auth; upsert on the workspace_id PK. Mirrors
-  // workspaceDashboardDefaults' byte-identical _sb path.
-  workspaceSettings = {
-    get: async () => {
-      const rows = await this._sb('workspaceSettings.get', 'workspace_settings',
-        'list', { options: { limit: 1 } })
-      return Array.isArray(rows) ? (rows[0] || null) : (rows || null)
-    },
-    upsert: (payload) =>
-      this._sb('workspaceSettings.upsert', 'workspace_settings', 'create',
-        { payload, options: { upsertOnConflict: 'workspace_id' } }),
-  }
+  // workspaceSettings entity removed 2026-07 — the workspace_settings table
+  // dropped with the workspace-project Supabase org retirement. The canonical
+  // writer is the merge-safe `workspace.settings` PATCH
+  // (WorkspaceService.updateWorkspaceSettings); readers get settings off the
+  // workspace document (sdk.getWorkspace).
 
-  userGrants = this._sbCrud('user_grants')
+  // userGrants entity removed 2026-07 — user_grants table dropped with the
+  // workspace-project Supabase org retirement; no live consumer.
 
   // user_profiles is keyed by user_id, not numeric id. Override get/update.
   userProfiles = {
@@ -1450,97 +1118,10 @@ export class WorkspaceProjectService extends BaseService {
   // subscribeAgentMessages method + its EntityDispatcher routes were removed
   // in the same change set.
 
-  // --- Community feed + follow graph ----------------------------------------
-  // Backed by migration 0106_community_feed.sql. Tables are public-readable
-  // (the feed is a global / cross-tenant social surface) and writes are
-  // RLS-scoped to the caller's email — `auth.email() = author_email`.
-  //
-  // Each surface is a thin _sb() wrapper rather than _sbCrud so we can pin
-  // the default ordering (recent posts / oldest comments first) without
-  // every caller passing it.
-  feed = {
-    list: (filter, options) =>
-      this._sb('feed.list', 'feed_posts', 'list', {
-        filter,
-        options: { order: 'created_at.desc', limit: 50, ...(options || {}) }
-      }),
-    get: (id) => this._sb('feed.get', 'feed_posts', 'get', { id }),
-    create: (payload) =>
-      this._sb('feed.create', 'feed_posts', 'create', { payload }),
-    update: (id, payload) =>
-      this._sb('feed.update', 'feed_posts', 'update', { id, payload }),
-    remove: (id) => this._sb('feed.remove', 'feed_posts', 'remove', { id }),
-
-    likes: {
-      list: (postId) =>
-        this._sb('feed.likes.list', 'feed_post_likes', 'list', {
-          filter: { post_id: postId }
-        }),
-      create: (postId, userEmail) =>
-        this._sb('feed.likes.create', 'feed_post_likes', 'create', {
-          payload: { post_id: postId, user_email: userEmail }
-        }),
-      remove: (id) =>
-        this._sb('feed.likes.remove', 'feed_post_likes', 'remove', { id })
-    },
-
-    comments: {
-      list: (postId, options) =>
-        this._sb('feed.comments.list', 'feed_post_comments', 'list', {
-          filter: { post_id: postId },
-          options: { order: 'created_at.asc', ...(options || {}) }
-        }),
-      create: (postId, payload) =>
-        this._sb('feed.comments.create', 'feed_post_comments', 'create', {
-          payload: { post_id: postId, ...(payload || {}) }
-        }),
-      update: (id, payload) =>
-        this._sb('feed.comments.update', 'feed_post_comments', 'update', {
-          id,
-          payload
-        }),
-      remove: (id) =>
-        this._sb('feed.comments.remove', 'feed_post_comments', 'remove', { id })
-    }
-  }
-
-  follows = {
-    list: (filter, options) =>
-      this._sb('follows.list', 'user_follows', 'list', {
-        filter,
-        options: { order: 'created_at.desc', ...(options || {}) }
-      }),
-    create: (followerEmail, followeeEmail) =>
-      this._sb('follows.create', 'user_follows', 'create', {
-        payload: {
-          follower_email: followerEmail,
-          followee_email: followeeEmail
-        }
-      }),
-    remove: (id) =>
-      this._sb('follows.remove', 'user_follows', 'remove', { id }),
-    // Convenience helper — many UIs only have the (follower, followee) tuple
-    // and would otherwise have to do a list+find before remove.
-    removeByPair: async (followerEmail, followeeEmail) => {
-      const rows = await this._sb(
-        'follows.removeByPair.find',
-        'user_follows',
-        'list',
-        {
-          filter: {
-            follower_email: followerEmail,
-            followee_email: followeeEmail
-          },
-          options: { limit: 1 }
-        }
-      )
-      const row = Array.isArray(rows) ? rows[0] : null
-      if (!row) return null
-      return this._sb('follows.removeByPair.remove', 'user_follows', 'remove', {
-        id: row.id
-      })
-    }
-  }
+  // feed (+ feed.likes / feed.comments) and follows entities removed 2026-07 —
+  // the community feed + follow graph tables (0106_community_feed.sql) were
+  // dropped with the workspace-project Supabase org retirement; no live
+  // consumers and no Mongo successor.
 
   // --- i18n (translation stream) --------------------------------------------
   // Stub backend wire-up — TranslationWatcher subscribes to translation diffs
@@ -1846,49 +1427,32 @@ export class WorkspaceProjectService extends BaseService {
   }
 
   // --- Storage (workspace-tenant buckets: contracts, chat-attachments, …) ---
-  // Replaces direct `sb().storage.from(bucket).upload/createSignedUrl` calls
-  // in the workspace UI. The workspace wrapper at /workspace/storage/* is the
-  // authority on bucket access — RLS for storage moved server-side, so the
-  // frontend never sees the underlying bucket service-role key.
+  // GCS cutover complete (2026-07): every method routes to the GCS-backed
+  // /core/storage routes (BaseService._request prepends /core for JSON; the
+  // multipart upload raw-fetches the /core base directly because _request
+  // can't carry FormData cleanly). The legacy workspace-project worker
+  // `/storage/*` Supabase surface was DELETED server-side (server@fb183f5b),
+  // so the rollback arms are gone — /core is the only path. Bucket access
+  // authority is server-side; the frontend never sees storage credentials.
   //
   // Three-arg signed-URL: bucket + path + ttl (seconds). Default TTL 5 min
   // matches the legacy `sb.storage.from('contracts').createSignedUrl(path, 300)`
   // call site in MemberProfile so callers don't need to pass it explicitly.
-  //
-  // Cutover (DEFAULT ON since 2026-07-03): when _useCoreStorage() is TRUE (the
-  // default) every method routes to the GCS-backed /core/storage routes
-  // (BaseService._request prepends /core for JSON; the multipart upload
-  // raw-fetches the /core base directly because _request can't carry FormData
-  // cleanly). When FALSE (the rollback) they delegate to the byte-identical
-  // worker path (_ws for JSON, the _workspacePrefix raw-fetch for the
-  // multipart upload). Response shapes are un-enveloped + identical in both
-  // directions, so no unwrap is needed.
   storage = {
     createSignedUrl: (bucket, path, ttl = 300) =>
-      this._useCoreStorage()
-        ? this._request(`/storage/${encodeURIComponent(bucket)}/signed-url`, {
-            method: 'POST',
-            body: JSON.stringify({ path, ttl }),
-            methodName: 'storage.createSignedUrl'
-          })
-        : this._ws(
-            'storage.createSignedUrl',
-            `/storage/${encodeURIComponent(bucket)}/signed-url`,
-            {
-              method: 'POST',
-              body: { path, ttl }
-            }
-          ),
+      this._request(`/storage/${encodeURIComponent(bucket)}/signed-url`, {
+        method: 'POST',
+        body: JSON.stringify({ path, ttl }),
+        methodName: 'storage.createSignedUrl'
+      }),
     // multipart upload — body must be a FormData carrying { file, path? }.
     // The backend extracts `file` and forwards to the storage backend.
     upload: (bucket, formData, options = {}) => {
-      // Bypass the JSON-body branch by composing the request here. ON → the
-      // /core base; OFF (default) → the workspace-project worker prefix.
+      // Bypass the JSON-body branch by composing the request here — _request
+      // can't carry FormData cleanly.
       const _doUpload = async () => {
         this._requireReady('storage.upload')
-        const base = this._useCoreStorage()
-          ? `${this._apiUrl}/core/storage/${encodeURIComponent(bucket)}/upload`
-          : `${this._workspacePrefix}/storage/${encodeURIComponent(bucket)}/upload`
+        const base = `${this._apiUrl}/core/storage/${encodeURIComponent(bucket)}/upload`
         const init = { method: 'POST', body: formData, headers: {} }
         const auth = await this._resolveAuthHeader()
         if (auth) init.headers.Authorization = auth
@@ -1901,37 +1465,19 @@ export class WorkspaceProjectService extends BaseService {
       return _doUpload()
     },
     remove: (bucket, path) =>
-      this._useCoreStorage()
-        ? this._request(`/storage/${encodeURIComponent(bucket)}/object`, {
-            method: 'DELETE',
-            body: JSON.stringify({ path }),
-            methodName: 'storage.remove'
-          })
-        : this._ws(
-            'storage.remove',
-            `/storage/${encodeURIComponent(bucket)}/object`,
-            {
-              method: 'DELETE',
-              body: { path }
-            }
-          ),
+      this._request(`/storage/${encodeURIComponent(bucket)}/object`, {
+        method: 'DELETE',
+        body: JSON.stringify({ path }),
+        methodName: 'storage.remove'
+      }),
     // Public download URL for a stored object — wraps the backend's public-url
     // endpoint so callers don't need the bucket service-role key.
     publicUrl: (bucket, path) =>
-      this._useCoreStorage()
-        ? this._request(`/storage/${encodeURIComponent(bucket)}/public-url`, {
-            method: 'POST',
-            body: JSON.stringify({ path }),
-            methodName: 'storage.publicUrl'
-          })
-        : this._ws(
-            'storage.publicUrl',
-            `/storage/${encodeURIComponent(bucket)}/public-url`,
-            {
-              method: 'POST',
-              body: { path }
-            }
-          )
+      this._request(`/storage/${encodeURIComponent(bucket)}/public-url`, {
+        method: 'POST',
+        body: JSON.stringify({ path }),
+        methodName: 'storage.publicUrl'
+      })
   }
 
   // --- Generic escape hatch ---------------------------------------------------
