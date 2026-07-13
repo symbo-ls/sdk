@@ -704,6 +704,42 @@ export class AiService extends BaseService {
     return this._unwrap(res) || []
   }
 
+  // Persist a NEW extension from a client Save (no agent turn) — the /add-app
+  // Save button and the drawn-view "Save as app" affordance. body:
+  // { workspaceId?, name, source, scope?:'private'|'shared' }. Returns the
+  // created { projectId, key, name, route }. The saved extension appears in
+  // listExtensions (→ the /add-app sidebar) and survives reload.
+  async createExtension (body = {}) {
+    const wsId = body?.workspaceId || this._context?.activeWorkspaceId || this._readActiveWorkspace()
+    if (!wsId) throw new Error('[sdk.ai] no active workspace for createExtension')
+    const res = await this._requestExternal(
+      `${this._apiUrl}/core/agents/workspaces/${encodeURIComponent(wsId)}/extensions`,
+      {
+        method: 'POST',
+        body: { name: body.name, source: body.source, scope: body.scope },
+        methodName: 'ai.createExtension'
+      }
+    )
+    return this._unwrap(res)
+  }
+
+  // Re-save an existing extension's source and/or scope. body:
+  // { workspaceId?, source?, scope? }. Owner/admin only (server-enforced).
+  async updateExtension (projectId, body = {}) {
+    const wsId = body?.workspaceId || this._context?.activeWorkspaceId || this._readActiveWorkspace()
+    if (!wsId) throw new Error('[sdk.ai] no active workspace for updateExtension')
+    if (!projectId) throw new Error('[sdk.ai] projectId required for updateExtension')
+    const res = await this._requestExternal(
+      `${this._apiUrl}/core/agents/workspaces/${encodeURIComponent(wsId)}/extensions/${encodeURIComponent(projectId)}`,
+      {
+        method: 'PATCH',
+        body: { source: body.source, scope: body.scope },
+        methodName: 'ai.updateExtension'
+      }
+    )
+    return this._unwrap(res)
+  }
+
   _unwrap (res) {
     return res && typeof res === 'object' && 'data' in res ? res.data : res
   }
