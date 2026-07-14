@@ -44,6 +44,11 @@ import { ProposedActionService } from './ProposedActionService.js'
 import { WorkflowService } from './WorkflowService.js'
 import { FieldDefService } from './FieldDefService.js'
 import { RecordCollectionService } from './RecordCollectionService.js'
+// Phase-2 directory services (WORKSPACE_DATA_MODEL §5) — the Party Directory:
+// Mongo-native, peers to the spine over the main server's /core/* routes.
+import { PartyService } from './PartyService.js'
+import { InteractionService } from './InteractionService.js'
+import { SegmentService } from './SegmentService.js'
 import { CanvasLayoutService } from './CanvasLayoutService.js'
 import { MeetService } from './MeetService.js'
 import { CalendarService } from './CalendarService.js'
@@ -184,6 +189,18 @@ export const createFieldDefService = config =>
 export const createRecordCollectionService = config =>
   createService(RecordCollectionService, config)
 
+// Phase-2 directory factories — the Party Directory surfaces (parties +
+// their roles/relationships sub-resources, interactions, segments). See
+// WORKSPACE_DATA_MODEL §5.
+export const createPartyService = config =>
+  createService(PartyService, config)
+
+export const createInteractionService = config =>
+  createService(InteractionService, config)
+
+export const createSegmentService = config =>
+  createService(SegmentService, config)
+
 export {
   AuthService,
   CollabService,
@@ -225,5 +242,8 @@ export {
   ProposedActionService,
   WorkflowService,
   FieldDefService,
-  RecordCollectionService
+  RecordCollectionService,
+  PartyService,
+  InteractionService,
+  SegmentService
 }

@@ -29,6 +29,9 @@ import {
   createWorkflowService,
   createFieldDefService,
   createRecordCollectionService,
+  createPartyService,
+  createInteractionService,
+  createSegmentService,
   createAllocationRuleService,
   createSharedAssetService,
   createCreditsService,
@@ -306,6 +309,29 @@ export class SDK {
       this._initService(
         'recordCollections',
         createRecordCollectionService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      // Phase-2 directory (WORKSPACE_DATA_MODEL §5) — the Party Directory:
+      // parties (+ roles/relationships sub-resources), interactions, segments.
+      this._initService(
+        'parties',
+        createPartyService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      this._initService(
+        'interactions',
+        createInteractionService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      this._initService(
+        'segments',
+        createSegmentService({
           context: this._context,
           options: this._options
         })
@@ -737,6 +763,9 @@ export {
   createWorkflowService,
   createFieldDefService,
   createRecordCollectionService,
+  createPartyService,
+  createInteractionService,
+  createSegmentService,
   createAllocationRuleService,
   createSharedAssetService,
   createCreditsService,

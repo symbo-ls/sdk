@@ -72,6 +72,16 @@ const CRUD_ARG_MAP = {
   remove: argMaps.id,
 }
 
+// Party sub-resource body adapter (roles / relationships). Pulls the POST
+// body out of the well-known shapes, stripping the parent-id keys so both a
+// packed caller (`{ partyId, payload: { role } }`) and a flat caller
+// (`{ partyId, role, ... }`) yield the right body. Mirrors argMaps.idPayload's
+// rest-strip, keyed on the party's partyId/id instead of id/number.
+const partySubPayload = (a) => a?.payload ?? a?.data ?? (() => {
+  const { partyId, id, ...rest } = a || {}
+  return rest
+})()
+
 const ENTITY_ROUTES = {
   // ─── i18n (translations stream) ────────────────────────────────────────────
   // The TranslationWatcher in workspace/app.js subscribes to live translation
@@ -332,6 +342,60 @@ const ENTITY_ROUTES = {
     service: 'recordCollections',
     methods: { list: 'list', get: 'get', create: 'create', update: 'update', remove: 'remove' },
     argMap: CRUD_ARG_MAP,
+  },
+
+  // ─── Phase-2 directory (WORKSPACE_DATA_MODEL §5) ────────────────────────────
+  // The Party Directory: parties (+ roles/relationships sub-resources),
+  // interactions (touchpoint log), segments (saved audiences). Mongo-native,
+  // peers to the Phase-1 spine. Declarative `fetch: [{ from: 'parties', ... }]`
+  // + imperative `sdk.execute('parties', 'addRole', { partyId, role })` both
+  // resolve here.
+  'parties': {
+    service: 'parties',
+    methods: {
+      list: 'list',
+      get: 'get',
+      create: 'create',
+      update: 'update',
+      remove: 'remove',
+      listRoles: 'listRoles',
+      addRole: 'addRole',
+      removeRole: 'removeRole',
+      listRelationships: 'listRelationships',
+      addRelationship: 'addRelationship',
+      removeRelationship: 'removeRelationship',
+    },
+    argMap: {
+      ...CRUD_ARG_MAP,
+      // Roles/relationships thread the parent partyId first, then the body.
+      listRoles: (a) => [a?.partyId ?? a?.id],
+      addRole: (a) => [a?.partyId ?? a?.id, partySubPayload(a)],
+      removeRole: (a) => [a?.partyId ?? a?.id, a?.role],
+      listRelationships: (a) => [a?.partyId ?? a?.id],
+      addRelationship: (a) => [a?.partyId ?? a?.id, partySubPayload(a)],
+      // removeRelationship targets the edge by its own id (relId), not partyId.
+      removeRelationship: (a) => [a?.relId ?? a?.id],
+    },
+  },
+  'interactions': {
+    service: 'interactions',
+    methods: { list: 'list', get: 'get', create: 'create', update: 'update', remove: 'remove' },
+    argMap: CRUD_ARG_MAP,
+  },
+  'segments': {
+    service: 'segments',
+    methods: {
+      list: 'list',
+      get: 'get',
+      create: 'create',
+      update: 'update',
+      remove: 'remove',
+      members: 'listMembers',
+    },
+    argMap: {
+      ...CRUD_ARG_MAP,
+      members: argMaps.id,
+    },
   },
 
   // ─── Docs (DocService — Mongo-backed, SSE realtime) ─────────────────────────
