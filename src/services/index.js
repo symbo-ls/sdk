@@ -38,6 +38,12 @@ import {
 import { AllocationRuleService } from './AllocationRuleService.js'
 import { SharedAssetService } from './SharedAssetService.js'
 import { CreditsService } from './CreditsService.js'
+// Phase-1 spine services (WORKSPACE_DATA_MODEL §6.5/§6.8/§7/§8) — Mongo-
+// native, peers to Ticket/Doc/Analyzed over the main server's /core/* routes.
+import { ProposedActionService } from './ProposedActionService.js'
+import { WorkflowService } from './WorkflowService.js'
+import { FieldDefService } from './FieldDefService.js'
+import { RecordCollectionService } from './RecordCollectionService.js'
 import { CanvasLayoutService } from './CanvasLayoutService.js'
 import { MeetService } from './MeetService.js'
 import { CalendarService } from './CalendarService.js'
@@ -164,6 +170,20 @@ export const createMeetService = config =>
 export const createCalendarService = config =>
   createService(CalendarService, config)
 
+// Phase-1 spine factories — the polymorphic-spine surfaces every entity
+// (shared + records) hangs on. See WORKSPACE_DATA_MODEL §7.
+export const createProposedActionService = config =>
+  createService(ProposedActionService, config)
+
+export const createWorkflowService = config =>
+  createService(WorkflowService, config)
+
+export const createFieldDefService = config =>
+  createService(FieldDefService, config)
+
+export const createRecordCollectionService = config =>
+  createService(RecordCollectionService, config)
+
 export {
   AuthService,
   CollabService,
@@ -201,5 +221,9 @@ export {
   CanvasLayoutService,
   MeetService,
   CalendarService,
-  BuildsService
+  BuildsService,
+  ProposedActionService,
+  WorkflowService,
+  FieldDefService,
+  RecordCollectionService
 }

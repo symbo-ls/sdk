@@ -25,6 +25,10 @@ import {
   createResourceLinkService,
   createTicketService,
   createAnalyzedService,
+  createProposedActionService,
+  createWorkflowService,
+  createFieldDefService,
+  createRecordCollectionService,
   createAllocationRuleService,
   createSharedAssetService,
   createCreditsService,
@@ -271,6 +275,37 @@ export class SDK {
       this._initService(
         'analyzed',
         createAnalyzedService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      // Phase-1 spine services (WORKSPACE_DATA_MODEL §6.5/§6.8/§7/§8) —
+      // proposed-actions (approval spine), workflows (stage sequences),
+      // field-defs (custom fields), record-collections (custom objects).
+      this._initService(
+        'proposedActions',
+        createProposedActionService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      this._initService(
+        'workflows',
+        createWorkflowService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      this._initService(
+        'fieldDefs',
+        createFieldDefService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      this._initService(
+        'recordCollections',
+        createRecordCollectionService({
           context: this._context,
           options: this._options
         })
@@ -698,6 +733,10 @@ export {
   createResourceLinkService,
   createTicketService,
   createAnalyzedService,
+  createProposedActionService,
+  createWorkflowService,
+  createFieldDefService,
+  createRecordCollectionService,
   createAllocationRuleService,
   createSharedAssetService,
   createCreditsService,

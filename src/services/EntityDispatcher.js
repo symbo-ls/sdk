@@ -295,6 +295,45 @@ const ENTITY_ROUTES = {
     },
   },
 
+  // ─── Phase-1 spine (WORKSPACE_DATA_MODEL §6.5/§6.8/§7/§8) ────────────────────
+  // Top-level Mongo-native entities over the main server's /core/* routes.
+  // Declarative `fetch: [{ from: 'workflows', ... }]` + imperative
+  // `sdk.execute('proposedActions', 'approve', { id })` both resolve here.
+  'proposedActions': {
+    service: 'proposedActions',
+    methods: {
+      list: 'list',
+      get: 'get',
+      create: 'propose',
+      approve: 'approve',
+      reject: 'reject',
+      result: 'setResult',
+    },
+    argMap: {
+      list: argMaps.filterOptions,
+      get: argMaps.id,
+      create: argMaps.payload,
+      approve: argMaps.id,
+      reject: argMaps.id,
+      result: argMaps.idPayload,
+    },
+  },
+  'workflows': {
+    service: 'workflows',
+    methods: { list: 'list', get: 'get', create: 'create', update: 'update', remove: 'remove' },
+    argMap: CRUD_ARG_MAP,
+  },
+  'fieldDefs': {
+    service: 'fieldDefs',
+    methods: { list: 'list', get: 'get', create: 'create', update: 'update', remove: 'remove' },
+    argMap: CRUD_ARG_MAP,
+  },
+  'recordCollections': {
+    service: 'recordCollections',
+    methods: { list: 'list', get: 'get', create: 'create', update: 'update', remove: 'remove' },
+    argMap: CRUD_ARG_MAP,
+  },
+
   // ─── Docs (DocService — Mongo-backed, SSE realtime) ─────────────────────────
   // The docs surface lives on its own service. UI calls go through
   // `sdk.execute('docs', 'list')` / `sdk.docs.*`.
