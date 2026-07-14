@@ -484,9 +484,17 @@ const ENTITY_ROUTES = {
       remove: 'threads.remove',
     },
     argMap: {
-      list: (a) => [{ includeArchived: a?.includeArchived ?? a?.filter?.includeArchived ?? false }],
-      get: argMaps.id,
-      create: argMaps.payload,
+      // orgId/workspaceId thread through to AiChatService._aiChatScope,
+      // which defaults from _context.activeOrgId/activeWorkspaceId when
+      // absent — an explicit-but-undefined key here is behaviorally
+      // identical to omitting it (back-compat with pre-scoping callers).
+      list: (a) => [{
+        includeArchived: a?.includeArchived ?? a?.filter?.includeArchived ?? false,
+        orgId: a?.orgId ?? a?.filter?.orgId,
+        workspaceId: a?.workspaceId ?? a?.filter?.workspaceId,
+      }],
+      get: (a) => [a?.id ?? a?.number ?? a, { orgId: a?.orgId, workspaceId: a?.workspaceId }],
+      create: (a) => [a?.payload ?? a?.data ?? a, { orgId: a?.orgId, workspaceId: a?.workspaceId }],
       remove: argMaps.id,
     },
   },
@@ -497,6 +505,8 @@ const ENTITY_ROUTES = {
       list: (a) => [a?.threadId ?? a?.id ?? a?.filter?.threadId, {
         limit: a?.limit ?? a?.options?.limit,
         beforeId: a?.beforeId ?? a?.options?.beforeId,
+        orgId: a?.orgId ?? a?.options?.orgId,
+        workspaceId: a?.workspaceId ?? a?.options?.workspaceId,
       }],
     },
   },
