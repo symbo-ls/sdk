@@ -32,6 +32,12 @@ import {
   createPartyService,
   createInteractionService,
   createSegmentService,
+  createProductService,
+  createPriceService,
+  createCompanyProfileService,
+  createAgreementService,
+  createInvoiceService,
+  createTransactionService,
   createAllocationRuleService,
   createSharedAssetService,
   createCreditsService,
@@ -332,6 +338,53 @@ export class SDK {
       this._initService(
         'segments',
         createSegmentService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      // Phase-3 commerce (WORKSPACE_DATA_MODEL §6.2/§6.3/§6.4) — the
+      // tenant-finance spine: catalog (products + prices), company-profile
+      // (workspace singleton), agreements, invoices (+ /issue + void-delete),
+      // transactions (+ allocation settlement). Mongo-native; reached via
+      // sdk.execute('invoices', …) like parties/workflows.
+      this._initService(
+        'products',
+        createProductService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      this._initService(
+        'prices',
+        createPriceService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      this._initService(
+        'companyProfile',
+        createCompanyProfileService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      this._initService(
+        'agreements',
+        createAgreementService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      this._initService(
+        'invoices',
+        createInvoiceService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      this._initService(
+        'transactions',
+        createTransactionService({
           context: this._context,
           options: this._options
         })
@@ -766,6 +819,12 @@ export {
   createPartyService,
   createInteractionService,
   createSegmentService,
+  createProductService,
+  createPriceService,
+  createCompanyProfileService,
+  createAgreementService,
+  createInvoiceService,
+  createTransactionService,
   createAllocationRuleService,
   createSharedAssetService,
   createCreditsService,

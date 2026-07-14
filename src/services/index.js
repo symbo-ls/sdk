@@ -49,6 +49,17 @@ import { RecordCollectionService } from './RecordCollectionService.js'
 import { PartyService } from './PartyService.js'
 import { InteractionService } from './InteractionService.js'
 import { SegmentService } from './SegmentService.js'
+// Phase-3 commerce services (WORKSPACE_DATA_MODEL §6.2/§6.3/§6.4) — the
+// tenant-finance spine: catalog (products + prices), the workspace's own
+// company profile, agreements, invoices, transactions. Mongo-native, peers
+// to the Phase-1 spine + Phase-2 directory over the main server's /core/*
+// routes.
+import { ProductService } from './ProductService.js'
+import { PriceService } from './PriceService.js'
+import { CompanyProfileService } from './CompanyProfileService.js'
+import { AgreementService } from './AgreementService.js'
+import { InvoiceService } from './InvoiceService.js'
+import { TransactionService } from './TransactionService.js'
 import { CanvasLayoutService } from './CanvasLayoutService.js'
 import { MeetService } from './MeetService.js'
 import { CalendarService } from './CalendarService.js'
@@ -201,6 +212,28 @@ export const createInteractionService = config =>
 export const createSegmentService = config =>
   createService(SegmentService, config)
 
+// Phase-3 commerce factories — the tenant-finance surfaces: catalog
+// (products + prices), company-profile (workspace singleton), agreements,
+// invoices (+ /issue + void-delete), transactions (+ allocation settlement).
+// See WORKSPACE_DATA_MODEL §6.2/§6.3/§6.4.
+export const createProductService = config =>
+  createService(ProductService, config)
+
+export const createPriceService = config =>
+  createService(PriceService, config)
+
+export const createCompanyProfileService = config =>
+  createService(CompanyProfileService, config)
+
+export const createAgreementService = config =>
+  createService(AgreementService, config)
+
+export const createInvoiceService = config =>
+  createService(InvoiceService, config)
+
+export const createTransactionService = config =>
+  createService(TransactionService, config)
+
 export {
   AuthService,
   CollabService,
@@ -245,5 +278,11 @@ export {
   RecordCollectionService,
   PartyService,
   InteractionService,
-  SegmentService
+  SegmentService,
+  ProductService,
+  PriceService,
+  CompanyProfileService,
+  AgreementService,
+  InvoiceService,
+  TransactionService
 }

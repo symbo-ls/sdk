@@ -398,6 +398,56 @@ const ENTITY_ROUTES = {
     },
   },
 
+  // ─── Phase-3 commerce (WORKSPACE_DATA_MODEL §6.2/§6.3/§6.4) ──────────────────
+  // The tenant-finance spine: catalog (products + prices), the workspace's own
+  // company profile (singleton), agreements, invoices, transactions. Mongo-
+  // native, peers to the Phase-1 spine + Phase-2 directory. Declarative
+  // `fetch: [{ from: 'invoices', ... }]` + imperative
+  // `sdk.execute('invoices', 'issue', { id })` both resolve here.
+  'products': {
+    service: 'products',
+    methods: { list: 'list', get: 'get', create: 'create', update: 'update', remove: 'remove' },
+    argMap: CRUD_ARG_MAP,
+  },
+  'prices': {
+    service: 'prices',
+    methods: { list: 'list', get: 'get', create: 'create', update: 'update', remove: 'remove' },
+    argMap: CRUD_ARG_MAP,
+  },
+  'agreements': {
+    service: 'agreements',
+    methods: { list: 'list', get: 'get', create: 'create', update: 'update', remove: 'remove' },
+    argMap: CRUD_ARG_MAP,
+  },
+  'invoices': {
+    service: 'invoices',
+    methods: {
+      list: 'list',
+      get: 'get',
+      create: 'create',
+      update: 'update',
+      remove: 'remove',
+      issue: 'issue',
+    },
+    argMap: {
+      ...CRUD_ARG_MAP,
+      // issue transitions draft → open by id (no body).
+      issue: argMaps.id,
+    },
+  },
+  'transactions': {
+    service: 'transactions',
+    methods: { list: 'list', get: 'get', create: 'create', update: 'update', remove: 'remove' },
+    argMap: CRUD_ARG_MAP,
+  },
+  // company-profile is a workspace singleton — no id on get/update; update
+  // carries the upsert payload.
+  'companyProfile': {
+    service: 'companyProfile',
+    methods: { get: 'get', update: 'update' },
+    argMap: { get: () => [], update: argMaps.payload },
+  },
+
   // ─── Docs (DocService — Mongo-backed, SSE realtime) ─────────────────────────
   // The docs surface lives on its own service. UI calls go through
   // `sdk.execute('docs', 'list')` / `sdk.docs.*`.
