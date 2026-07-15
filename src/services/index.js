@@ -60,6 +60,18 @@ import { CompanyProfileService } from './CompanyProfileService.js'
 import { AgreementService } from './AgreementService.js'
 import { InvoiceService } from './InvoiceService.js'
 import { TransactionService } from './TransactionService.js'
+// §7 spine capabilities (WORKSPACE_DATA_MODEL §7.3–§7.6/§6.9) — the polymorphic
+// surfaces every entity (shared + records) hangs on, keyed on entityRef
+// { type, id }: comments (threaded discussion), attachments (files on
+// anything), watchers (subscribe anyone to anything), activity-entries (the
+// read-only timeline), tags (the workspace tag registry). Mongo-native, peers
+// to the Phase-1 spine + Phase-2 directory + Phase-3 commerce over the main
+// server's /core/* routes.
+import { CommentService } from './CommentService.js'
+import { AttachmentService } from './AttachmentService.js'
+import { WatcherService } from './WatcherService.js'
+import { ActivityEntryService } from './ActivityEntryService.js'
+import { TagService } from './TagService.js'
 import { CanvasLayoutService } from './CanvasLayoutService.js'
 import { MeetService } from './MeetService.js'
 import { CalendarService } from './CalendarService.js'
@@ -234,6 +246,25 @@ export const createInvoiceService = config =>
 export const createTransactionService = config =>
   createService(TransactionService, config)
 
+// §7 spine-capability factories — comments, attachments, watchers,
+// activity-entries (read-only), tags. All keyed on entityRef { type, id };
+// reached via sdk.execute('comments', …) like parties/workflows/invoices.
+// See WORKSPACE_DATA_MODEL §7.3–§7.6/§6.9.
+export const createCommentService = config =>
+  createService(CommentService, config)
+
+export const createAttachmentService = config =>
+  createService(AttachmentService, config)
+
+export const createWatcherService = config =>
+  createService(WatcherService, config)
+
+export const createActivityEntryService = config =>
+  createService(ActivityEntryService, config)
+
+export const createTagService = config =>
+  createService(TagService, config)
+
 export {
   AuthService,
   CollabService,
@@ -284,5 +315,10 @@ export {
   CompanyProfileService,
   AgreementService,
   InvoiceService,
-  TransactionService
+  TransactionService,
+  CommentService,
+  AttachmentService,
+  WatcherService,
+  ActivityEntryService,
+  TagService
 }

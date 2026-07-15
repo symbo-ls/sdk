@@ -82,6 +82,20 @@ const partySubPayload = (a) => a?.payload ?? a?.data ?? (() => {
   return rest
 })()
 
+// §7 spine-capability list adapter. The entity-scoped lists (comments,
+// attachments, watchers, activityEntries, tags — and watchers' unwatch-by-
+// query) read their query params (entityType/entityId, userEmail, since/limit,
+// group, workspaceId) off a SINGLE filter bag. Pass that bag through as the
+// first positional, tolerating all three caller shapes: the imperative flat
+// bag ({ entityType, entityId }), the { filter } pack, and the declarative
+// fetch-adapter pack ({ filter: params, params, ...params }). The second
+// positional carries the feed/scope fallbacks (workspaceId/since/limit) that
+// the fetch adapter hoists OUT of `params` to the top level (e.g. `limit`).
+const spineListArgs = (a) => [
+  a?.filter ?? a?.params ?? a,
+  { workspaceId: a?.workspaceId, since: a?.since, limit: a?.limit, ...(a?.options || {}) },
+]
+
 const ENTITY_ROUTES = {
   // ─── i18n (translations stream) ────────────────────────────────────────────
   // The TranslationWatcher in workspace/app.js subscribes to live translation
@@ -446,6 +460,69 @@ const ENTITY_ROUTES = {
     service: 'companyProfile',
     methods: { get: 'get', update: 'update' },
     argMap: { get: () => [], update: argMaps.payload },
+  },
+
+  // ─── §7 spine capabilities (WORKSPACE_DATA_MODEL §7.3–§7.6/§6.9) ─────────────
+  // The polymorphic surfaces every entity (shared + records) hangs on, keyed
+  // on entityRef { type, id }: comments (threaded discussion), attachments
+  // (files on anything), watchers (subscribe anyone to anything),
+  // activityEntries (the read-only timeline), tags (the workspace tag
+  // registry). Mongo-native, peers to the Phase-1 spine + Phase-2 directory +
+  // Phase-3 commerce. Declarative `fetch: [{ from: 'comments', params: {
+  // entityType, entityId } }]` + imperative `sdk.execute('watchers', 'watch',
+  // { entityRef, level })` both resolve here. The entity-scoped lists thread
+  // their filter bag via spineListArgs (see the adapter above).
+  'comments': {
+    service: 'comments',
+    methods: { list: 'list', create: 'create', update: 'update', remove: 'remove' },
+    // No `get` — the server exposes no GET /comments/:id (a comment is only
+    // read through the entity-scoped list).
+    argMap: {
+      list: spineListArgs,
+      create: argMaps.payload,
+      update: argMaps.idPayload,
+      remove: argMaps.id,
+    },
+  },
+  'attachments': {
+    service: 'attachments',
+    methods: { list: 'list', create: 'create', remove: 'remove' },
+    argMap: {
+      list: spineListArgs,
+      create: argMaps.payload,
+      remove: argMaps.id,
+    },
+  },
+  'watchers': {
+    service: 'watchers',
+    methods: { list: 'list', watch: 'watch', unwatch: 'unwatch' },
+    argMap: {
+      list: spineListArgs,
+      // watch = POST upsert; pass the { entityRef, level, userEmail } payload
+      // bag (flat or packed), threading workspaceId to the query.
+      watch: (a) => [
+        a?.payload ?? a?.data ?? a,
+        { workspaceId: a?.workspaceId ?? a?.options?.workspaceId },
+      ],
+      // unwatch = DELETE by query; pass the { entityType, entityId, userEmail }
+      // filter bag — same shape-tolerance as list.
+      unwatch: spineListArgs,
+    },
+  },
+  'activityEntries': {
+    service: 'activityEntries',
+    // Read-only timeline — list only (emission is server-internal).
+    methods: { list: 'list' },
+    argMap: { list: spineListArgs },
+  },
+  'tags': {
+    service: 'tags',
+    methods: { list: 'list', get: 'get', create: 'create', update: 'update', remove: 'remove' },
+    argMap: {
+      ...CRUD_ARG_MAP,
+      // list threads the optional { group } filter bag (flat or packed).
+      list: spineListArgs,
+    },
   },
 
   // ─── Docs (DocService — Mongo-backed, SSE realtime) ─────────────────────────

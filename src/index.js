@@ -38,6 +38,11 @@ import {
   createAgreementService,
   createInvoiceService,
   createTransactionService,
+  createCommentService,
+  createAttachmentService,
+  createWatcherService,
+  createActivityEntryService,
+  createTagService,
   createAllocationRuleService,
   createSharedAssetService,
   createCreditsService,
@@ -385,6 +390,47 @@ export class SDK {
       this._initService(
         'transactions',
         createTransactionService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      // §7 spine capabilities (WORKSPACE_DATA_MODEL §7.3–§7.6/§6.9) — comments
+      // (threaded discussion), attachments (files on anything), watchers
+      // (subscribe anyone to anything), activityEntries (read-only timeline),
+      // tags (workspace tag registry). All keyed on entityRef { type, id };
+      // Mongo-native, reached via sdk.execute('comments', …) like
+      // parties/workflows/invoices.
+      this._initService(
+        'comments',
+        createCommentService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      this._initService(
+        'attachments',
+        createAttachmentService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      this._initService(
+        'watchers',
+        createWatcherService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      this._initService(
+        'activityEntries',
+        createActivityEntryService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      this._initService(
+        'tags',
+        createTagService({
           context: this._context,
           options: this._options
         })
@@ -825,6 +871,11 @@ export {
   createAgreementService,
   createInvoiceService,
   createTransactionService,
+  createCommentService,
+  createAttachmentService,
+  createWatcherService,
+  createActivityEntryService,
+  createTagService,
   createAllocationRuleService,
   createSharedAssetService,
   createCreditsService,
