@@ -72,6 +72,16 @@ import { AttachmentService } from './AttachmentService.js'
 import { WatcherService } from './WatcherService.js'
 import { ActivityEntryService } from './ActivityEntryService.js'
 import { TagService } from './TagService.js'
+// Phase-4 scheduling services (WORKSPACE_DATA_MODEL §6.5/§6.7/§6.8) — the
+// scheduling & service surfaces: bookings (party-facing commitments, +/confirm
+// +cancel-delete), availability-rules (per-user freebusy), conversations (two-
+// way threads + a /messages sub-resource), recurrences (the generic rrule
+// scheduler). Mongo-native, peers to the Phase-1 spine + Phase-2 directory +
+// Phase-3 commerce + §7 capabilities over the main server's /core/* routes.
+import { BookingService } from './BookingService.js'
+import { AvailabilityRuleService } from './AvailabilityRuleService.js'
+import { ConversationService } from './ConversationService.js'
+import { RecurrenceService } from './RecurrenceService.js'
 import { CanvasLayoutService } from './CanvasLayoutService.js'
 import { MeetService } from './MeetService.js'
 import { CalendarService } from './CalendarService.js'
@@ -265,6 +275,23 @@ export const createActivityEntryService = config =>
 export const createTagService = config =>
   createService(TagService, config)
 
+// Phase-4 scheduling factories — bookings (+ /confirm + cancel-delete),
+// availability-rules (per-user freebusy), conversations (+ /messages sub-
+// resource), recurrences (generic rrule scheduler). All Mongo-native; reached
+// via sdk.execute('bookings', …) like parties/invoices/comments. See
+// WORKSPACE_DATA_MODEL §6.5/§6.7/§6.8.
+export const createBookingService = config =>
+  createService(BookingService, config)
+
+export const createAvailabilityRuleService = config =>
+  createService(AvailabilityRuleService, config)
+
+export const createConversationService = config =>
+  createService(ConversationService, config)
+
+export const createRecurrenceService = config =>
+  createService(RecurrenceService, config)
+
 export {
   AuthService,
   CollabService,
@@ -320,5 +347,9 @@ export {
   AttachmentService,
   WatcherService,
   ActivityEntryService,
-  TagService
+  TagService,
+  BookingService,
+  AvailabilityRuleService,
+  ConversationService,
+  RecurrenceService
 }

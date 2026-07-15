@@ -82,6 +82,15 @@ const partySubPayload = (a) => a?.payload ?? a?.data ?? (() => {
   return rest
 })()
 
+// Conversation message body adapter (Phase-4 §6.7). Same shape-tolerance as
+// partySubPayload, keyed on the thread's conversationId/id instead — so both a
+// packed caller (`{ conversationId, payload: { body } }`) and a flat caller
+// (`{ conversationId, direction, body, ... }`) yield the right POST body.
+const conversationMessagePayload = (a) => a?.payload ?? a?.data ?? (() => {
+  const { conversationId, id, ...rest } = a || {}
+  return rest
+})()
+
 // §7 spine-capability list adapter. The entity-scoped lists (comments,
 // attachments, watchers, activityEntries, tags — and watchers' unwatch-by-
 // query) read their query params (entityType/entityId, userEmail, since/limit,
@@ -523,6 +532,63 @@ const ENTITY_ROUTES = {
       // list threads the optional { group } filter bag (flat or packed).
       list: spineListArgs,
     },
+  },
+
+  // ─── Phase-4 scheduling (WORKSPACE_DATA_MODEL §6.5/§6.7/§6.8) ────────────────
+  // The scheduling & service surfaces: bookings (party-facing commitments,
+  // + confirm + cancel-delete), availabilityRules (per-user freebusy),
+  // conversations (two-way threads + a messages sub-resource), recurrences
+  // (the generic rrule scheduler). Mongo-native, peers to the Phase-1 spine +
+  // Phase-2 directory + Phase-3 commerce + §7 capabilities. Declarative
+  // `fetch: [{ from: 'bookings', ... }]` + imperative
+  // `sdk.execute('bookings', 'confirm', { id })` /
+  // `sdk.execute('conversations', 'addMessage', { conversationId, body })`
+  // both resolve here.
+  'bookings': {
+    service: 'bookings',
+    methods: {
+      list: 'list',
+      get: 'get',
+      create: 'create',
+      update: 'update',
+      remove: 'remove',
+      confirm: 'confirm',
+    },
+    argMap: {
+      ...CRUD_ARG_MAP,
+      // confirm transitions requested → confirmed by id (no body); remove is
+      // the cancel DELETE (status 'cancelled', never a hard delete).
+      confirm: argMaps.id,
+    },
+  },
+  'availabilityRules': {
+    service: 'availabilityRules',
+    methods: { list: 'list', get: 'get', create: 'create', update: 'update', remove: 'remove' },
+    argMap: CRUD_ARG_MAP,
+  },
+  'conversations': {
+    service: 'conversations',
+    methods: {
+      list: 'list',
+      get: 'get',
+      create: 'create',
+      update: 'update',
+      remove: 'remove',
+      messages: 'listMessages',
+      addMessage: 'addMessage',
+    },
+    argMap: {
+      ...CRUD_ARG_MAP,
+      // The message sub-resource threads the parent conversationId first, then
+      // (for addMessage) the { direction, from, to, body, attachments } body.
+      messages: (a) => [a?.conversationId ?? a?.id],
+      addMessage: (a) => [a?.conversationId ?? a?.id, conversationMessagePayload(a)],
+    },
+  },
+  'recurrences': {
+    service: 'recurrences',
+    methods: { list: 'list', get: 'get', create: 'create', update: 'update', remove: 'remove' },
+    argMap: CRUD_ARG_MAP,
   },
 
   // ─── Docs (DocService — Mongo-backed, SSE realtime) ─────────────────────────

@@ -43,6 +43,10 @@ import {
   createWatcherService,
   createActivityEntryService,
   createTagService,
+  createBookingService,
+  createAvailabilityRuleService,
+  createConversationService,
+  createRecurrenceService,
   createAllocationRuleService,
   createSharedAssetService,
   createCreditsService,
@@ -431,6 +435,40 @@ export class SDK {
       this._initService(
         'tags',
         createTagService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      // Phase-4 scheduling (WORKSPACE_DATA_MODEL §6.5/§6.7/§6.8) — the
+      // scheduling & service surfaces: bookings (party-facing commitments,
+      // + /confirm + cancel-delete), availability-rules (per-user freebusy),
+      // conversations (two-way threads + a /messages sub-resource),
+      // recurrences (the generic rrule scheduler). Mongo-native; reached via
+      // sdk.execute('bookings', …) like parties/invoices/comments.
+      this._initService(
+        'bookings',
+        createBookingService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      this._initService(
+        'availabilityRules',
+        createAvailabilityRuleService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      this._initService(
+        'conversations',
+        createConversationService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      this._initService(
+        'recurrences',
+        createRecurrenceService({
           context: this._context,
           options: this._options
         })
@@ -876,6 +914,10 @@ export {
   createWatcherService,
   createActivityEntryService,
   createTagService,
+  createBookingService,
+  createAvailabilityRuleService,
+  createConversationService,
+  createRecurrenceService,
   createAllocationRuleService,
   createSharedAssetService,
   createCreditsService,
