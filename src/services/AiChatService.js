@@ -17,42 +17,60 @@ export class AiChatService extends BaseService {
   // Resolve the { orgId, workspaceId } tenant scope an aiChat call should
   // carry: an explicit caller-supplied value wins per-key; otherwise falls
   // back to the SDK's own `_context.activeOrgId` / `_context.activeWorkspaceId`
-  // (kept fresh by sdk.switchOrg/switchWorkspace). Mirrors
-  // WorkspaceProjectService._chatWorkspaceId (see "workspace-scoping gaps in
-  // the chat transport", sdk@5a8d798) — sent for BOTH keys: `workspaceId` is
-  // the new primary key the server's resolveWorkspaceId reads, `orgId` is
-  // kept for back-compat with today's req.user.activeOrganization inference.
+  // (kept fresh by sdk.switchOrg/switchWorkspace). Same context-defaulting
+  // approach the chat transport uses (see "workspace-scoping gaps in the chat
+  // transport", sdk@5a8d798) — sent for BOTH keys: `workspaceId` is the new
+  // primary key the server's resolveWorkspaceId reads, `orgId` is kept for
+  // back-compat with today's req.user.activeOrganization inference.
   // Returns `undefined` for a key when neither source has a value, so
   // callers can omit the param entirely (byte-identical request when no
   // tenant context is set anywhere).
-  _aiChatScope (scope) {
+  _aiChatScope(scope) {
     return {
       orgId: scope?.orgId ?? this._context?.activeOrgId ?? undefined,
-      workspaceId: scope?.workspaceId ?? this._context?.activeWorkspaceId ?? undefined
+      workspaceId:
+        scope?.workspaceId ?? this._context?.activeWorkspaceId ?? undefined
     }
+  }
+
+  // Append the resolved tenant scope onto `params` and return the `?…` (or '')
+  // query suffix — the query-param transport shared by the threads/messages
+  // reads + thread create. Undefined keys are omitted (byte-identical request
+  // when no tenant context is set).
+  _scopeQs(params, scopeArgs) {
+    const scope = this._aiChatScope(scopeArgs)
+    if (scope.orgId !== undefined) params.set('orgId', String(scope.orgId))
+    if (scope.workspaceId !== undefined)
+      params.set('workspaceId', String(scope.workspaceId))
+    const qs = params.toString()
+    return qs ? `?${qs}` : ''
+  }
+
+  // Fold the resolved tenant scope into a POST payload — the body transport
+  // shared by completion() + stream() (see completion() for why scope rides
+  // the body, not the query). Undefined keys are omitted.
+  _scopePayload(payload) {
+    const scope = this._aiChatScope(payload)
+    const scoped = { ...payload }
+    if (scope.orgId !== undefined) scoped.orgId = scope.orgId
+    if (scope.workspaceId !== undefined) scoped.workspaceId = scope.workspaceId
+    return scoped
   }
 
   // ==================== THREADS ====================
 
   threads = {
     list: ({ includeArchived = false, orgId, workspaceId } = {}) => {
-      const scope = this._aiChatScope({ orgId, workspaceId })
       const params = new URLSearchParams()
       if (includeArchived) params.set('includeArchived', 'true')
-      if (scope.orgId !== undefined) params.set('orgId', String(scope.orgId))
-      if (scope.workspaceId !== undefined) params.set('workspaceId', String(scope.workspaceId))
-      const qs = params.toString()
-      return this._call('aiChat.threads.list', `/ai-chat/threads${qs ? `?${qs}` : ''}`)
+      const qs = this._scopeQs(params, { orgId, workspaceId })
+      return this._call('aiChat.threads.list', `/ai-chat/threads${qs}`)
     },
     get: (threadId, { orgId, workspaceId } = {}) => {
-      const scope = this._aiChatScope({ orgId, workspaceId })
-      const params = new URLSearchParams()
-      if (scope.orgId !== undefined) params.set('orgId', String(scope.orgId))
-      if (scope.workspaceId !== undefined) params.set('workspaceId', String(scope.workspaceId))
-      const qs = params.toString()
+      const qs = this._scopeQs(new URLSearchParams(), { orgId, workspaceId })
       return this._call(
         'aiChat.threads.get',
-        `/ai-chat/threads/${encodeURIComponent(threadId)}${qs ? `?${qs}` : ''}`
+        `/ai-chat/threads/${encodeURIComponent(threadId)}${qs}`
       )
     },
     // workspaceId + orgId (default from _context) are sent as query params
@@ -61,36 +79,33 @@ export class AiChatService extends BaseService {
     // req.user.activeOrganization fallback, which can be momentarily stale
     // right after switchOrg/switchWorkspace.
     create: (payload = {}, { orgId, workspaceId } = {}) => {
-      const scope = this._aiChatScope({ orgId, workspaceId })
-      const params = new URLSearchParams()
-      if (scope.orgId !== undefined) params.set('orgId', String(scope.orgId))
-      if (scope.workspaceId !== undefined) params.set('workspaceId', String(scope.workspaceId))
-      const qs = params.toString()
-      return this._call('aiChat.threads.create', `/ai-chat/threads${qs ? `?${qs}` : ''}`, {
+      const qs = this._scopeQs(new URLSearchParams(), { orgId, workspaceId })
+      return this._call('aiChat.threads.create', `/ai-chat/threads${qs}`, {
         method: 'POST',
         body: { payload }
       })
     },
     remove: (threadId) =>
-      this._call('aiChat.threads.remove', `/ai-chat/threads/${encodeURIComponent(threadId)}`, {
-        method: 'DELETE'
-      })
+      this._call(
+        'aiChat.threads.remove',
+        `/ai-chat/threads/${encodeURIComponent(threadId)}`,
+        {
+          method: 'DELETE'
+        }
+      )
   }
 
   // ==================== MESSAGES ====================
 
   messages = {
     list: (threadId, { limit, beforeId, orgId, workspaceId } = {}) => {
-      const scope = this._aiChatScope({ orgId, workspaceId })
       const params = new URLSearchParams()
       if (limit) params.set('limit', String(limit))
       if (beforeId) params.set('beforeId', beforeId)
-      if (scope.orgId !== undefined) params.set('orgId', String(scope.orgId))
-      if (scope.workspaceId !== undefined) params.set('workspaceId', String(scope.workspaceId))
-      const qs = params.toString()
+      const qs = this._scopeQs(params, { orgId, workspaceId })
       return this._call(
         'aiChat.messages.list',
-        `/ai-chat/threads/${encodeURIComponent(threadId)}/messages${qs ? `?${qs}` : ''}`
+        `/ai-chat/threads/${encodeURIComponent(threadId)}/messages${qs}`
       )
     }
   }
@@ -111,14 +126,10 @@ export class AiChatService extends BaseService {
   //   claim is momentarily stale right after switchOrg/switchWorkspace.
   //
   // Returns: { text, action, thread, userMessage, assistantMessage, usage }
-  completion (payload) {
-    const scope = this._aiChatScope(payload)
-    const scopedPayload = { ...payload }
-    if (scope.orgId !== undefined) scopedPayload.orgId = scope.orgId
-    if (scope.workspaceId !== undefined) scopedPayload.workspaceId = scope.workspaceId
+  completion(payload) {
     return this._call('aiChat.completion', '/ai-chat/completion', {
       method: 'POST',
-      body: { payload: scopedPayload }
+      body: { payload: this._scopePayload(payload) }
     })
   }
 
@@ -135,12 +146,12 @@ export class AiChatService extends BaseService {
   //   onError(err)            — fires on transport or upstream error
   //
   // Returns: cancel() — abort the in-flight stream
-  stream (payload, { onChunk, onDone, onError } = {}) {
-    const scope = this._aiChatScope(payload)
-    const scopedPayload = { ...payload }
-    if (scope.orgId !== undefined) scopedPayload.orgId = scope.orgId
-    if (scope.workspaceId !== undefined) scopedPayload.workspaceId = scope.workspaceId
-    return this._streamPost('/ai-chat/stream', { payload: scopedPayload }, { onChunk, onDone, onError })
+  stream(payload, { onChunk, onDone, onError } = {}) {
+    return this._streamPost(
+      '/ai-chat/stream',
+      { payload: this._scopePayload(payload) },
+      { onChunk, onDone, onError }
+    )
   }
 
   // ==================== MEET-ANALYZE ====================
@@ -153,7 +164,7 @@ export class AiChatService extends BaseService {
   // analyzeTranscript.js consumers don't have to change.
   //
   // payload: { roomId, force? }
-  meetAnalyze (payload) {
+  meetAnalyze(payload) {
     return this._call('aiChat.meetAnalyze', '/ai-chat/meet-analyze', {
       method: 'POST',
       body: { payload }
