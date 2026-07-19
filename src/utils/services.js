@@ -449,6 +449,15 @@ export const SERVICE_METHODS = {
   getSpendControls: 'workspace',
   updateSpendControls: 'workspace',
 
+  // Workspace public config + write-only private-secret management.
+  // Trusted runtime secret resolution is intentionally not browser-exposed.
+  getWorkspacePublicConfig: 'workspace',
+  upsertWorkspacePublicConfig: 'workspace',
+  deleteWorkspacePublicConfig: 'workspace',
+  listWorkspaceSecrets: 'workspace',
+  upsertWorkspaceSecret: 'workspace',
+  deleteWorkspaceSecret: 'workspace',
+
   // Public rate card from CreditsService — unauthenticated, used by the
   // admin /admin/usage operator view and /data/plans pricing-model
   // overview. Without this entry sdk.getRates is undefined.
