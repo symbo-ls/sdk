@@ -803,6 +803,10 @@ const ENTITY_ROUTES = {
       update: 'chat.updateMessage',
       remove: 'chat.removeMessage',
       react: 'chat.toggleReaction',
+      // Org-admin-only bulk purge of every message in the caller's active
+      // workspace (admin gate + workspace scoping enforced by the worker
+      // route POST /chat/messages/purge). Takes no args.
+      purge: 'chat.purgeMessages',
     },
     argMap: {
       // Same "no silent escalation" contract as chat.members.list above —
@@ -828,6 +832,8 @@ const ENTITY_ROUTES = {
       update: (a) => [a?.messageId ?? a?.id, a?.payload ?? a?.data ?? a],
       remove: (a) => [a?.messageId ?? a?.id],
       react: (a) => [a?.messageId ?? a?.id, a?.emoji, a?.userId],
+      // No args — the active workspace is derived server-side from the token.
+      purge: () => [],
     },
   },
   'workspaceProject.chat.mentions': {

@@ -469,6 +469,16 @@ export class WorkspaceProjectService extends BaseService {
           method: 'DELETE'
         }
       ),
+    // Org-admin-only bulk purge of EVERY message in the caller's ACTIVE
+    // workspace. Takes no args — the worker route (POST /chat/messages/purge)
+    // derives the workspace from the bearer token and enforces the admin gate
+    // (auth.isSuperadmin) + workspace scoping server-side. Replaces the
+    // danger-zone page's raw, unscoped, client-side DELETE against
+    // chat_messages with the anon key.
+    purgeMessages: () =>
+      this._ws('chat.purgeMessages', '/chat/messages/purge', {
+        method: 'POST'
+      }),
     toggleReaction: (messageId, emoji, userId) =>
       this._ws(
         'chat.toggleReaction',
