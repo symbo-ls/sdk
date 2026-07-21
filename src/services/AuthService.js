@@ -794,7 +794,7 @@ export class AuthService extends BaseService {
   // from the Supabase public.people view. Identity fields (email, name,
   // avatar, timezone, status) come from canonical Mongo User; HR fields
   // (department, position, location, github, working_hours_*, …) come
-  // from workspace-extension/user_profiles via service-role.
+  // from the Mongo user-profile records, merged server-side.
   //
   // UI consumers should treat this as a drop-in for the legacy shape —
   // the row shape matches the old people-view rows exactly.
@@ -1472,7 +1472,7 @@ export class AuthService extends BaseService {
   /**
    * Cross-org notification badge counts for the org-switcher dropdown.
    * NEEDED_FOR_INTRANET §I8. Fails-soft to `{counts: {}}` when the
-   * governance edge-fn is unavailable.
+   * `/auth/me/org-notifications` endpoint is unavailable.
    *
    * @returns {Promise<{counts: Record<string, {mentions?: number, ticketsAssigned?: number, meetingInvites?: number}>}>}
    */

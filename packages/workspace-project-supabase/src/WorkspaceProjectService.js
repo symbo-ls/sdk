@@ -92,10 +92,10 @@ export class WorkspaceProjectService extends BaseService {
       try {
         const result = await this._tokenProvider()
         // Only short-circuit when the provider produced a usable token.
-        // A null/empty result means the federated path isn't ready (e.g.
-        // governance Supabase JWT missing, sdk_only diagnostic) — in that
-        // case fall through to _tokenManager so the SDK Mongo token still
-        // authenticates the request via the wrapper's userResolver path.
+        // The federated token path is retired, so a null/empty result is now
+        // the norm — fall through to _tokenManager, which supplies the SDK
+        // Mongo token that authenticates the request via the wrapper's
+        // userResolver path (the sole, authoritative token source now).
         // Returning null here would send the request with no Authorization
         // header and 401 the user, even though they have a perfectly valid
         // session token.
@@ -469,6 +469,16 @@ export class WorkspaceProjectService extends BaseService {
           method: 'DELETE'
         }
       ),
+    // Org-admin-only bulk purge of EVERY message in the caller's ACTIVE
+    // workspace. Takes no args — the worker route (POST /chat/messages/purge)
+    // derives the workspace from the bearer token and enforces the admin gate
+    // (auth.isSuperadmin) + workspace scoping server-side. Replaces the
+    // danger-zone page's raw, unscoped, client-side DELETE against
+    // chat_messages with the anon key.
+    purgeMessages: () =>
+      this._ws('chat.purgeMessages', '/chat/messages/purge', {
+        method: 'POST'
+      }),
     toggleReaction: (messageId, emoji, userId) =>
       this._ws(
         'chat.toggleReaction',
