@@ -716,10 +716,11 @@ export class SDK {
     }
   }
 
-  // Switch the active workspace within the current org. The federation
-  // layer (governance Supabase + symbols-auth-bridge edge fn) is what
-  // actually re-mints the JWT with the new `active_workspace_id` claim;
-  // this method orchestrates that via the optional
+  // Switch the active workspace within the current org. `setActiveWorkspace`
+  // writes the new active workspace to Mongo — the source of truth the
+  // workspace-project `userResolver` reads to scope the tenant. The old
+  // federated JWT re-mint (that stamped the `active_workspace_id` claim) is
+  // retired/legacy; this method still fires it best-effort via the optional
   // `context.federationSwitchWorkspace` callback registered at init time.
   //
   // Frontend contract:
@@ -768,12 +769,13 @@ export class SDK {
       try { globalThis.localStorage.setItem('activeWorkspace', newWorkspaceId) } catch {}
     }
 
-    // Supabase federation is now OPTIONAL enrichment — fire it best-effort
-    // (mirrors switchOrg) so the federated JWT's `active_workspace_id` re-mints
-    // in the background, but NEVER let a federation hiccup (CORS / cold edge fn
-    // / no governance session) abort the switch. This is the detach: Mongo is
-    // authoritative; the bridge is a chainable adapter. (Previously this fetch
-    // was the blocking critical path that surfaced "Failed to fetch".)
+    // The federated JWT re-mint is now OPTIONAL/legacy enrichment — fire it
+    // best-effort (mirrors switchOrg) so any lingering federation callback can
+    // refresh its `active_workspace_id` in the background, but NEVER let a
+    // federation hiccup (CORS / cold endpoint / no callback registered) abort
+    // the switch. This is the detach: Mongo is authoritative; the callback is a
+    // chainable adapter. (Previously this fetch was the blocking critical path
+    // that surfaced "Failed to fetch".)
     let federationResult = { ok: true, skipped: true }
     const federationFn = this._context.federationSwitchWorkspace
     if (typeof federationFn === 'function') {

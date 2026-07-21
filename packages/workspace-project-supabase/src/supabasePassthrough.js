@@ -59,9 +59,9 @@ const _supabaseStorageKey = (rawSupabaseUrl) => {
   return ref ? `sb-${ref}-auth-token` : null
 }
 
-// Public — single source of truth for "is the user signed in via the
-// governance Supabase project?". Used by the workspace token provider
-// and any auth diagnostic that needs the federated JWT directly.
+// Public — legacy reader for the workspace-extension (governance) Supabase
+// session token. That project is removed, so this is now effectively a
+// no-op (always resolves null); callers fall back to the Mongo token.
 export const workspaceExtensionSessionAccessToken = (rawSupabaseUrl) =>
   _readToken(_supabaseStorageKey(rawSupabaseUrl))
 

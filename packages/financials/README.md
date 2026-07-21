@@ -8,7 +8,7 @@ This package is **NOT** part of the SDK core. The financials surface lives outsi
 
 - **Per-tenant** — only orgs with `'financials'` in `Organization.enabledExtensions[]` can access it. Default-installed orgs have only `'workspace-extension'`.
 - **Sensitive** — equity / compensation / investor data needs hard permission gating; keeping it out of the core bundle reduces blast radius for SDK-only consumers (CLI, marketing tools, etc.) that should never see this data.
-- **Backed by a separate Supabase project** — `bxhdvzwmvptgksqfkgqp` (the "financials" project), distinct from the workspace-extension project (`becrzpqaiovbvfmrosro`).
+- **Backed by a separate Supabase project** — `bxhdvzwmvptgksqfkgqp` (the "financials" project), distinct from the former workspace-extension (governance) Supabase project (`becrzpqaiovbvfmrosro`, now removed).
 
 All HTTP traffic goes to `/core/financials/*` on the main API server. The SDK never talks to the financials Supabase project directly — main server is the sole client + applies the `enabledExtensions['financials']` gate.
 

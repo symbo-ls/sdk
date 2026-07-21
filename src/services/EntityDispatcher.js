@@ -78,9 +78,7 @@ const CRUD_ARG_MAP = {
 // (`{ partyId, role, ... }`) yield the right body. Mirrors argMaps.idPayload's
 // rest-strip, keyed on the party's partyId/id instead of id/number.
 const partySubPayload = (a) => a?.payload ?? a?.data ?? (() => {
-  // workspaceId is a routing param (→ `?workspaceId=`), never role/edge body —
-  // strip it here so the sub-resource argMaps can forward it as the opts arg.
-  const { partyId, id, workspaceId, ...rest } = a || {}
+  const { partyId, id, ...rest } = a || {}
   return rest
 })()
 
@@ -136,8 +134,8 @@ const ENTITY_ROUTES = {
   },
 
   // Intranet members list — replaces 'workspaceProject.people' (Supabase
-  // view). Joins Mongo User identity + workspace-extension/user_profiles
-  // HR fields server-side. UI consumers swap `sdk.execute('workspace
+  // view). Joins Mongo User identity + Mongo user-profile HR fields
+  // server-side. UI consumers swap `sdk.execute('workspace
   // Project.people', 'list')` → `sdk.execute('users.members', 'list')`.
   'users.members': {
     service: 'auth',
@@ -392,20 +390,14 @@ const ENTITY_ROUTES = {
     },
     argMap: {
       ...CRUD_ARG_MAP,
-      // Roles/relationships thread the parent partyId first, then the body, then
-      // the `{ workspaceId }` opts PartyService forwards to `?workspaceId=`. A
-      // member's Party lives in the org's HQ workspace (org-level intranet home,
-      // resolveHqWorkspaceId), which differs from the caller's active workspace —
-      // so every sub-resource op MUST carry workspaceId or it resolves against
-      // the wrong workspace and 404s ("party not found", tickets/server.md).
-      // Absent workspaceId → `_qs(undefined)` adds nothing → prior behavior.
-      listRoles: (a) => [a?.partyId ?? a?.id, { workspaceId: a?.workspaceId }],
-      addRole: (a) => [a?.partyId ?? a?.id, partySubPayload(a), { workspaceId: a?.workspaceId }],
-      removeRole: (a) => [a?.partyId ?? a?.id, a?.role, { workspaceId: a?.workspaceId }],
-      listRelationships: (a) => [a?.partyId ?? a?.id, { workspaceId: a?.workspaceId }],
-      addRelationship: (a) => [a?.partyId ?? a?.id, partySubPayload(a), { workspaceId: a?.workspaceId }],
+      // Roles/relationships thread the parent partyId first, then the body.
+      listRoles: (a) => [a?.partyId ?? a?.id],
+      addRole: (a) => [a?.partyId ?? a?.id, partySubPayload(a)],
+      removeRole: (a) => [a?.partyId ?? a?.id, a?.role],
+      listRelationships: (a) => [a?.partyId ?? a?.id],
+      addRelationship: (a) => [a?.partyId ?? a?.id, partySubPayload(a)],
       // removeRelationship targets the edge by its own id (relId), not partyId.
-      removeRelationship: (a) => [a?.relId ?? a?.id, { workspaceId: a?.workspaceId }],
+      removeRelationship: (a) => [a?.relId ?? a?.id],
     },
   },
   'interactions': {
