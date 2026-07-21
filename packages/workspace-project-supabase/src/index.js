@@ -1,7 +1,7 @@
 // @symbo.ls/workspace-project-supabase — the Supabase-backed surface for
 // the workspace-project worker. The SDK (`@symbo.ls/sdk`) re-exports
 // everything here via its `./services/index.js` so the historic import
-// shape (`import { WorkspaceProjectService, createSupabasePassthroughConfig }
+// shape (`import { WorkspaceProjectService, workspaceProjectEdgeFunctionUrl }
 // from '@symbo.ls/sdk'`) keeps working unchanged.
 //
 // Why a separate package: every namespace inside WorkspaceProjectService
@@ -19,7 +19,5 @@ export {
 } from './WorkspaceProjectService.js'
 
 export {
-  createSupabasePassthroughConfig,
-  workspaceProjectEdgeFunctionUrl,
-  workspaceExtensionSessionAccessToken
+  workspaceProjectEdgeFunctionUrl
 } from './supabasePassthrough.js'

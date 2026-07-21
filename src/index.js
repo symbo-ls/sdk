@@ -55,9 +55,7 @@ import {
   createCalendarService,
   createBuildsService,
   workspaceProjectBaseUrl,
-  createSupabasePassthroughConfig,
-  workspaceProjectEdgeFunctionUrl,
-  workspaceExtensionSessionAccessToken
+  workspaceProjectEdgeFunctionUrl
 } from './services/index.js'
 
 import { SERVICE_METHODS } from './utils/services.js'
@@ -928,9 +926,7 @@ export {
   createCalendarService,
   createBuildsService,
   workspaceProjectBaseUrl,
-  createSupabasePassthroughConfig,
-  workspaceProjectEdgeFunctionUrl,
-  workspaceExtensionSessionAccessToken
+  workspaceProjectEdgeFunctionUrl
 } from './services/index.js'
 
 // Re-export entity dispatcher helpers so external packages (e.g. plugins

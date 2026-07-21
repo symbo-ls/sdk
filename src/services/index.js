@@ -26,14 +26,12 @@ import { WorkspaceService } from './WorkspaceService.js'
 // WorkspaceProjectService + the Supabase passthrough helpers live in
 // the sibling @symbo.ls/workspace-project-supabase package — we re-export
 // them through ./index.js so the historic import shape
-// (`import { WorkspaceProjectService, createSupabasePassthroughConfig }
+// (`import { WorkspaceProjectService, workspaceProjectEdgeFunctionUrl }
 // from '@symbo.ls/sdk'`) keeps working.
 import {
   WorkspaceProjectService,
   workspaceProjectBaseUrl,
-  createSupabasePassthroughConfig,
   workspaceProjectEdgeFunctionUrl,
-  workspaceExtensionSessionAccessToken,
 } from '@symbo.ls/workspace-project-supabase'
 import { AllocationRuleService } from './AllocationRuleService.js'
 import { SharedAssetService } from './SharedAssetService.js'
@@ -314,9 +312,7 @@ export {
   WorkspaceService,
   WorkspaceProjectService,
   workspaceProjectBaseUrl,
-  createSupabasePassthroughConfig,
   workspaceProjectEdgeFunctionUrl,
-  workspaceExtensionSessionAccessToken,
   AiChatService,
   AiService,
   DocService,
