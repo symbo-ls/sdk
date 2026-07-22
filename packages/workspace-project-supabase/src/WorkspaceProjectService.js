@@ -376,6 +376,8 @@ export class WorkspaceProjectService extends BaseService {
   // chosen tenant instead of trusting whichever workspace the (possibly
   // stale) federated JWT claims. Returns `undefined` when neither source
   // has a value, so callers can omit the param entirely.
+  // (Named for its chat origin; since the SERVER-CHAT-WS-SCOPE-EXPLICIT
+  // sweep it is the generic workspace-scope resolver for every surface.)
   _chatWorkspaceId(workspaceId) {
     return workspaceId ?? this._context?.activeWorkspaceId ?? undefined
   }
@@ -597,21 +599,28 @@ export class WorkspaceProjectService extends BaseService {
 
   // --- Calendar ---------------------------------------------------------------
   calendar = {
-    listEvents: (filter) =>
-      this._ws('calendar.listEvents', '/calendar/events', {
+    // workspaceId optional — defaults to the SDK's activeWorkspaceId; the
+    // server membership-validates and scopes to it (fail-closed to the claim).
+    listEvents: (filter, workspaceId) => {
+      const wsId = this._chatWorkspaceId(workspaceId)
+      const qs = wsId ? `?workspaceId=${encodeURIComponent(wsId)}` : ''
+      return this._ws('calendar.listEvents', `/calendar/events${qs}`, {
         method: 'POST',
         body: { filter }
-      }),
+      })
+    },
     getEvent: (id) =>
       this._ws(
         'calendar.getEvent',
         `/calendar/events/${encodeURIComponent(id)}`
       ),
-    createEvent: (payload) =>
-      this._ws('calendar.createEvent', '/calendar/events', {
+    createEvent: (payload) => {
+      const wsId = this._chatWorkspaceId(payload?.workspace_id)
+      return this._ws('calendar.createEvent', '/calendar/events', {
         method: 'POST',
-        body: { payload }
-      }),
+        body: { payload: wsId ? { ...payload, workspace_id: wsId } : payload }
+      })
+    },
     updateEvent: (id, payload) =>
       this._ws(
         'calendar.updateEvent',
@@ -642,12 +651,18 @@ export class WorkspaceProjectService extends BaseService {
 
   // --- Meet -------------------------------------------------------------------
   meet = {
-    listRooms: () => this._ws('meet.listRooms', '/meet/rooms'),
-    createRoom: (payload) =>
-      this._ws('meet.createRoom', '/meet/rooms', {
+    listRooms: (workspaceId) => {
+      const wsId = this._chatWorkspaceId(workspaceId)
+      const qs = wsId ? `?workspaceId=${encodeURIComponent(wsId)}` : ''
+      return this._ws('meet.listRooms', `/meet/rooms${qs}`)
+    },
+    createRoom: (payload) => {
+      const wsId = this._chatWorkspaceId(payload?.workspace_id)
+      return this._ws('meet.createRoom', '/meet/rooms', {
         method: 'POST',
-        body: { payload }
-      }),
+        body: { payload: wsId ? { ...payload, workspace_id: wsId } : payload }
+      })
+    },
     getRoom: (id) =>
       this._ws('meet.getRoom', `/meet/rooms/${encodeURIComponent(id)}`),
     // Update a meet_rooms row — name, privacy, guest-join policy, etc.
@@ -792,9 +807,18 @@ export class WorkspaceProjectService extends BaseService {
 
   // --- Presence ---------------------------------------------------------------
   presence = {
-    online: () => this._ws('presence.online', '/presence/online'),
-    heartbeat: () =>
-      this._ws('presence.heartbeat', '/presence/heartbeat', { method: 'POST' })
+    // Presence follows the workspace the tab is VIEWING (server membership-
+    // validates; fail-closed to the claim).
+    online: (workspaceId) => {
+      const wsId = this._chatWorkspaceId(workspaceId)
+      const qs = wsId ? `?workspaceId=${encodeURIComponent(wsId)}` : ''
+      return this._ws('presence.online', `/presence/online${qs}`)
+    },
+    heartbeat: (workspaceId) => {
+      const wsId = this._chatWorkspaceId(workspaceId)
+      const qs = wsId ? `?workspaceId=${encodeURIComponent(wsId)}` : ''
+      return this._ws('presence.heartbeat', `/presence/heartbeat${qs}`, { method: 'POST' })
+    }
   }
 
   // --- Notifications ----------------------------------------------------------
@@ -837,8 +861,12 @@ export class WorkspaceProjectService extends BaseService {
   }
 
   // --- Search -----------------------------------------------------------------
-  search = (q, opts) =>
-    this._ws('search', '/search', { method: 'POST', body: { q, ...opts } })
+  search = (q, opts) => {
+    const { workspaceId, ...rest } = opts && typeof opts === 'object' ? opts : {}
+    const wsId = this._chatWorkspaceId(workspaceId)
+    const qs = wsId ? `?workspaceId=${encodeURIComponent(wsId)}` : ''
+    return this._ws('search', `/search${qs}`, { method: 'POST', body: { q, ...rest } })
+  }
 
   // --- Permissions ------------------------------------------------------------
   permissions = {
@@ -858,7 +886,11 @@ export class WorkspaceProjectService extends BaseService {
 
   // --- People -----------------------------------------------------------------
   people = {
-    list: () => this._ws('people.list', '/people'),
+    list: (workspaceId) => {
+      const wsId = this._chatWorkspaceId(workspaceId)
+      const qs = wsId ? `?workspaceId=${encodeURIComponent(wsId)}` : ''
+      return this._ws('people.list', `/people${qs}`)
+    },
     get: (id) => this._ws('people.get', `/people/${encodeURIComponent(id)}`),
     me: () => this._ws('people.me', '/people/me')
   }
