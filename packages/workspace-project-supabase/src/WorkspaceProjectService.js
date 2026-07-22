@@ -390,11 +390,18 @@ export class WorkspaceProjectService extends BaseService {
       const qs = wsId ? `?workspaceId=${encodeURIComponent(wsId)}` : ''
       return this._ws('chat.listChannels', `/chat/channels${qs}`)
     },
-    createChannel: (payload) =>
-      this._ws('chat.createChannel', '/chat/channels', {
+    // Stamp the caller's chosen workspace into the create payload (explicit
+    // `payload.workspace_id` wins; falls back to the SDK's activeWorkspaceId
+    // via `_chatWorkspaceId`, same resolution as listChannels). The server
+    // validates membership and scopes the create to it (SERVER-CHAT-WS-
+    // SCOPE-EXPLICIT) instead of trusting the possibly-stale token claim.
+    createChannel: (payload) => {
+      const wsId = this._chatWorkspaceId(payload?.workspace_id)
+      return this._ws('chat.createChannel', '/chat/channels', {
         method: 'POST',
-        body: { payload }
-      }),
+        body: { payload: wsId ? { ...payload, workspace_id: wsId } : payload }
+      })
+    },
     updateChannel: (channelId, payload) =>
       this._ws(
         'chat.updateChannel',
