@@ -798,15 +798,22 @@ export class AuthService extends BaseService {
   //
   // UI consumers should treat this as a drop-in for the legacy shape —
   // the row shape matches the old people-view rows exactly.
-  // Multi-tab (MULTI_WORKSPACE_TABS.md): pass the workspace the tab is
-  // actually VIEWING — the server resolves that workspace's org (membership-
-  // verified via resolveRequestOrgId) instead of falling back to the caller's
-  // global activeOrganization, which lags URL-based workspace browsing and
-  // returned another org's roster. Omit to keep the legacy claim-scoped read.
-  async listMembers(workspaceId) {
+  // Multi-tab (MULTI_WORKSPACE_TABS.md): pass the workspace (or org slug) the
+  // tab is actually VIEWING — the server resolves that tenant's org
+  // (membership-verified via resolveRequestOrgId) instead of falling back to
+  // the caller's global activeOrganization, which lags URL-based workspace
+  // browsing and returned another org's roster. `orgSlug` serves the boot-time
+  // prime, which only knows the /w/<slug> segment before the workspace record
+  // resolves. Accepts a bare workspaceId string (back-compat) or
+  // { workspaceId?, orgSlug? }. Omit to keep the legacy claim-scoped read.
+  async listMembers(scope) {
     this._requireReady('listMembers')
     try {
-      const qs = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : ''
+      const opts = typeof scope === 'string' ? { workspaceId: scope } : scope || {}
+      const params = new URLSearchParams()
+      if (opts.workspaceId) params.set('workspaceId', opts.workspaceId)
+      else if (opts.orgSlug) params.set('orgSlug', opts.orgSlug)
+      const qs = params.toString() ? `?${params.toString()}` : ''
       const response = await this._request(`/users/members${qs}`, {
         method: 'GET',
         methodName: 'listMembers'
