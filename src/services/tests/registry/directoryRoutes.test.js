@@ -50,17 +50,26 @@ for (const entity of ['parties', 'interactions', 'segments']) {
 }
 
 // ─── parties — roles + relationships sub-resources ────────────────────────────
+//
+// Every sub-resource op emits a trailing `{ workspaceId }` opts positional
+// UNCONDITIONALLY (undefined when the caller didn't scope) — a member's Party
+// lives in the org's HQ workspace, so the route must be able to carry the
+// scope (sdk@883835c). These assertions pin that arity.
 
 test('parties.listRoles / listRelationships thread the partyId positionally', async t => {
   const calls = []
   const execute = createEntityDispatcher(makeSdk(calls))
   await execute('parties', 'listRoles', { partyId: 'p1' })
-  await execute('parties', 'listRelationships', { partyId: 'p1' })
-  t.deepEqual(calls[0], { service: 'parties', method: 'listRoles', args: ['p1'] }, 'listRoles(partyId)')
+  await execute('parties', 'listRelationships', { partyId: 'p1', workspaceId: 'w1' })
+  t.deepEqual(
+    calls[0],
+    { service: 'parties', method: 'listRoles', args: ['p1', { workspaceId: undefined }] },
+    'listRoles(partyId, { workspaceId }) — opts always emitted, undefined when unscoped'
+  )
   t.deepEqual(
     calls[1],
-    { service: 'parties', method: 'listRelationships', args: ['p1'] },
-    'listRelationships(partyId)'
+    { service: 'parties', method: 'listRelationships', args: ['p1', { workspaceId: 'w1' }] },
+    'listRelationships(partyId, { workspaceId }) carries the caller scope'
   )
   t.end()
 })
@@ -72,12 +81,20 @@ test('parties.addRole → (partyId, body) for both packed + flat callers', async
   await execute('parties', 'addRole', { partyId: 'p2', role: 'vendor', tier: 'gold' })
   t.deepEqual(
     calls[0],
-    { service: 'parties', method: 'addRole', args: ['p1', { role: 'customer' }] },
+    {
+      service: 'parties',
+      method: 'addRole',
+      args: ['p1', { role: 'customer' }, { workspaceId: undefined }]
+    },
     'packed payload passes through'
   )
   t.deepEqual(
     calls[1],
-    { service: 'parties', method: 'addRole', args: ['p2', { role: 'vendor', tier: 'gold' }] },
+    {
+      service: 'parties',
+      method: 'addRole',
+      args: ['p2', { role: 'vendor', tier: 'gold' }, { workspaceId: undefined }]
+    },
     'flat body strips partyId'
   )
   t.end()
@@ -87,7 +104,11 @@ test('parties.removeRole → (partyId, role)', async t => {
   const calls = []
   const execute = createEntityDispatcher(makeSdk(calls))
   await execute('parties', 'removeRole', { partyId: 'p1', role: 'customer' })
-  t.deepEqual(calls[0], { service: 'parties', method: 'removeRole', args: ['p1', 'customer'] })
+  t.deepEqual(calls[0], {
+    service: 'parties',
+    method: 'removeRole',
+    args: ['p1', 'customer', { workspaceId: undefined }]
+  })
   t.end()
 })
 
@@ -101,7 +122,7 @@ test('parties.addRelationship → (partyId, {bId, kind})', async t => {
   t.deepEqual(calls[0], {
     service: 'parties',
     method: 'addRelationship',
-    args: ['p1', { bId: 'p2', kind: 'employed_by' }]
+    args: ['p1', { bId: 'p2', kind: 'employed_by' }, { workspaceId: undefined }]
   })
   t.end()
 })
@@ -110,7 +131,11 @@ test('parties.removeRelationship → (relId) targets the edge by its own id', as
   const calls = []
   const execute = createEntityDispatcher(makeSdk(calls))
   await execute('parties', 'removeRelationship', { relId: 'rel1' })
-  t.deepEqual(calls[0], { service: 'parties', method: 'removeRelationship', args: ['rel1'] })
+  t.deepEqual(calls[0], {
+    service: 'parties',
+    method: 'removeRelationship',
+    args: ['rel1', { workspaceId: undefined }]
+  })
   t.end()
 })
 
