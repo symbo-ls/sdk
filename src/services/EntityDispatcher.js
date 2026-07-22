@@ -41,15 +41,42 @@
 // Common arg adapters reused across routes. Pulling args out of well-known
 // shapes keeps individual routes terse — most CRUD entities follow the same
 // (filter, options) / (id) / (id, payload) pattern.
+// Keys of the list args bag that are NOT filter fields: the two filter packs
+// themselves + the pagination/shape options filterOptions splits out.
+const LIST_OPTION_KEYS = ['filter', 'params', 'options', 'single', 'limit', 'offset', 'order']
+
 const argMaps = {
   // (filter, options) for list — splits the adapter's params/options bag.
-  filterOptions: (a) => [a?.filter ?? a?.params, {
-    single: a?.single,
-    limit: a?.limit,
-    offset: a?.offset,
-    order: a?.order,
-    ...(a?.options || {})
-  }],
+  //
+  // FLAT-ARGS CONTRACT (2026-07-23): callers routinely pass filter fields
+  // flat — `execute('parties', 'list', { kind: 'company', workspaceId })` —
+  // and the old `a?.filter ?? a?.params` read silently DROPPED every one of
+  // them: the service got `filter = undefined`, the request went out
+  // unscoped, and the server's active-workspace claim fallback answered for
+  // whichever workspace was last active — an empty (or wrong-tenant) result
+  // that reads as "no data" to both humans and the AI assistant. Flat keys
+  // now BECOME the filter (minus LIST_OPTION_KEYS); an explicit `filter` /
+  // `params` pack still wins unchanged. `workspaceId` — a routing param —
+  // additionally rides on the options bag in BOTH shapes, so services that
+  // read `filter.workspaceId || options.workspaceId` resolve it even when
+  // it sits next to a nested filter pack.
+  filterOptions: (a) => {
+    const bag = a && typeof a === 'object' && !Array.isArray(a) ? a : {}
+    const rest = {}
+    for (const k in bag) {
+      if (!LIST_OPTION_KEYS.includes(k)) rest[k] = bag[k]
+    }
+    const filter =
+      bag.filter ?? bag.params ?? (Object.keys(rest).length ? rest : undefined)
+    return [filter, {
+      single: bag.single,
+      limit: bag.limit,
+      offset: bag.offset,
+      order: bag.order,
+      ...(bag.workspaceId !== undefined ? { workspaceId: bag.workspaceId } : {}),
+      ...(bag.options || {})
+    }]
+  },
   // (id) for get/remove — accepts id, number, or the bare arg.
   id: (a) => [a?.id ?? a?.number ?? a],
   // (payload) for create — payload may live under .payload, .data, or be the bare arg.
@@ -70,6 +97,45 @@ const CRUD_ARG_MAP = {
   create: argMaps.payload,
   update: argMaps.idPayload,
   remove: argMaps.id,
+}
+
+// Workspace-scoped CRUD adapters — the Phase-2/3/4 entity services share ONE
+// uniform signature (get/remove `(id, { workspaceId })`, create `(payload,
+// { workspaceId })`, update `(id, payload, { workspaceId })`), so their routes
+// thread a caller's top-level `workspaceId` — a ROUTING param, never body —
+// into that trailing options positional, and strip it out of a flat create/
+// update body. The opts positional is emitted ONLY when the caller provided
+// workspaceId: without it every arg array is byte-identical to CRUD_ARG_MAP,
+// and legacy routes (tickets etc.), whose trailing positionals mean other
+// things (e.g. a hard-delete flag), keep using CRUD_ARG_MAP untouched.
+const _wsOpts = (a) =>
+  a && typeof a === 'object' && a.workspaceId !== undefined
+    ? [{ workspaceId: a.workspaceId }]
+    : []
+const _stripWs = (a, extraKeys) => {
+  if (!a || typeof a !== 'object' || Array.isArray(a)) return a
+  const rest = {}
+  for (const k in a) {
+    if (k !== 'workspaceId' && !(extraKeys && extraKeys.includes(k))) rest[k] = a[k]
+  }
+  return rest
+}
+const wsArgMaps = {
+  id: (a) => [a?.id ?? a?.number ?? a, ..._wsOpts(a)],
+  payload: (a) => [a?.payload ?? a?.data ?? _stripWs(a), ..._wsOpts(a)],
+  idPayload: (a) => [
+    a?.id ?? a?.number,
+    a?.payload ?? a?.data ?? _stripWs(a, ['id', 'number']),
+    ..._wsOpts(a)
+  ],
+}
+
+const WS_CRUD_ARG_MAP = {
+  list: argMaps.filterOptions,
+  get: wsArgMaps.id,
+  create: wsArgMaps.payload,
+  update: wsArgMaps.idPayload,
+  remove: wsArgMaps.id,
 }
 
 // Party sub-resource body adapter (roles / relationships). Pulls the POST
@@ -399,7 +465,7 @@ const ENTITY_ROUTES = {
       removeRelationship: 'removeRelationship',
     },
     argMap: {
-      ...CRUD_ARG_MAP,
+      ...WS_CRUD_ARG_MAP,
       // Roles/relationships thread the parent partyId first, then the body, then
       // the `{ workspaceId }` opts PartyService forwards to `?workspaceId=`. A
       // member's Party lives in the org's HQ workspace (org-level intranet home,
@@ -419,7 +485,7 @@ const ENTITY_ROUTES = {
   'interactions': {
     service: 'interactions',
     methods: { list: 'list', get: 'get', create: 'create', update: 'update', remove: 'remove' },
-    argMap: CRUD_ARG_MAP,
+    argMap: WS_CRUD_ARG_MAP,
   },
   'segments': {
     service: 'segments',
@@ -432,7 +498,7 @@ const ENTITY_ROUTES = {
       members: 'listMembers',
     },
     argMap: {
-      ...CRUD_ARG_MAP,
+      ...WS_CRUD_ARG_MAP,
       members: argMaps.id,
     },
   },
@@ -446,17 +512,17 @@ const ENTITY_ROUTES = {
   'products': {
     service: 'products',
     methods: { list: 'list', get: 'get', create: 'create', update: 'update', remove: 'remove' },
-    argMap: CRUD_ARG_MAP,
+    argMap: WS_CRUD_ARG_MAP,
   },
   'prices': {
     service: 'prices',
     methods: { list: 'list', get: 'get', create: 'create', update: 'update', remove: 'remove' },
-    argMap: CRUD_ARG_MAP,
+    argMap: WS_CRUD_ARG_MAP,
   },
   'agreements': {
     service: 'agreements',
     methods: { list: 'list', get: 'get', create: 'create', update: 'update', remove: 'remove' },
-    argMap: CRUD_ARG_MAP,
+    argMap: WS_CRUD_ARG_MAP,
   },
   'invoices': {
     service: 'invoices',
@@ -469,7 +535,7 @@ const ENTITY_ROUTES = {
       issue: 'issue',
     },
     argMap: {
-      ...CRUD_ARG_MAP,
+      ...WS_CRUD_ARG_MAP,
       // issue transitions draft → open by id (no body).
       issue: argMaps.id,
     },
@@ -477,7 +543,7 @@ const ENTITY_ROUTES = {
   'transactions': {
     service: 'transactions',
     methods: { list: 'list', get: 'get', create: 'create', update: 'update', remove: 'remove' },
-    argMap: CRUD_ARG_MAP,
+    argMap: WS_CRUD_ARG_MAP,
   },
   // company-profile is a workspace singleton — no id on get/update; update
   // carries the upsert payload.
@@ -571,7 +637,7 @@ const ENTITY_ROUTES = {
       confirm: 'confirm',
     },
     argMap: {
-      ...CRUD_ARG_MAP,
+      ...WS_CRUD_ARG_MAP,
       // confirm transitions requested → confirmed by id (no body); remove is
       // the cancel DELETE (status 'cancelled', never a hard delete).
       confirm: argMaps.id,
@@ -580,7 +646,7 @@ const ENTITY_ROUTES = {
   'availabilityRules': {
     service: 'availabilityRules',
     methods: { list: 'list', get: 'get', create: 'create', update: 'update', remove: 'remove' },
-    argMap: CRUD_ARG_MAP,
+    argMap: WS_CRUD_ARG_MAP,
   },
   'conversations': {
     service: 'conversations',
@@ -594,7 +660,7 @@ const ENTITY_ROUTES = {
       addMessage: 'addMessage',
     },
     argMap: {
-      ...CRUD_ARG_MAP,
+      ...WS_CRUD_ARG_MAP,
       // The message sub-resource threads the parent conversationId first, then
       // (for addMessage) the { direction, from, to, body, attachments } body.
       messages: (a) => [a?.conversationId ?? a?.id],
@@ -604,7 +670,7 @@ const ENTITY_ROUTES = {
   'recurrences': {
     service: 'recurrences',
     methods: { list: 'list', get: 'get', create: 'create', update: 'update', remove: 'remove' },
-    argMap: CRUD_ARG_MAP,
+    argMap: WS_CRUD_ARG_MAP,
   },
 
   // ─── Docs (DocService — Mongo-backed, SSE realtime) ─────────────────────────
