@@ -798,10 +798,16 @@ export class AuthService extends BaseService {
   //
   // UI consumers should treat this as a drop-in for the legacy shape —
   // the row shape matches the old people-view rows exactly.
-  async listMembers() {
+  // Multi-tab (MULTI_WORKSPACE_TABS.md): pass the workspace the tab is
+  // actually VIEWING — the server resolves that workspace's org (membership-
+  // verified via resolveRequestOrgId) instead of falling back to the caller's
+  // global activeOrganization, which lags URL-based workspace browsing and
+  // returned another org's roster. Omit to keep the legacy claim-scoped read.
+  async listMembers(workspaceId) {
     this._requireReady('listMembers')
     try {
-      const response = await this._request('/users/members', {
+      const qs = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : ''
+      const response = await this._request(`/users/members${qs}`, {
         method: 'GET',
         methodName: 'listMembers'
       })

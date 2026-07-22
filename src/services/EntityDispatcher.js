@@ -142,7 +142,10 @@ const ENTITY_ROUTES = {
   'users.members': {
     service: 'auth',
     methods: { list: 'listMembers' },
-    argMap: { list: () => [] },
+    // Multi-tab: an explicit workspaceId scopes the roster to that
+    // workspace's org (membership-verified server-side); absent → the
+    // caller's active org, unchanged.
+    argMap: { list: (a) => [a?.workspaceId] },
   },
 
   // ─── Organization (top-level tenant) ──────────────────────────────────────
