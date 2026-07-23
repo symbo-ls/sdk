@@ -1,6 +1,17 @@
 import { BaseService } from './BaseService.js'
 import { WORKSPACE_MEMBER_ROLES, TEAM_GRANT_ROLES } from '../constants/roles.js'
 
+const workspaceEnvironment = (options = {}) =>
+  options.environment || options.environmentKey || options.envKey || options.env
+
+const environmentQuery = (environment) =>
+  `?environment=${encodeURIComponent(environment)}`
+
+const canonicalWorkspaceEnvironmentInput = (input = {}) => {
+  const { environmentKey: _environmentKey, envKey: _envKey, env: _env, ...canonical } = input
+  return { ...canonical, environment: workspaceEnvironment(input) }
+}
+
 export class WorkspaceService extends BaseService {
   // ==================== WORKSPACE CRUD ====================
 
@@ -217,6 +228,130 @@ export class WorkspaceService extends BaseService {
       method: 'PATCH',
       body: controls,
     })
+  }
+
+  // ==================== CONFIG + SECRETS ====================
+
+  /**
+   * List public configuration for one workspace environment. Available to
+   * every workspace member; values returned by this route are explicitly
+   * classified as safe for frontend use.
+   *
+   * @param {string} workspaceId
+   * @param {{ environment?: string, environmentKey?: string, envKey?: string, env?: string }} options
+   * @returns {Promise<{ environment: string, config: Record<string, string> }>}
+   */
+  async getWorkspacePublicConfig (workspaceId, options = {}) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    const environment = workspaceEnvironment(options)
+    if (!environment) throw new Error('environment is required')
+    return this._call(
+      'getWorkspacePublicConfig',
+      `/workspaces/${encodeURIComponent(workspaceId)}/config/public${environmentQuery(environment)}`
+    )
+  }
+
+  /**
+   * Create or replace a public config value. The server restricts this to
+   * workspace admins and owners and rejects secret-shaped public keys.
+   *
+   * @param {string} workspaceId
+   * @param {{ environment?: string, environmentKey?: string, envKey?: string, env?: string, key: string, value: unknown, description?: string }} input
+   * @returns {Promise<object>}
+   */
+  async upsertWorkspacePublicConfig (workspaceId, input = {}) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!workspaceEnvironment(input)) throw new Error('environment is required')
+    if (!input.key) throw new Error('key is required')
+    if (input.value === undefined || input.value === null) throw new Error('value is required')
+    return this._call(
+      'upsertWorkspacePublicConfig',
+      `/workspaces/${encodeURIComponent(workspaceId)}/config/public`,
+      { method: 'POST', body: canonicalWorkspaceEnvironmentInput(input) }
+    )
+  }
+
+  /**
+   * Delete a public config value from one workspace environment.
+   *
+   * @param {string} workspaceId
+   * @param {string} key
+   * @param {{ environment?: string, environmentKey?: string, envKey?: string, env?: string }} options
+   * @returns {Promise<{ deleted: boolean }>}
+   */
+  async deleteWorkspacePublicConfig (workspaceId, key, options = {}) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!key) throw new Error('key is required')
+    const environment = workspaceEnvironment(options)
+    if (!environment) throw new Error('environment is required')
+    return this._call(
+      'deleteWorkspacePublicConfig',
+      `/workspaces/${encodeURIComponent(workspaceId)}/config/public/${encodeURIComponent(key)}${environmentQuery(environment)}`,
+      { method: 'DELETE' }
+    )
+  }
+
+  /**
+   * List private-secret metadata for an environment. This method never
+   * returns plaintext values or provider references.
+   *
+   * @param {string} workspaceId
+   * @param {{ environment?: string, environmentKey?: string, envKey?: string, env?: string }} options
+   * @returns {Promise<{ environment: string, secrets: Array<object> }>}
+   */
+  async listWorkspaceSecrets (workspaceId, options = {}) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    const environment = workspaceEnvironment(options)
+    if (!environment) throw new Error('environment is required')
+    return this._call(
+      'listWorkspaceSecrets',
+      `/workspaces/${encodeURIComponent(workspaceId)}/secrets${environmentQuery(environment)}`
+    )
+  }
+
+  /**
+   * Create or rotate a write-only workspace secret. The response contains
+   * metadata only; the supplied value is never readable through this SDK.
+   *
+   * @param {string} workspaceId
+   * @param {{ environment?: string, environmentKey?: string, envKey?: string, env?: string, key: string, value: string, description?: string, allowedConsumers: Array<{ type: 'backend_service'|'integration_job'|'function'|'workspace_backend', id: string }> }} input
+   * @returns {Promise<object>}
+   */
+  async upsertWorkspaceSecret (workspaceId, input = {}) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!workspaceEnvironment(input)) throw new Error('environment is required')
+    if (!input.key) throw new Error('key is required')
+    if (input.value === undefined || input.value === null || input.value === '') {
+      throw new Error('value is required')
+    }
+    if (!Array.isArray(input.allowedConsumers) || input.allowedConsumers.length === 0) {
+      throw new Error('allowedConsumers are required')
+    }
+    return this._call(
+      'upsertWorkspaceSecret',
+      `/workspaces/${encodeURIComponent(workspaceId)}/secrets`,
+      { method: 'POST', body: canonicalWorkspaceEnvironmentInput(input) }
+    )
+  }
+
+  /**
+   * Delete a private secret from one workspace environment.
+   *
+   * @param {string} workspaceId
+   * @param {string} key
+   * @param {{ environment?: string, environmentKey?: string, envKey?: string, env?: string }} options
+   * @returns {Promise<{ deleted: boolean }>}
+   */
+  async deleteWorkspaceSecret (workspaceId, key, options = {}) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!key) throw new Error('key is required')
+    const environment = workspaceEnvironment(options)
+    if (!environment) throw new Error('environment is required')
+    return this._call(
+      'deleteWorkspaceSecret',
+      `/workspaces/${encodeURIComponent(workspaceId)}/secrets/${encodeURIComponent(key)}${environmentQuery(environment)}`,
+      { method: 'DELETE' }
+    )
   }
 
   // ==================== PERMISSIONS ====================
