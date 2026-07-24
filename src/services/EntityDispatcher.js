@@ -1230,7 +1230,19 @@ const ENTITY_ROUTES = {
   'workspaceProject.homeDashboardPrefs': {
     service: 'workspaceProject',
     methods: { get: 'homeDashboardPrefs.get', update: 'homeDashboardPrefs.upsert' },
-    argMap: { get: () => [], update: argMaps.payload },
+    // `workspaceId` forwards as an explicit scope pin (trailing options arg →
+    // query/body param, honored by the server's readExplicitWorkspaceId) so a
+    // home-dashboard layout snapshot can never land under a different
+    // workspace's row when the active-workspace claim flips mid-flight (the
+    // workspace-switch layout-clobber fix; see workspace pages/main.js
+    // _savePrefsPatch).
+    argMap: {
+      get: (a) => (a?.workspaceId != null ? [{ workspaceId: a.workspaceId }] : []),
+      update: (a) => [
+        a?.payload ?? a?.data ?? a,
+        ...(a?.workspaceId != null ? [{ workspaceId: a.workspaceId }] : []),
+      ],
+    },
   },
   'workspaceProject.workspaceDashboardDefaults': {
     service: 'workspaceProject',

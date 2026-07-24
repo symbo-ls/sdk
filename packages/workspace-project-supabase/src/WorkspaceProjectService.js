@@ -1045,18 +1045,29 @@ export class WorkspaceProjectService extends BaseService {
   // (hidden_widgets / grid_layout / dashboard_v) the reader
   // (root.userDashboardPrefs) + resolver consume. The legacy
   // _sb('home_dashboard_prefs') rollback arm is gone — /core is the only path.
+  // Both methods accept an optional `{ workspaceId }` options arg — an explicit
+  // scope pin (query param on GET, body field on PUT; the server's
+  // readExplicitWorkspaceId honors both, membership-gated). The home page pins
+  // every layout write to the workspace the snapshot was taken in so a write
+  // debouncing across a workspace switch can never land under the new
+  // workspace's row (the cross-workspace layout-clobber fix).
   homeDashboardPrefs = {
-    get: async () => {
-      const r = await this._request('/prefs/home-dashboard', {
+    get: async (opts) => {
+      const ws = opts?.workspaceId
+      const qs = ws ? `?workspaceId=${encodeURIComponent(ws)}` : ''
+      const r = await this._request(`/prefs/home-dashboard${qs}`, {
         method: 'GET',
         methodName: 'homeDashboardPrefs.get'
       })
       return r?.prefs ?? null
     },
-    upsert: (payload) =>
+    upsert: (payload, opts) =>
       this._request('/prefs/home-dashboard', {
         method: 'PUT',
-        body: JSON.stringify({ payload }),
+        body: JSON.stringify({
+          payload,
+          ...(opts?.workspaceId ? { workspaceId: opts.workspaceId } : {})
+        }),
         methodName: 'homeDashboardPrefs.upsert'
       }).then((r) => r?.prefs ?? r)
   }
