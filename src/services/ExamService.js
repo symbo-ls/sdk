@@ -774,6 +774,12 @@ export class ExamService extends BaseService {
   examAnalytics ({ workspaceId } = {}) {
     return this._call('exams.examAnalytics', `/exams/analytics${_qs(workspaceId)}`)
   }
+
+  // Whoami — caller's resolved exam role ('Admin' | 'Examiner' | 'Candidate')
+  // from their workspace membership; the trusted source for client role gating.
+  whoami ({ workspaceId } = {}) {
+    return this._call('exams.whoami', `/exams/whoami${_qs(workspaceId)}`)
+  }
 }
 
 export const createExamService = config => new ExamService(config)
