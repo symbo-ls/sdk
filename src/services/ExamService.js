@@ -708,6 +708,72 @@ export class ExamService extends BaseService {
       { method: 'POST' }
     )
   }
+
+  // ==================== REPORTS / APPEALS / AUDIT / ANALYTICS (P4) ==========
+  // Attempt reports + history. `attemptHistory` is the candidate's own finished
+  // attempts (member); `listAttempts` is the admin/examiner report surface
+  // (editor) filtered by candidateId/sessionId/examProfileId. Result payloads
+  // carry the EFFECTIVE verdict (server-resolved override) — never the answer key.
+  attemptHistory ({ workspaceId } = {}) {
+    return this._call('exams.attemptHistory', `/exams/attempts/history${_qs(workspaceId)}`)
+  }
+
+  listAttempts (filter = {}, { workspaceId } = {}) {
+    const extra = {}
+    if (filter.candidateId) extra.candidateId = String(filter.candidateId)
+    if (filter.sessionId) extra.sessionId = String(filter.sessionId)
+    if (filter.examProfileId) extra.examProfileId = String(filter.examProfileId)
+    const ws = filter.workspaceId || workspaceId
+    return this._call('exams.listAttempts', `/exams/attempts${_qs(ws, extra)}`)
+  }
+
+  // Appeals — file on own finished attempt (member); list/get/review are
+  // manager (commission). `reviewAppeal` body: { decisionNotes, verdictOverride }.
+  fileAppeal (payload = {}, { workspaceId } = {}) {
+    return this._call('exams.fileAppeal', `/exams/appeals${_qs(workspaceId)}`, {
+      method: 'POST',
+      body: payload
+    })
+  }
+
+  listAppeals (filter = {}, { workspaceId } = {}) {
+    const extra = {}
+    if (filter.status) extra.status = String(filter.status)
+    const ws = filter.workspaceId || workspaceId
+    return this._call('exams.listAppeals', `/exams/appeals${_qs(ws, extra)}`)
+  }
+
+  getAppeal (id, { workspaceId } = {}) {
+    return this._call('exams.getAppeal', `/exams/appeals/${encodeURIComponent(id)}${_qs(workspaceId)}`)
+  }
+
+  reviewAppeal (id, payload = {}, { workspaceId } = {}) {
+    return this._call(
+      'exams.reviewAppeal',
+      `/exams/appeals/${encodeURIComponent(id)}/review${_qs(workspaceId)}`,
+      { method: 'POST', body: payload }
+    )
+  }
+
+  // Audit log — manager read-only over the append-only hash-chained trail.
+  // `listAudit` filter: tableName/recordId/limit; `verifyAudit` recomputes chain.
+  listAudit (filter = {}, { workspaceId } = {}) {
+    const extra = {}
+    if (filter.tableName) extra.tableName = String(filter.tableName)
+    if (filter.recordId) extra.recordId = String(filter.recordId)
+    if (filter.limit) extra.limit = String(filter.limit)
+    const ws = filter.workspaceId || workspaceId
+    return this._call('exams.listAudit', `/exams/audit${_qs(ws, extra)}`)
+  }
+
+  verifyAudit ({ workspaceId } = {}) {
+    return this._call('exams.verifyAudit', `/exams/audit/verify${_qs(workspaceId)}`)
+  }
+
+  // Analytics — manager dashboard summary (KPIs, per-specialization, monthly).
+  examAnalytics ({ workspaceId } = {}) {
+    return this._call('exams.examAnalytics', `/exams/analytics${_qs(workspaceId)}`)
+  }
 }
 
 export const createExamService = config => new ExamService(config)
