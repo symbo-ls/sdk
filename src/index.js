@@ -54,6 +54,7 @@ import {
   createMeetService,
   createCalendarService,
   createBuildsService,
+  createExamService,
   workspaceProjectBaseUrl,
   workspaceProjectEdgeFunctionUrl
 } from './services/index.js'
@@ -532,6 +533,16 @@ export class SDK {
           context: this._context,
           options: this._options
         })
+      ),
+      // Exams — ICCA ISO/IEC 17024 certification exam platform, against
+      // /core/exams/* on the main server (SPEC_legacy.md port). Mongo-
+      // native; reached via sdk.execute('exams.*', …) like docs/tickets.
+      this._initService(
+        'exams',
+        createExamService({
+          context: this._context,
+          options: this._options
+        })
       )
     ])
 
@@ -925,6 +936,7 @@ export {
   createMeetService,
   createCalendarService,
   createBuildsService,
+  createExamService,
   workspaceProjectBaseUrl,
   workspaceProjectEdgeFunctionUrl
 } from './services/index.js'

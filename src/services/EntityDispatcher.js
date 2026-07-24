@@ -673,6 +673,215 @@ const ENTITY_ROUTES = {
     argMap: WS_CRUD_ARG_MAP,
   },
 
+  // ─── Exams (ExamService — ICCA ISO/IEC 17024 certification platform) ────────
+  // /core/exams/* on the main server. Reconciled 2026-07-24 against the
+  // ACTUAL server contract (EXAMS_SERVER_CONTRACT.md) — the server is
+  // authoritative; the first pass here had guessed several shapes wrong
+  // (see ExamService.js's header comment for the full list of corrections).
+  // Top-level CRUD groups (specializations/chapters/questions/projects/
+  // examProfiles/sessions/candidates) reuse WS_CRUD_ARG_MAP verbatim since
+  // ExamService's group methods match its list(filter,opts)/get(id,opts)/
+  // create(payload,opts)/update(id,payload,opts)/remove(id,opts) shape
+  // exactly.
+  //
+  // `projectCategories`/`projectMistakes`/`chapterQuotas` are URL-NESTED
+  // under a parent id server-side (a project, a project, an exam-profile
+  // respectively) — WS_CRUD_ARG_MAP has no concept of a second "parent id"
+  // positional, so those three are DELIBERATELY NOT registered here. Reach
+  // them imperatively: `sdk.getService('exams').projectMistakes.list(
+  // projectId, opts)`, `.projectCategories.create(projectId, payload,
+  // opts)`, `.chapterQuotas.update(profileId, id, payload, opts)`, etc.
+  //
+  // `examConfig` is a workspace singleton mirroring 'companyProfile' above
+  // (same argMap: get→[], update→argMaps.payload — no workspaceId
+  // threading, server claim-fallback only); mounted at /exams/exam-config
+  // server-side. `eligibility`/`documents` map onto ExamService's flat
+  // list*/get*/create*/update*/remove* methods (no nested group).
+  // Declarative `fetch: [{ from: 'exams.specializations', ... }]` +
+  // imperative `sdk.execute('exams.projects', 'activate', { id })` both
+  // resolve here.
+  'exams.specializations': {
+    service: 'exams',
+    methods: {
+      list: 'specializations.list',
+      get: 'specializations.get',
+      create: 'specializations.create',
+      update: 'specializations.update',
+      remove: 'specializations.remove',
+    },
+    argMap: WS_CRUD_ARG_MAP,
+  },
+  'exams.chapters': {
+    service: 'exams',
+    methods: {
+      list: 'chapters.list',
+      get: 'chapters.get',
+      create: 'chapters.create',
+      update: 'chapters.update',
+      remove: 'chapters.remove',
+    },
+    argMap: WS_CRUD_ARG_MAP,
+  },
+  'exams.questions': {
+    service: 'exams',
+    methods: {
+      list: 'questions.list',
+      get: 'questions.get',
+      create: 'questions.create',
+      update: 'questions.update',
+      remove: 'questions.remove',
+      // DRAFT→PENDING / PENDING→APPROVED — id-shaped rpc ops.
+      submit: 'questions.submit',
+      approve: 'questions.approve',
+    },
+    argMap: {
+      ...WS_CRUD_ARG_MAP,
+      submit: wsArgMaps.id,
+      approve: wsArgMaps.id,
+    },
+  },
+  'exams.projects': {
+    service: 'exams',
+    methods: {
+      list: 'projects.list',
+      get: 'projects.get',
+      create: 'projects.create',
+      update: 'projects.update',
+      remove: 'projects.remove',
+      // Flat top-level ExamService method (not nested under `projects`) —
+      // no dedicated /activate route exists server-side, it PATCHes
+      // { isActive: true } internally via projects.update. methodPath
+      // resolves from the service root regardless of the service-side
+      // grouping.
+      activate: 'activateProject',
+    },
+    argMap: {
+      ...WS_CRUD_ARG_MAP,
+      activate: wsArgMaps.id,
+    },
+  },
+  'exams.examProfiles': {
+    service: 'exams',
+    methods: {
+      list: 'examProfiles.list',
+      get: 'examProfiles.get',
+      create: 'examProfiles.create',
+      update: 'examProfiles.update',
+      remove: 'examProfiles.remove',
+    },
+    argMap: WS_CRUD_ARG_MAP,
+  },
+  'exams.sessions': {
+    service: 'exams',
+    methods: {
+      list: 'sessions.list',
+      get: 'sessions.get',
+      create: 'sessions.create',
+      update: 'sessions.update',
+      remove: 'sessions.remove',
+      // Seat lifecycle — flat top-level ExamService methods, threaded
+      // sessionId first then candidateId (mirrors parties' partyId-first
+      // roles/relationships sub-resource argMaps).
+      listCandidates: 'listSessionCandidates',
+      addCandidate: 'addSessionCandidate',
+      removeCandidate: 'removeSessionCandidate',
+      signProtocol: 'signProtocol',
+      authorizeSeat: 'authorizeSeat',
+      markNoShow: 'markNoShow',
+    },
+    argMap: {
+      ...WS_CRUD_ARG_MAP,
+      listCandidates: (a) => [a?.sessionId ?? a?.id, { workspaceId: a?.workspaceId }],
+      addCandidate: (a) => [
+        a?.sessionId ?? a?.id,
+        a?.payload ?? a?.data ?? (() => {
+          const { sessionId, id, workspaceId, ...rest } = a || {}
+          return rest
+        })(),
+        { workspaceId: a?.workspaceId },
+      ],
+      removeCandidate: (a) => [a?.sessionId ?? a?.id, a?.candidateId, { workspaceId: a?.workspaceId }],
+      signProtocol: (a) => [a?.sessionId ?? a?.id, a?.candidateId, { workspaceId: a?.workspaceId }],
+      authorizeSeat: (a) => [
+        a?.sessionId ?? a?.id,
+        a?.candidateId,
+        a?.payload ?? a?.data ?? { identityVerified: a?.identityVerified ?? true },
+        { workspaceId: a?.workspaceId },
+      ],
+      markNoShow: (a) => [a?.sessionId ?? a?.id, a?.candidateId, { workspaceId: a?.workspaceId }],
+    },
+  },
+  'exams.candidates': {
+    service: 'exams',
+    methods: {
+      list: 'candidates.list',
+      get: 'candidates.get',
+      create: 'candidates.create',
+      update: 'candidates.update',
+      remove: 'candidates.remove',
+      // Registration-review pair — flat top-level ExamService methods,
+      // POST /candidates/:id/approve-registration|reject-registration
+      // server-side.
+      approveRegistration: 'approveRegistration',
+      rejectRegistration: 'rejectRegistration',
+    },
+    argMap: {
+      ...WS_CRUD_ARG_MAP,
+      approveRegistration: wsArgMaps.id,
+      rejectRegistration: (a) => [a?.id ?? a?.number, a?.reason, { workspaceId: a?.workspaceId }],
+    },
+  },
+  // ExamEligibility — fail-closed join, no `update` (a grant is immutable —
+  // revoke + re-grant instead). list/get/create/remove map onto
+  // ExamService's flat listEligibility/getEligibility/grantEligibility/
+  // revokeEligibility.
+  'exams.eligibility': {
+    service: 'exams',
+    methods: {
+      list: 'listEligibility',
+      get: 'getEligibility',
+      create: 'grantEligibility',
+      remove: 'revokeEligibility',
+    },
+    argMap: {
+      list: argMaps.filterOptions,
+      get: wsArgMaps.id,
+      create: wsArgMaps.payload,
+      remove: wsArgMaps.id,
+    },
+  },
+  // Candidate identity/eligibility documents — distinct from the
+  // general-purpose 'docs.*' entities. Full CRUD (list/get/create/update/
+  // remove) + the manager-only `review` rpc, mapped onto ExamService's flat
+  // list/get/create/update/remove/reviewDocument methods. The server
+  // contract confirms a JSON-only body ({candidateId, docType,
+  // documentUrl}) for this domain — no multipart upload route exists here,
+  // so WS_CRUD_ARG_MAP's payload stripping is safe (unlike a raw
+  // file-upload endpoint would be).
+  'exams.documents': {
+    service: 'exams',
+    methods: {
+      list: 'listDocuments',
+      get: 'getDocument',
+      create: 'createDocument',
+      update: 'updateDocument',
+      remove: 'removeDocument',
+      review: 'reviewDocument',
+    },
+    argMap: {
+      ...WS_CRUD_ARG_MAP,
+      review: wsArgMaps.idPayload,
+    },
+  },
+  // Workspace-singleton global exam-engine config — same shape as
+  // 'companyProfile' above (no workspaceId threading; server claim
+  // fallback only). Mounted at /exams/exam-config server-side.
+  'exams.examConfig': {
+    service: 'exams',
+    methods: { get: 'getExamConfig', update: 'updateExamConfig' },
+    argMap: { get: () => [], update: argMaps.payload },
+  },
+
   // ─── Docs (DocService — Mongo-backed, SSE realtime) ─────────────────────────
   // The docs surface lives on its own service. UI calls go through
   // `sdk.execute('docs', 'list')` / `sdk.docs.*`.
