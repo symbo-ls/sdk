@@ -654,6 +654,60 @@ export class ExamService extends BaseService {
       body: payload
     })
   }
+
+  // ==================== ATTEMPTS (candidate exam engine — P2) ====================
+  // Candidate-scoped: the server resolves the caller to their own ExamCandidate;
+  // payloads are candidate-safe (no isCorrect/isViolation).
+  examLobby ({ workspaceId } = {}) {
+    return this._call('exams.examLobby', `/exams/attempts/lobby${_qs(workspaceId)}`)
+  }
+
+  activeAttempt ({ workspaceId } = {}) {
+    return this._call('exams.activeAttempt', `/exams/attempts/active${_qs(workspaceId)}`)
+  }
+
+  generateAttempt (payload = {}, { workspaceId } = {}) {
+    return this._call('exams.generateAttempt', `/exams/attempts/generate${_qs(workspaceId)}`, {
+      method: 'POST',
+      body: payload
+    })
+  }
+
+  getAttempt (id, { workspaceId } = {}) {
+    return this._call('exams.getAttempt', `/exams/attempts/${encodeURIComponent(id)}${_qs(workspaceId)}`)
+  }
+
+  saveAnswer (attemptId, payload = {}, { workspaceId } = {}) {
+    return this._call(
+      'exams.saveAnswer',
+      `/exams/attempts/${encodeURIComponent(attemptId)}/answers${_qs(workspaceId)}`,
+      { method: 'POST', body: payload }
+    )
+  }
+
+  saveProjectMarks (attemptId, payload = {}, { workspaceId } = {}) {
+    return this._call(
+      'exams.saveProjectMarks',
+      `/exams/attempts/${encodeURIComponent(attemptId)}/project-mistakes${_qs(workspaceId)}`,
+      { method: 'POST', body: payload }
+    )
+  }
+
+  finishAttempt (attemptId, { workspaceId } = {}) {
+    return this._call(
+      'exams.finishAttempt',
+      `/exams/attempts/${encodeURIComponent(attemptId)}/finish${_qs(workspaceId)}`,
+      { method: 'POST' }
+    )
+  }
+
+  registerForSession (sessionId, { workspaceId } = {}) {
+    return this._call(
+      'exams.registerForSession',
+      `/exams/sessions/${encodeURIComponent(sessionId)}/register${_qs(workspaceId)}`,
+      { method: 'POST' }
+    )
+  }
 }
 
 export const createExamService = config => new ExamService(config)
