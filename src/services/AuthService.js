@@ -1674,7 +1674,7 @@ export class AuthService extends BaseService {
    * @param {(state: Record<string, Array<object>>) => void} onSync
    * @returns {() => void} unsubscribe
    */
-  subscribePresence ({ scope, userKey, meta } = {}, onSync) {
+  subscribePresence ({ scope, userKey, meta, onCursor } = {}, onSync) {
     if (!this._tokenManager || typeof onSync !== 'function' || !scope) return () => {}
     const token = this._tokenManager.getAccessToken?.()
     if (!token) return () => {}
@@ -1706,6 +1706,16 @@ export class AuthService extends BaseService {
       if (!payload || payload.scope !== scope) return
       try { onSync(payload.state || {}) } catch (_) { /* listener errors don't propagate */ }
     })
+    // Live-cursor relay riding the same presence socket: the server
+    // rebroadcasts `presence:cursor` to every OTHER member of the scope room,
+    // stamping peerId (socket id — two tabs of one user are two cursors) +
+    // an authoritative userId. Opt-in: no onCursor → no listener.
+    if (typeof onCursor === 'function') {
+      socket.on('presence:cursor', (payload) => {
+        if (!payload || payload.scope !== scope) return
+        try { onCursor(payload) } catch (_) { /* listener errors don't propagate */ }
+      })
+    }
     let _loggedAuthFail = false
     socket.on('connect_error', (err) => {
       if (err?.message && !_loggedAuthFail) {
@@ -1714,10 +1724,18 @@ export class AuthService extends BaseService {
       }
     })
 
-    return () => {
+    const unsubscribe = () => {
       try { socket.removeAllListeners() } catch (_) {}
       try { socket.disconnect() } catch (_) {}
     }
+    // Throttle-friendly cursor emitter for the scope this subscription joined.
+    // Fire-and-forget; the server relays volatile (dropped frames are fine).
+    unsubscribe.sendCursor = (data = {}) => {
+      try {
+        socket.emit('presence:cursor', { ...data, scope, userKey })
+      } catch (_) { /* socket mid-reconnect — next move resends */ }
+    }
+    return unsubscribe
   }
 
   /**
