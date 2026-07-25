@@ -84,11 +84,6 @@ import { CanvasLayoutService } from './CanvasLayoutService.js'
 import { MeetService } from './MeetService.js'
 import { CalendarService } from './CalendarService.js'
 import { BuildsService } from './BuildsService.js'
-// Exams — ICCA ISO/IEC 17024 certification exam platform, workspace-scoped
-// against the main server's /core/exams/* routes (SPEC_legacy.md port).
-// Mongo-native, peer to Tickets/Docs. Reached via sdk.execute('exams.*', …)
-// like docs/tickets.
-import { ExamService } from './ExamService.js'
 
 const createService = (ServiceClass, config) => new ServiceClass(config)
 
@@ -295,12 +290,6 @@ export const createConversationService = config =>
 export const createRecurrenceService = config =>
   createService(RecurrenceService, config)
 
-// Exams — ICCA ISO/IEC 17024 certification exam platform. See the import
-// comment above for scope; reached via sdk.execute('exams.*', …) like
-// parties/invoices/comments.
-export const createExamService = config =>
-  createService(ExamService, config)
-
 export {
   AuthService,
   CollabService,
@@ -358,6 +347,5 @@ export {
   BookingService,
   AvailabilityRuleService,
   ConversationService,
-  RecurrenceService,
-  ExamService
+  RecurrenceService
 }
