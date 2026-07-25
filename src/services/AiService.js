@@ -882,7 +882,22 @@ export class AiService extends BaseService {
 
   // ==================== STORAGE HELPERS (private) ====================
 
+  // Last-resort workspace pointer (every call site prefers
+  // `_context.activeWorkspaceId`, which boot sets per tab).
+  //
+  // MWT-aware by precedence, without importing the shell's
+  // activeWorkspacePointer (wrong dependency direction — the shell depends on
+  // the SDK): with multi-workspace tabs ON the tab's own pointer lives in
+  // `sessionStorage`, while `localStorage` holds only the shared "last default"
+  // a fresh tab seeds from. Reading localStorage first made the assistant answer
+  // about whichever workspace the BROWSER last defaulted to rather than the tab
+  // you're looking at. With MWT OFF sessionStorage is never written, so this
+  // falls through to the identical localStorage read as before.
   _readActiveWorkspace () {
+    try {
+      const perTab = globalThis.sessionStorage?.getItem('activeWorkspace')
+      if (perTab) return perTab
+    } catch (_) { /* sessionStorage unavailable — fall through */ }
     return this._readStorage('activeWorkspace')
   }
 
