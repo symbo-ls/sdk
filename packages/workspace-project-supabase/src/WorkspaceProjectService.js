@@ -996,12 +996,82 @@ export class WorkspaceProjectService extends BaseService {
   // workspace-project Supabase org retirement; the shell derives birthdays
   // from the roster by default and valuations had no live consumer.
   fileCanvas = this._sbCrud('file_canvas')
-  // Generic record store backing AI-generated extensions (migration 0163,
-  // table workspace_records). list/get/create/update/remove via the standard
-  // _sbCrud → /sb PostgREST passthrough; the `collection` namespace is just a
-  // filter column (records.list({ collection: 'policies' })). Workspace_id is
-  // pinned by the proxy (sb.js WORKSPACE_SCOPED_TABLES).
-  records = this._sbCrud('workspace_records')
+  // Generic record store backing AI-generated extensions. Mongo cutover
+  // complete (2026-07-25, tickets/server.md "workspace records data-plane
+  // split"): routes to /core/workspaces/:id/records over the SAME Mongo
+  // `WorkspaceRecord` model the agent tools (create/list/update/
+  // delete_workspace_record) write — a row seeded by either path is
+  // immediately visible to the other. The legacy _sbCrud('workspace_records')
+  // Supabase passthrough is gone; its few dev rows are orphaned by design.
+  // Wire shape matches what apps always consumed:
+  //   { id, collection, name, data, created_at, updated_at }
+  // Workspace scope: explicit `workspaceId` (filter/options) wins, else the
+  // live _context.activeWorkspaceId — the /core route path REQUIRES one.
+  _recordsWorkspaceId (filter, options) {
+    const ws =
+      (options && options.workspaceId) ||
+      (filter && typeof filter === 'object' && filter.workspaceId) ||
+      this._context?.activeWorkspaceId
+    if (!ws) {
+      throw new Error(
+        "[sdk records] no workspace scope — pass { workspaceId } or set the SDK's activeWorkspaceId."
+      )
+    }
+    return encodeURIComponent(String(ws))
+  }
+
+  records = {
+    list: async (filter, options) => {
+      const ws = this._recordsWorkspaceId(filter, options)
+      const params = new URLSearchParams()
+      const collection =
+        filter && typeof filter === 'object' && filter.collection ? filter.collection : null
+      if (collection) params.set('collection', String(collection))
+      if (options?.limit != null) params.set('limit', String(options.limit))
+      if (options?.offset != null) params.set('offset', String(options.offset))
+      if (options?.order) params.set('order', String(options.order))
+      const qs = params.toString()
+      const r = await this._request(`/workspaces/${ws}/records${qs ? `?${qs}` : ''}`, {
+        method: 'GET',
+        methodName: 'records.list'
+      })
+      return r?.data ?? []
+    },
+    get: async (id, options) => {
+      const ws = this._recordsWorkspaceId(null, options)
+      const r = await this._request(`/workspaces/${ws}/records/${encodeURIComponent(id)}`, {
+        method: 'GET',
+        methodName: 'records.get'
+      })
+      return r?.data ?? null
+    },
+    create: async (payload, options) => {
+      const ws = this._recordsWorkspaceId(payload, options)
+      const r = await this._request(`/workspaces/${ws}/records`, {
+        method: 'POST',
+        body: JSON.stringify(payload || {}),
+        methodName: 'records.create'
+      })
+      return r?.data ?? r
+    },
+    update: async (id, payload, options) => {
+      const ws = this._recordsWorkspaceId(payload, options)
+      const r = await this._request(`/workspaces/${ws}/records/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload || {}),
+        methodName: 'records.update'
+      })
+      return r?.data ?? r
+    },
+    remove: async (id, options) => {
+      const ws = this._recordsWorkspaceId(null, options)
+      const r = await this._request(`/workspaces/${ws}/records/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        methodName: 'records.remove'
+      })
+      return r?.data ?? r
+    }
+  }
 
   // analyzed entity removed 2026-07 — the workspace-project worker's Supabase
   // analyzed surface was deleted server-side (server@fb183f5b); the
