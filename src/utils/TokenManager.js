@@ -1,5 +1,19 @@
 import { logger } from './logger.js'
 
+// A refresh that never REACHED the server says nothing about whether the
+// session is still valid — it is a statement about the network, not about the
+// credential. Distinguishing the two is essential: treating a transport blip as
+// an auth rejection is what silently signed users out whenever the API bounced
+// (a nodemon restart in dev, a rolling deploy in prod), which then surfaced
+// downstream as "Couldn't switch to <org>" and as network errors in the AI chat.
+// Mirrors BaseService's _isNetworkFailure so both layers classify identically.
+const _NETWORK_RX = /failed to fetch|networkerror|load failed|network request failed/i
+export const isNetworkFailure = (err) =>
+  !!err &&
+  (err.code === 'NETWORK_UNREACHABLE' ||
+    (err instanceof TypeError && _NETWORK_RX.test(err.message || '')) ||
+    (err.name === 'TypeError' && _NETWORK_RX.test(err.message || '')))
+
 /**
  * TokenManager - Handles access and refresh token management
  * Provides persistence, automatic refresh, and token lifecycle management
@@ -272,6 +286,17 @@ export class TokenManager {
       await this.refreshTokens()
       return this.getAccessToken()
     } catch (error) {
+      // A refresh that never reached the server is NOT proof the session ended.
+      // Clearing here on a transport failure is what signed users out every time
+      // the API bounced: the dev server restarts under nodemon, this refresh
+      // fires mid-restart, `fetch` throws `TypeError: Failed to fetch`, and the
+      // whole session was destroyed — surfacing downstream as "Couldn't switch
+      // to <org>" and as network errors in the AI chat. Keep the credentials and
+      // rethrow so the caller can retry once the API is reachable again.
+      if (isNetworkFailure(error)) {
+        logger.warn('[TokenManager] refresh unreachable — keeping session for retry')
+        throw error
+      }
       this.clearTokens()
       if (this.config.onTokenError) {
         this.config.onTokenError(error)
@@ -304,7 +329,11 @@ export class TokenManager {
       this.retryCount = 0 // Reset retry count on success
       return result
     } catch (error) {
-      this.retryCount++
+      // Only a genuine rejection counts toward the lockout. Counting transport
+      // failures meant three API restarts permanently tripped 'Max refresh
+      // retries exceeded' for the rest of the session, with no way back short
+      // of a full re-login.
+      if (!isNetworkFailure(error)) this.retryCount++
       throw error
     } finally {
       this.refreshPromise = null
