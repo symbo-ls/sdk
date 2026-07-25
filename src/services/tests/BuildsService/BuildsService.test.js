@@ -270,6 +270,55 @@ test('scaleDeployment throws without deploymentId', async t => {
   t.end()
 })
 
+// ─── getDeploymentMetrics ───────────────────────────────────────────────────
+
+test('getDeploymentMetrics GETs /builds/workspaces/:wsId/deployments/:id/metrics (no options)', async t => {
+  t.plan(3)
+  const svc = makeService()
+  const rows = [{ ts: '2026-07-25T10:14:00Z', requestCount: 3 }]
+  const stub = sandbox.stub(svc, '_call').resolves(rows)
+  const result = await svc.getDeploymentMetrics('ws-abc', 'dep-3')
+  const [, path, opts] = stub.firstCall.args
+  t.equal(path, '/builds/workspaces/ws-abc/deployments/dep-3/metrics', 'no query string when no options')
+  t.equal(opts, undefined, 'GET — no options object')
+  t.deepEqual(result, rows, 'resolves the ascending-by-ts rows')
+  sandbox.restore()
+  t.end()
+})
+
+test('getDeploymentMetrics appends interval/since/until/limit and encodes deploymentId', async t => {
+  t.plan(1)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves([])
+  await svc.getDeploymentMetrics('ws-abc', 'dep/3 x', {
+    interval: '1h',
+    since: '2026-07-01T00:00:00Z',
+    until: '2026-07-02T00:00:00Z',
+    limit: 500
+  })
+  const [, path] = stub.firstCall.args
+  t.equal(
+    path,
+    '/builds/workspaces/ws-abc/deployments/dep%2F3%20x/metrics?interval=1h&since=2026-07-01T00%3A00%3A00Z&until=2026-07-02T00%3A00%3A00Z&limit=500',
+    'URI-encoded id + query string'
+  )
+  sandbox.restore()
+  t.end()
+})
+
+test('getDeploymentMetrics throws without deploymentId', async t => {
+  t.plan(1)
+  const svc = makeService()
+  sandbox.stub(svc, '_call').resolves([])
+  try {
+    await svc.getDeploymentMetrics('ws-abc')
+  } catch (err) {
+    t.equal(err.message, 'deploymentId is required', 'validation guard')
+  }
+  sandbox.restore()
+  t.end()
+})
+
 // ─── getBuildLogs ─────────────────────────────────────────────────────────────
 
 test('getBuildLogs GETs /builds/workspaces/:wsId/builds/:id/logs', async t => {

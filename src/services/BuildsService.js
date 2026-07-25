@@ -247,6 +247,32 @@ export class BuildsService extends BaseService {
   }
 
   /**
+   * Cloud Run metrics buckets for a deployment — written by the server's
+   * MetricsCollectorService (60s GCP Monitoring poller, GATED OFF by default
+   * behind METRICS_COLLECTOR_ENABLED; the /infra Metrics tab stays
+   * mock-labeled until an operator opts the collector in). Rows are
+   * ascending by `ts` (oldest → newest, chart-ready); 404s when
+   * `deploymentId` isn't in this workspace.
+   * @param {string} workspaceId
+   * @param {string} deploymentId
+   * @param {{ interval?: '1m'|'1h', since?: string, until?: string, limit?: number }} [options]
+   * @returns {Promise<Array<{ ts: string, interval: string, requestCount: number|null, errorCount: number|null, p50LatencyMs: number|null, p95LatencyMs: number|null, cpuUtilization: number|null, memoryUtilization: number|null, instanceCount: number|null, billableInstanceTime: number|null }>>}
+   */
+  getDeploymentMetrics (workspaceId, deploymentId, { interval, since, until, limit } = {}) {
+    if (!deploymentId) throw new Error('deploymentId is required')
+    const params = new URLSearchParams()
+    if (interval) params.set('interval', interval)
+    if (since) params.set('since', since)
+    if (until) params.set('until', until)
+    if (limit) params.set('limit', String(limit))
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return this._call(
+      'getDeploymentMetrics',
+      `${wsBase(workspaceId)}/deployments/${encodeURIComponent(deploymentId)}/metrics${query}`
+    )
+  }
+
+  /**
    * Subscribe to the build/deploy control-plane events broadcast on the
    * user socket after every status transition:
    *   `build-status-changed`      — { workspaceId, buildId, status, imageRef,

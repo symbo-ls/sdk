@@ -566,6 +566,8 @@ export const SERVICE_METHODS = {
   // GET  /builds/workspaces/:wsId/deployments          → Deployment rows
   // POST /builds/workspaces/:wsId/deployments/:id/rollback → NEW Deployment
   // POST /builds/workspaces/:wsId/deployments/:id/scale    → scale in place
+  // GET  /builds/workspaces/:wsId/deployments/:id/metrics  → DeploymentMetric
+  //      buckets (verb 7 — MetricsCollectorService, GATED OFF by default)
   getBuildsGitHubState: 'builds',
   listBuildRepos: 'builds',
   listBuildImports: 'builds',
@@ -580,6 +582,7 @@ export const SERVICE_METHODS = {
   listBuildDeployments: 'builds',
   rollbackDeployment: 'builds',
   scaleDeployment: 'builds',
+  getDeploymentMetrics: 'builds',
   // Subscribe: 'build-status-changed' + 'deployment-status-changed' socket events.
   subscribeWorkspaceBuilds: 'builds',
 

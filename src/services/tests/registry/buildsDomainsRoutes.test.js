@@ -112,6 +112,40 @@ test('builds.* control-plane verbs — import update/remove, rollback, scale, lo
   t.end()
 })
 
+test('builds.deployments metrics — verb 7 (MetricsCollectorService buckets)', async (t) => {
+  const calls = []
+  const execute = createEntityDispatcher(makeSdk(calls))
+
+  await execute('builds.deployments', 'metrics', {
+    workspaceId: 'ws1',
+    deploymentId: 'd3',
+    interval: '1h',
+    since: '2026-07-01T00:00:00Z',
+    until: '2026-07-02T00:00:00Z',
+    limit: 500
+  })
+  // Fetch-adapter pack shape ({ params }) for the row-id + query resolvers.
+  await execute('builds.deployments', 'metrics', {
+    params: { workspaceId: 'ws2', deploymentId: 'd4', interval: '1m' }
+  })
+
+  t.deepEqual(calls[0], {
+    service: 'builds',
+    method: 'getDeploymentMetrics',
+    args: [
+      'ws1',
+      'd3',
+      { interval: '1h', since: '2026-07-01T00:00:00Z', until: '2026-07-02T00:00:00Z', limit: 500 }
+    ]
+  })
+  t.deepEqual(calls[1], {
+    service: 'builds',
+    method: 'getDeploymentMetrics',
+    args: ['ws2', 'd4', { interval: '1m', since: undefined, until: undefined, limit: undefined }]
+  })
+  t.end()
+})
+
 test('builds subscribe routes pass the handlers bag through to subscribeWorkspaceBuilds', async (t) => {
   const calls = []
   const execute = createEntityDispatcher(makeSdk(calls))
