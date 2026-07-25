@@ -517,7 +517,13 @@ export class AiService extends BaseService {
         conversationId =
           wanted && !String(wanted).startsWith('s-')
             ? String(wanted)
-            : await this._resolveConversationId(cacheKey, base)
+            : await this._resolveConversationId(cacheKey, base, {
+              // The caller explicitly opened a NEW thread (payload.newConversation,
+              // set by the workspace transport when the active session is a local
+              // 's-…' placeholder) — create a fresh server conversation instead of
+              // resuming the cached one.
+              forceNew: !!(payload && payload.newConversation)
+            })
         resolvedConvId = conversationId
         // Keep the per-(workspace|project) cache tracking the LAST-USED thread,
         // not the first-ever one. _resolveConversationId only writes the cache when
@@ -631,9 +637,13 @@ export class AiService extends BaseService {
 
   // Resolve the conversation id for a workspace, creating + caching one on
   // first use. Cached per-workspace in localStorage so a surface reopened
-  // later resumes the same conversation.
-  async _resolveConversationId (cacheKey, base) {
-    const cached = this._readStorage(cacheKey)
+  // later resumes the same conversation. `forceNew` skips the cache READ and
+  // creates a fresh conversation (still write-through cached): the "new
+  // thread" path — a local placeholder session has no server id yet, and
+  // falling back to the cached id silently appended the "new" thread's
+  // messages (and their full model context) onto the previous conversation.
+  async _resolveConversationId (cacheKey, base, { forceNew = false } = {}) {
+    const cached = forceNew ? null : this._readStorage(cacheKey)
     if (cached) return cached
 
     const res = await this._requestExternal(base, {

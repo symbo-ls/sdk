@@ -13,6 +13,51 @@ const _NETWORK_RX = /failed to fetch|networkerror|load failed/i
 const _isNetworkFailure = (err) =>
   err instanceof TypeError && _NETWORK_RX.test(err?.message || '')
 
+// Transient-transport retry policy.
+//
+// An API restart (nodemon in dev, a rolling deploy in prod) makes every
+// in-flight request fail with a bare "Failed to fetch" for a few seconds. That
+// is not a real failure — it is a gap — and every call site was paying for it
+// individually (the org switcher grew its own `_withRetry`, and the AI chat
+// simply showed the raw network string to the user).
+//
+// Retry ONLY a pre-send transport failure: `code === NETWORK_UNREACHABLE` AND no
+// HTTP `status`. A request that reached the server and came back 4xx/5xx is
+// never retried here.
+//
+// Mutations are OPT-IN, never opt-out. A method-blind retry on POST would risk
+// duplicate Stripe checkouts, double credit top-ups, duplicate invoices (which
+// assign immutable INV- numbers) and duplicate AI conversations. So: idempotent
+// verbs retry by default, and non-idempotent ones retry only when their logical
+// method name is on this allowlist — each verified to be a safe, abort-before-
+// mutate upsert.
+const IDEMPOTENT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
+const RETRY_SAFE_METHOD_NAMES = new Set([
+  'setActiveOrganization',
+  'setActiveWorkspace',
+  'getMe'
+])
+const RETRY_BASE_DELAY_MS = 300
+
+const _shouldRetryRequest = (err, method, methodName, attempt, maxRetries) => {
+  if (attempt >= maxRetries) return false
+  // Pre-send transport failures only — never an HTTP status.
+  if (err?.code !== NETWORK_UNREACHABLE || err?.status !== undefined) return false
+  return IDEMPOTENT_METHODS.has(method) || RETRY_SAFE_METHOD_NAMES.has(methodName)
+}
+
+// Exponential backoff with jitter, so a fleet of tabs doesn't retry in lockstep
+// and stampede the API the instant it comes back up.
+const _retryDelay = (attempt) =>
+  RETRY_BASE_DELAY_MS * Math.pow(3, attempt) * (0.75 + Math.random() * 0.5)
+
+// 4 attempts → delays ≈0.3s/0.9s/2.7s (+jitter) ≈ 4s of patience — enough to
+// ride out a nodemon restart or a rolling-deploy gap without stalling real
+// failures for long. Override per-call via options.maxRetries.
+const DEFAULT_MAX_RETRIES = 3
+
+const _sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
 const _wrapRequestError = (error, url) => {
   const network = _isNetworkFailure(error)
   const msg = network
@@ -171,43 +216,52 @@ export class BaseService {
       }
     }
 
-    try {
-      const response = await fetch(url, {
-        ...options,
-        headers: {
-          ...defaultHeaders,
-          ...options.headers
-        }
-      })
-
-      if (!response.ok) {
-        let error = {
-          message: `HTTP ${response.status}: ${response.statusText}`
-        }
-        try {
-          error = await response.json()
-        } catch {
-          // Use default error message
-        }
-        // Track HTTP error before throwing
-        this._trackServiceError(
-          new Error(error.message || error.error || `HTTP ${response.status}: ${response.statusText}`),
-          {
-            endpoint,
-            methodName: options.methodName,
-            status: response.status,
-            statusText: response.statusText
+    const method = String(options.method || 'GET').toUpperCase()
+    const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const response = await fetch(url, {
+          ...options,
+          headers: {
+            ...defaultHeaders,
+            ...options.headers
           }
-        )
-        const httpErr = new Error(error.message || error.error || 'Request failed', { cause: error })
-        httpErr.status = response.status
-        throw httpErr
-      }
+        })
 
-      return response.status === 204 ? null : response.json()
-    } catch (error) {
-      this._trackServiceError(error, { endpoint, methodName: options.methodName })
-      throw _wrapRequestError(error, url)
+        if (!response.ok) {
+          let error = {
+            message: `HTTP ${response.status}: ${response.statusText}`
+          }
+          try {
+            error = await response.json()
+          } catch {
+            // Use default error message
+          }
+          // Track HTTP error before throwing
+          this._trackServiceError(
+            new Error(error.message || error.error || `HTTP ${response.status}: ${response.statusText}`),
+            {
+              endpoint,
+              methodName: options.methodName,
+              status: response.status,
+              statusText: response.statusText
+            }
+          )
+          const httpErr = new Error(error.message || error.error || 'Request failed', { cause: error })
+          httpErr.status = response.status
+          throw httpErr
+        }
+
+        return response.status === 204 ? null : response.json()
+      } catch (error) {
+        const wrapped = error?.status !== undefined ? error : _wrapRequestError(error, url)
+        if (_shouldRetryRequest(wrapped, method, options.methodName, attempt, maxRetries)) {
+          await _sleep(_retryDelay(attempt))
+          continue
+        }
+        this._trackServiceError(wrapped, { endpoint, methodName: options.methodName })
+        throw wrapped
+      }
     }
   }
 
@@ -246,32 +300,40 @@ export class BaseService {
       defaultHeaders.Authorization = authHeader
     }
 
-    try {
-      const response = await fetch(url, {
-        ...init,
-        headers: { ...defaultHeaders, ...init.headers }
-      })
+    const method = String(init.method || 'GET').toUpperCase()
+    const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const response = await fetch(url, {
+          ...init,
+          headers: { ...defaultHeaders, ...init.headers }
+        })
 
-      if (!response.ok) {
-        let error = { message: `HTTP ${response.status}: ${response.statusText}` }
-        try { error = await response.json() } catch {}
-        this._trackServiceError(
-          new Error(error.message || error.error || `HTTP ${response.status}: ${response.statusText}`),
-          { endpoint: url, methodName, status: response.status, statusText: response.statusText }
-        )
-        const httpErr = new Error(error.message || error.error || 'Request failed', { cause: error })
-        httpErr.status = response.status
-        throw httpErr
+        if (!response.ok) {
+          let error = { message: `HTTP ${response.status}: ${response.statusText}` }
+          try { error = await response.json() } catch {}
+          this._trackServiceError(
+            new Error(error.message || error.error || `HTTP ${response.status}: ${response.statusText}`),
+            { endpoint: url, methodName, status: response.status, statusText: response.statusText }
+          )
+          const httpErr = new Error(error.message || error.error || 'Request failed', { cause: error })
+          httpErr.status = response.status
+          throw httpErr
+        }
+
+        if (response.status === 204) return null
+        const text = await response.text()
+        if (!text) return null
+        try { return JSON.parse(text) } catch { return text }
+      } catch (error) {
+        const wrapped = error?.status !== undefined ? error : _wrapRequestError(error, url)
+        if (_shouldRetryRequest(wrapped, method, methodName, attempt, maxRetries)) {
+          await _sleep(_retryDelay(attempt))
+          continue
+        }
+        this._trackServiceError(wrapped, { endpoint: url, methodName })
+        throw wrapped
       }
-
-      if (response.status === 204) return null
-      const text = await response.text()
-      if (!text) return null
-      try { return JSON.parse(text) } catch { return text }
-    } catch (error) {
-      this._trackServiceError(error, { endpoint: url, methodName })
-      if (error?.status) throw error
-      throw _wrapRequestError(error, url)
     }
   }
 
