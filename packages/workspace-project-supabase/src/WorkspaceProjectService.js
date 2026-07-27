@@ -995,7 +995,84 @@ export class WorkspaceProjectService extends BaseService {
   // birthdays + valuations entities removed 2026-07 — tables dropped with the
   // workspace-project Supabase org retirement; the shell derives birthdays
   // from the roster by default and valuations had no live consumer.
-  fileCanvas = this._sbCrud('file_canvas')
+  // Same resolution order as _recordsWorkspaceId, but returns null instead of
+  // throwing: /core/file-canvas runs attachExplicitWorkspaceIfMember and
+  // resolves the workspace itself when none is sent, so a missing scope is
+  // normal here rather than a caller error. Returns the RAW id — every call
+  // site escapes it (URLSearchParams.set does so itself; a pre-encoded value
+  // would be escaped a second time and no longer match the workspace).
+  _fileCanvasWorkspaceId (source, options) {
+    const ws =
+      (options && options.workspaceId) ||
+      (source && typeof source === 'object' && source.workspaceId) ||
+      this._context?.activeWorkspaceId
+    return ws ? String(ws) : null
+  }
+
+  // Mongo cutover. /core/file-canvas/* has been Mongo-by-default since
+  // 2026-07-03 (FILE_CANVAS_STORE unset → mongo); this namespace was simply
+  // never repointed, so the SDK kept the `/sb` passthrough alive on its own —
+  // a pure SDK lag, not an unfinished migration.
+  //
+  // Drop-in: FileCanvasService.serializeNode emits the SAME snake_case
+  // PostgREST contract (id / workspace_id / kind / name / parent_id / x / y /
+  // file_id / url / mime_type / size / doc_id / scope / created_by /
+  // created_at / updated_at) that the passthrough returned, so every consumer
+  // — the /files desktop's `fileCanvasFetch` transform and aiWorkspaceOps —
+  // reads identically.
+  //
+  // Workspace scope: the route runs attachExplicitWorkspaceIfMember, which
+  // honors an explicit `workspaceId` only when the caller is a member and
+  // otherwise falls back to the domain's own resolution. So threading the
+  // tab's activeWorkspaceId is an optimization, never a requirement — unlike
+  // records below, this must NOT throw when there is no workspace in context.
+  fileCanvas = {
+    // `filter.parent_id` maps onto ?parentId=. An explicit null (desktop root)
+    // has to survive as the string 'root' — `?parentId=` empty would be
+    // indistinguishable from "not filtering at all" once it round-trips.
+    list: (filter, options) => {
+      const params = new URLSearchParams()
+      if (filter && typeof filter === 'object' && 'parent_id' in filter) {
+        params.set('parentId', filter.parent_id == null ? 'root' : String(filter.parent_id))
+      }
+      const ws = this._fileCanvasWorkspaceId(filter, options)
+      if (ws) params.set('workspaceId', ws)
+      const qs = params.toString()
+      return this._request(`/file-canvas${qs ? `?${qs}` : ''}`, {
+        method: 'GET',
+        methodName: 'fileCanvas.list'
+      }).then((r) => (Array.isArray(r) ? r : (r?.data ?? [])))
+    },
+    get: (id, options) => {
+      const ws = this._fileCanvasWorkspaceId(null, options)
+      return this._request(
+        `/file-canvas/${encodeURIComponent(id)}${ws ? `?workspaceId=${encodeURIComponent(ws)}` : ''}`,
+        { method: 'GET', methodName: 'fileCanvas.get' }
+      ).then((r) => r?.data ?? r)
+    },
+    create: (payload, options) => {
+      const ws = this._fileCanvasWorkspaceId(payload, options)
+      return this._request(`/file-canvas${ws ? `?workspaceId=${encodeURIComponent(ws)}` : ''}`, {
+        method: 'POST',
+        body: JSON.stringify(payload || {}),
+        methodName: 'fileCanvas.create'
+      }).then((r) => r?.data ?? r)
+    },
+    update: (id, payload, options) => {
+      const ws = this._fileCanvasWorkspaceId(payload, options)
+      return this._request(
+        `/file-canvas/${encodeURIComponent(id)}${ws ? `?workspaceId=${encodeURIComponent(ws)}` : ''}`,
+        { method: 'PATCH', body: JSON.stringify(payload || {}), methodName: 'fileCanvas.update' }
+      ).then((r) => r?.data ?? r)
+    },
+    remove: (id, options) => {
+      const ws = this._fileCanvasWorkspaceId(null, options)
+      return this._request(
+        `/file-canvas/${encodeURIComponent(id)}${ws ? `?workspaceId=${encodeURIComponent(ws)}` : ''}`,
+        { method: 'DELETE', methodName: 'fileCanvas.remove' }
+      )
+    }
+  }
   // Generic record store backing AI-generated extensions. Mongo cutover
   // complete (2026-07-25, tickets/server.md "workspace records data-plane
   // split"): routes to /core/workspaces/:id/records over the SAME Mongo
