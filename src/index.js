@@ -982,3 +982,9 @@ export { BaseService } from './services/BaseService.js'
 
 // Export environment configuration
 export { default as environment } from './config/environment.js'
+
+// Cross-app auth (SDK-token cookie/iframe session handoff). Exported from the
+// MAIN entry — the workspace Parcel bundler does not resolve package.json
+// `exports` subpaths (the `./cross-app-auth` subpath stays for Node
+// consumers that do).
+export { createCrossAppAuth, DEFAULT_TOKEN_KEYS } from './crossAppAuth.js'
