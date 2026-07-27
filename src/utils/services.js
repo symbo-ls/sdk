@@ -543,11 +543,15 @@ export const SERVICE_METHODS = {
   // POST /core/calendar/events       → create (owner/admin)
   // PATCH  /core/calendar/events/:id → update (owner/admin)
   // DELETE /core/calendar/events/:id → soft delete (owner/admin)
+  // POST /core/calendar/sync         → external Google sync pass (owner/admin)
+  // GET  /core/calendar/sync         → sync cursor status
   calendarListEvents: 'calendar',
   calendarGetEvent: 'calendar',
   calendarCreateEvent: 'calendar',
   calendarUpdateEvent: 'calendar',
   calendarDeleteEvent: 'calendar',
+  calendarSync: 'calendar',
+  calendarSyncStatus: 'calendar',
 
   // Builds & Deploy — workspace-scoped /core/builds/* (GitHub App install →
   // repo import → Cloud Build/buildpacks → Cloud Run). Backs /infra.

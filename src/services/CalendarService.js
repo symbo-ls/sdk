@@ -1,12 +1,8 @@
 import { BaseService } from './BaseService.js'
 
-// CalendarService — wraps the core server's /core/calendar/events surface
-// (Mongo + Supabase-passthrough calendar domain on the main API server).
-//
-// Supabase → Mongo migration Phase 4 (docs/migration/calendar-agnostic-spec.md).
-// DORMANT until the server's CALENDAR_STORE flag is flipped off the default
-// 'supabase' — these methods are byte-identical workspace-pinned queries in
-// supabase mode.
+// CalendarService — wraps the core server's /core/calendar surface on the main
+// API server. Mongo-backed: CALENDAR_STORE has defaulted to 'mongo' since the
+// 2026-07-03 cutover (supabase/dual remain as rollback values).
 //
 // Routes (all authenticated):
 //   GET    /core/calendar/events            → list within a window (any member tier)
@@ -14,6 +10,8 @@ import { BaseService } from './BaseService.js'
 //   POST   /core/calendar/events            → create (owner/admin — spec §7)
 //   PATCH  /core/calendar/events/:id        → update (owner/admin)
 //   DELETE /core/calendar/events/:id        → soft delete (owner/admin)
+//   POST   /core/calendar/sync              → external (Google) sync pass (owner/admin)
+//   GET    /core/calendar/sync              → sync cursor status (any member tier)
 //
 // The owner/admin WRITE gate is enforced server-side via requireOrgRole; write
 // callers MUST pass `organization` so the gate can resolve the caller's role.
@@ -136,6 +134,50 @@ export class CalendarService extends BaseService {
         method: 'DELETE',
         body: { organization, ...(workspaceId ? { workspaceId } : {}) }
       }
+    )
+  }
+
+  /**
+   * Trigger an external (Google) sync pass for the workspace.
+   *
+   * Replaces the `calendar-sync` Supabase edge function, which was deleted with
+   * that plane — the frontend was still POSTing at it behind a `.catch(() => {})`,
+   * so a resync silently did nothing. The server enqueues one job per live
+   * cursor and returns immediately; poll `calendarSyncStatus` for progress.
+   *
+   * Owner/admin only (a sync writes events) — pass `organization` so the gate
+   * can resolve the caller's role.
+   *
+   * @param {object} args
+   * @param {string} args.organization
+   * @param {string} [args.workspaceId] - defaults to the caller's active workspace
+   * @returns {Promise<object>} { enqueued, cursors }
+   */
+  calendarSync({ organization, workspaceId } = {}) {
+    if (!organization)
+      throw new Error('organization is required (owner/admin write gate)')
+    return this._call('calendarSync', '/calendar/sync', {
+      method: 'POST',
+      body: { organization, ...(workspaceId ? { workspaceId } : {}) }
+    })
+  }
+
+  /**
+   * Read external-sync cursor status (last sync time, per-cursor state).
+   * Readable by any member tier.
+   *
+   * @param {object} args
+   * @param {string} [args.workspaceId]
+   * @returns {Promise<object>}
+   */
+  calendarSyncStatus({ workspaceId } = {}) {
+    const params = new URLSearchParams()
+    if (workspaceId) params.set('workspaceId', workspaceId)
+    const qs = params.toString()
+    return this._call(
+      'calendarSyncStatus',
+      `/calendar/sync${qs ? `?${qs}` : ''}`,
+      { method: 'GET' }
     )
   }
 }
