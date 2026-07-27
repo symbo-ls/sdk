@@ -356,12 +356,9 @@ export const SERVICE_METHODS = {
   getGitHubRepo: 'integration',
   listGitHubRepos: 'integration',
   syncGitHubIntegration: 'integration',
-  // Generic external-Supabase dispatch (OrgIntegration kind
-  // `supabase_project`) — POST /org-integrations/:idOrSlug/call.
-  supabaseProjectCall: 'integration',
   // Org-integration CRUD (OrgIntegration rows) — the connect/grant/scope/order
   // lifecycle behind /org-integrations/*. Distinct from the OAuth-app
-  // /integrations/* methods above and the supabase_project data-plane dispatch.
+  // /integrations/* methods above.
   listOrgIntegrations: 'integration',
   upsertOrgIntegration: 'integration',
   deleteOrgIntegration: 'integration',
@@ -540,8 +537,7 @@ export const SERVICE_METHODS = {
   meetMuteParticipant: 'meet',
 
   // Calendar — workspace-scoped events against /core/calendar/* (auth).
-  // DORMANT until the server's CALENDAR_STORE flag is flipped off 'supabase'
-  // (Supabase → Mongo migration Phase 4). Writes are owner/admin-gated.
+  // Mongo-backed (the Supabase store was retired). Writes are owner/admin-gated.
   // GET  /core/calendar/events       → list within a window
   // GET  /core/calendar/events/:id   → get one
   // POST /core/calendar/events       → create (owner/admin)

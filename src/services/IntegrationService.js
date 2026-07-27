@@ -629,56 +629,11 @@ export class IntegrationService extends BaseService {
     }
   }
 
-  // ==================== ORG-INTEGRATION DISPATCH (EXTERNAL SUPABASE) ====================
-
-  /**
-   * Generic call against an org-connected external Supabase project
-   * (OrgIntegration row, kind `supabase_project`) — one wire verb for the
-   * whole external data plane. The server routes by kind, enforces the
-   * per-table op allowlist (integration `config.tableAllowlist`) and the
-   * per-op role policy (read = org member, write = owner/admin), and logs
-   * every call (IntegrationCallLog).
-   *
-   * Mirrors: POST /org-integrations/:idOrSlug/call
-   * Body: { op, table, filter, order, limit, values } — only defined fields.
-   *
-   * Reachable declaratively via
-   * sdk.execute('orgIntegration.supabase', op, { slug, table, ... }).
-   *
-   * @param {object} args
-   * @param {string} args.idOrSlug — OrgIntegration row id or slug (e.g. 'acme')
-   * @param {'introspect'|'select'|'insert'|'update'|'delete'} args.op
-   * @param {string} [args.table] — required by every op except introspect
-   * @param {object} [args.filter] — column → value / operator-grammar match
-   * @param {object|Array} [args.order] — e.g. { column, ascending }
-   * @param {number} [args.limit]
-   * @param {object|Array<object>} [args.values] — insert/update payload
-   * @returns {Promise<*>} unwrapped `data` from the { success, data, message } envelope
-   */
-  supabaseProjectCall ({ idOrSlug, op, table, filter, order, limit, values } = {}) {
-    if (!idOrSlug) throw new Error('idOrSlug is required')
-    if (!op) throw new Error('op is required')
-
-    const body = { op }
-    if (table !== undefined) body.table = table
-    if (filter !== undefined) body.filter = filter
-    if (order !== undefined) body.order = order
-    if (limit !== undefined) body.limit = limit
-    if (values !== undefined) body.values = values
-
-    return this._call(
-      'supabaseProjectCall',
-      `/org-integrations/${encodeURIComponent(idOrSlug)}/call`,
-      { method: 'POST', body }
-    )
-  }
-
   // ==================== ORG-INTEGRATION CRUD (/org-integrations/*) ==============
   //
   // Org-scoped integration rows (OrgIntegration model) — the connect / grant /
-  // scope / order lifecycle. Distinct from BOTH the /integrations/* OAuth-app
-  // surface above AND the data-plane dispatch verb `supabaseProjectCall`
-  // (POST /org-integrations/:idOrSlug/call). These mirror the shared
+  // scope / order lifecycle. Distinct from the /integrations/* OAuth-app
+  // surface above. These mirror the shared
   // integrations facade (workspace/packages/shared/integrations/index.js), moved
   // into the SDK proper so UI callers obey the SDK-only-transport rule.
   //
@@ -719,17 +674,17 @@ export class IntegrationService extends BaseService {
 
   /**
    * Upsert an org integration row by its natural key
-   * (org, scopeType, scope, kind, slug). A `secret` (e.g. a Supabase service
+   * (org, scopeType, scope, kind, slug). A `secret` (e.g. an API
    * key) is written to the server-side secret store and NEVER returned.
    * `config` carries the per-table op grants (`config.tableAllowlist` +
-   * optional `config.writeRoles`) the `supabase_project` data plane enforces.
+   * optional `config.writeRoles`) the data plane enforces.
    * `payload` is sent VERBATIM.
    *
    * Mirrors: POST /org-integrations
    *
    * @param {object} payload
    * @param {string} payload.orgId
-   * @param {string} payload.kind — e.g. 'supabase_project'
+   * @param {string} payload.kind — e.g. 'n8n', 'custom_http'
    * @param {string} [payload.slug] — server default 'default'
    * @param {'org'|'workspace'|'project'} [payload.scopeType] — server default 'org'
    * @param {string} [payload.scopeId] — required when scopeType is workspace|project

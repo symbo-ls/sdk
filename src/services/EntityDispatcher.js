@@ -1056,9 +1056,8 @@ const ENTITY_ROUTES = {
     },
   },
 
-  // ─── Standups (was sb().from('standup_activity')) ─────────────────────────
-  // Daily standup rows keyed on (author, date). Replaces every direct
-  // supabase query that used to read/write standup_activity.
+  // ─── Standups ─────────────────────────────────────────────────────────────
+  // Daily standup rows keyed on (author, date).
   'workspaceProject.standups': {
     service: 'workspaceProject',
     methods: {
@@ -1674,11 +1673,8 @@ const ENTITY_ROUTES = {
   // Org-scoped integration rows (OrgIntegration model) behind /org-integrations/*.
   // Ops map to IntegrationService's org-integration CRUD methods. The server
   // gates mutations (upsert/remove/assignScope/reorder) to owner/admin, `list`
-  // to any org member, and `kinds` to any authenticated user. An `upsert`
-  // payload's `config.tableAllowlist` carries the per-table op grants the
-  // supabase_project data plane (the sibling 'orgIntegration.supabase' route)
-  // enforces. Distinct from that data-plane route: this is the management
-  // surface, that is the .../call dispatch verb.
+  // to any org member, and `kinds` to any authenticated user. This is the
+  // management surface; per-kind data-plane dispatch is the .../call verb.
   //   sdk.execute('orgIntegration', 'list', { orgId, scopeType, scopeId })
   //   sdk.execute('orgIntegration', 'upsert', { orgId, kind, slug, config, secret })
   //   sdk.execute('orgIntegration', 'kinds')
@@ -1702,36 +1698,6 @@ const ENTITY_ROUTES = {
     },
   },
 
-  // ─── Org integrations — external Supabase dispatch ───────────────────────
-  // Generic data plane against a client-owned Supabase project connected as
-  // an OrgIntegration row (kind `supabase_project`). One wire verb:
-  // POST /org-integrations/:idOrSlug/call with { op, table, filter, order,
-  // limit, values }. Op names mirror the server vocabulary (introspect/
-  // select/insert/update/delete); `remove` aliases `delete` so callers using
-  // the dispatcher's standard CRUD vocabulary work too. The server enforces
-  // the per-table op allowlist (config.tableAllowlist) + per-op role policy
-  // (read = org member, write = owner/admin) — never rely on the client.
-  //   sdk.execute('orgIntegration.supabase', 'select',
-  //     { slug: 'acme', table: 'listings', filter, order, limit })
-  'orgIntegration.supabase': {
-    service: 'integration',
-    methods: {
-      introspect: 'supabaseProjectCall',
-      select: 'supabaseProjectCall',
-      insert: 'supabaseProjectCall',
-      update: 'supabaseProjectCall',
-      delete: 'supabaseProjectCall',
-      remove: 'supabaseProjectCall',
-    },
-    argMap: {
-      introspect: (a) => [orgIntegrationSupabaseCall('introspect', a)],
-      select: (a) => [orgIntegrationSupabaseCall('select', a)],
-      insert: (a) => [orgIntegrationSupabaseCall('insert', a)],
-      update: (a) => [orgIntegrationSupabaseCall('update', a)],
-      delete: (a) => [orgIntegrationSupabaseCall('delete', a)],
-      remove: (a) => [orgIntegrationSupabaseCall('delete', a)],
-    },
-  },
 }
 
 // Arg resolvers for the builds/projectDomains routes — accept both the
@@ -1776,27 +1742,6 @@ const orgIntegrationListArgs = (a) => ({
     a?.includeParents ?? a?.params?.includeParents ?? a?.filter?.includeParents,
 })
 
-// Bag builder for the orgIntegration.supabase route — accepts both the
-// imperative shape ({ slug, table, filter, ... }) and the declarative
-// fetch-adapter pack ({ filter, params }). `slug` (or `idOrSlug`/`id` — the
-// server route accepts either) resolves the OrgIntegration row; the op is
-// authoritative from the dispatcher verb, never from the caller's bag.
-// IntegrationService.supabaseProjectCall drops undefined fields from the body.
-const orgIntegrationSupabaseCall = (op, a) => ({
-  idOrSlug:
-    a?.idOrSlug ??
-    a?.slug ??
-    a?.id ??
-    a?.params?.idOrSlug ??
-    a?.params?.slug ??
-    a?.params?.id,
-  op,
-  table: a?.table ?? a?.params?.table,
-  filter: a?.filter ?? a?.params?.filter,
-  order: a?.order ?? a?.params?.order,
-  limit: a?.limit ?? a?.params?.limit,
-  values: a?.values ?? a?.params?.values,
-})
 
 const resolveDottedMethod = (target, methodPath) => {
   if (!target || !methodPath) return null

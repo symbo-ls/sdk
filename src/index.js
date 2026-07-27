@@ -524,8 +524,8 @@ export class SDK {
         })
       ),
       // Calendar — workspace-scoped events against /core/calendar/* on the
-      // main server. DORMANT until CALENDAR_STORE is flipped off 'supabase'
-      // (Supabase → Mongo migration Phase 4). Writes are owner/admin-gated.
+      // main server. Live (Mongo-backed since 2026-07-03). Writes are
+      // owner/admin-gated.
       this._initService(
         'calendar',
         createCalendarService({

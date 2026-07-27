@@ -181,8 +181,8 @@ export const getConfig = () => {
       githubClientId:
         process.env.SYMBOLS_APP_GITHUB_CLIENT_ID || envConfig.githubClientId,
       // Telemetry: TrackingService routes through @symbo.ls/analyzing →
-      // workspace-project worker → analyzed_* tables in the workspace
-      // Supabase. `grafanaUrl` is kept as a legacy escape hatch — when set,
+      // the main server's /core/analyzed/* surface (Mongo-backed).
+      // `grafanaUrl` is kept as a legacy escape hatch — when set,
       // TrackingService can be configured with `tracking.transport` to ship
       // to a Grafana Faro receiver instead. Default is empty so the SDK-
       // routed transport wins.
