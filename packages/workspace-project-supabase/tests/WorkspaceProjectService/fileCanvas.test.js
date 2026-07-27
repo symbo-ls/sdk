@@ -14,11 +14,6 @@ const sandbox = sinon.createSandbox()
 const makeService = (ctx) => {
   const svc = new WorkspaceProjectService()
   sandbox.stub(svc, '_requireReady').resolves()
-  // Guard: if a path ever falls back to the passthrough, fail loudly rather
-  // than silently exercising Supabase.
-  sandbox.stub(svc, '_sb').callsFake(() => {
-    throw new Error('_sb() must not be reached — file_canvas is a /core route')
-  })
   if (ctx) svc._context = { ...(svc._context || {}), ...ctx }
   return svc
 }

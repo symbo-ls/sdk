@@ -205,144 +205,20 @@ export class WorkspaceProjectService extends BaseService {
     return this._requestExternal(url, init)
   }
 
-  // PostgREST-style call routed through the workspace wrapper's existing
-  // Supabase passthrough at /workspace/sb/rest/v1/*. Lets us expose any
-  // workspace-tenant table on the SDK without writing a curated server
-  // route per entity — RLS still enforces auth/scope server-side because
-  // the passthrough forwards the user's bearer token unchanged.
+  // The `/sb` PostgREST passthrough (`_sb()`) is REMOVED. It routed arbitrary
+  // workspace-tenant tables through /workspace/sb/rest/v1/* so a table could be
+  // exposed on the SDK without a curated server route. Every table it served
+  // now has one:
+  //   file_canvas      → /core/file-canvas/*
+  //   standup_activity → /core/workspaces/:id/standups
+  //   activity_events  → /core/workspaces/:id/activity-log
+  //   user_profiles    → /core/user-profile
+  //   (announcements, workspace_records, prefs, … moved earlier)
   //
-  // op vocabulary (matches sdk.execute):
-  //   list   → GET /rest/v1/{table}?{filter as PostgREST query string}
-  //   get    → GET /rest/v1/{table}?{single}=eq.{id}  (Accept: pgrst.object+json)
-  //   create → POST /rest/v1/{table}                  (Prefer: return=representation)
-  //   update → PATCH /rest/v1/{table}?id=eq.{id}      (Prefer: return=representation)
-  //   remove → DELETE /rest/v1/{table}?id=eq.{id}
-  //   rpc    → POST /rest/v1/rpc/{table}              (table doubles as fn name)
-  //
-  // filter shape (mirrors the curated wrappers):
-  //   plain value  → eq.value
-  //   array        → in.(a,b,c)
-  //   { gte, lte, gt, lt, like, ilike, is, neq } → operator.value
-  //   <key>_in: [..] → key=in.(a,b,c)        — convenience for prefilter
-  //   null         → is.null
-  //
-  // options:
-  //   columns: 'id,name'  → select=id,name
-  //   order: 'name.asc' or 'name'
-  //   limit, offset
-  //   single: true   → use Accept: pgrst.object+json (returns one row)
-  async _sb(methodName, table, op, args = {}) {
-    this._requireReady(methodName)
-    const { filter, payload, options = {} } = args || {}
-    const idValue = options.id ?? args?.id
-
-    const qs = new URLSearchParams()
-    // PostgREST treats `,()` as filter syntax. Wrap values containing those
-    // characters in double quotes (PostgREST's documented escape) so caller
-    // input can't subvert the operator parser. Embedded `"` are doubled.
-    const _enc = (v) => {
-      if (v === null) return 'null'
-      const s = String(v)
-      if (/[,()"\s]/.test(s)) return `"${s.replace(/"/g, '""')}"`
-      return s
-    }
-    const _validKey = (k) => /^[A-Za-z_][A-Za-z0-9_.]*$/.test(k)
-    const _appendKey = (key, value) => {
-      if (!_validKey(key)) {
-        throw new Error(`[${methodName}] invalid filter key: ${key}`)
-      }
-      qs.append(key, value)
-    }
-
-    if (filter && typeof filter === 'object') {
-      for (const [rawKey, val] of Object.entries(filter)) {
-        if (val === undefined) continue
-        // <key>_in: [a,b,c] convenience — translate to in.()
-        if (rawKey.endsWith('_in') && Array.isArray(val)) {
-          _appendKey(rawKey.slice(0, -3), `in.(${val.map(_enc).join(',')})`)
-          continue
-        }
-        if (val === null) {
-          _appendKey(rawKey, 'is.null')
-        } else if (Array.isArray(val)) {
-          _appendKey(rawKey, `in.(${val.map(_enc).join(',')})`)
-        } else if (typeof val === 'object') {
-          // Operator form: { gte, lte, gt, lt, eq, neq, like, ilike, is }
-          for (const [opName, opVal] of Object.entries(val)) {
-            if (!/^[a-z]+$/.test(opName)) {
-              throw new Error(
-                `[${methodName}] invalid filter operator: ${opName}`
-              )
-            }
-            _appendKey(rawKey, `${opName}.${_enc(opVal)}`)
-          }
-        } else {
-          _appendKey(rawKey, `eq.${_enc(val)}`)
-        }
-      }
-    }
-    if (
-      (op === 'get' || op === 'update' || op === 'remove') &&
-      idValue !== undefined &&
-      !qs.has('id')
-    ) {
-      qs.append('id', `eq.${_enc(idValue)}`)
-    }
-
-    if (options.columns) qs.set('select', options.columns)
-    if (options.order) qs.set('order', options.order)
-    if (options.limit != null) qs.set('limit', String(options.limit))
-    if (options.offset != null) qs.set('offset', String(options.offset))
-    // PostgREST upsert: POST with `on_conflict=col1,col2` query string +
-    // `Prefer: resolution=merge-duplicates`. Caller signals upsert via
-    // options.upsertOnConflict — set on the create path.
-    if (op === 'create' && options.upsertOnConflict) {
-      qs.set('on_conflict', options.upsertOnConflict)
-    }
-
-    const httpMethod =
-      op === 'list' || op === 'get'
-        ? 'GET'
-        : op === 'create'
-          ? 'POST'
-          : op === 'update'
-            ? 'PATCH'
-            : op === 'remove'
-              ? 'DELETE'
-              : op === 'rpc'
-                ? 'POST'
-                : 'GET'
-
-    const restPath =
-      op === 'rpc'
-        ? `rpc/${encodeURIComponent(table)}`
-        : encodeURIComponent(table)
-    const queryStr = qs.toString()
-    const url = `${this._workspacePrefix}/sb/rest/v1/${restPath}${queryStr ? '?' + queryStr : ''}`
-
-    const init = { method: httpMethod, headers: {} }
-
-    if (op === 'create' || op === 'update' || op === 'rpc') {
-      init.body = JSON.stringify(payload ?? {})
-      if (op !== 'rpc') {
-        // resolution=merge-duplicates only meaningful when on_conflict was
-        // set above; harmless on plain create — server ignores it for
-        // non-conflict cases.
-        const prefer = options.upsertOnConflict
-          ? 'resolution=merge-duplicates,return=representation'
-          : 'return=representation'
-        init.headers['Prefer'] = prefer
-      }
-    }
-
-    if (op === 'get' || (op === 'list' && options.single)) {
-      init.headers['Accept'] = 'application/vnd.pgrst.object+json'
-    }
-
-    init.methodName = methodName
-    init.authHeader = await this._resolveAuthHeader()
-    return this._requestExternal(url, init)
-  }
+  // Do not reintroduce it. Its convenience was the problem: a table could join
+  // the passthrough in one line and then keep it alive indefinitely with no
+  // visible owner — which is exactly how file_canvas outlived its own /core
+  // route by three weeks.
 
   // _sbCrud(table) — the generic PostgREST CRUD factory — is REMOVED. It was
   // the thing that made adding a new `/sb` table a one-liner, and its last
@@ -1261,47 +1137,36 @@ export class WorkspaceProjectService extends BaseService {
   // userGrants entity removed 2026-07 — user_grants table dropped with the
   // workspace-project Supabase org retirement; no live consumer.
 
-  // ⚠️ THE LAST `/sb` CALLER IN THE SDK. Everything else in this file now
-  // addresses a /core route; these three call sites are the entire remaining
-  // reason the workspace-project worker's PostgREST passthrough exists.
+  // user_profiles — the LAST table on the `/sb` passthrough, now on
+  // PATCH /core/user-profile. With this repoint the SDK has no `_sb()` callers
+  // left, which is what makes retiring the proxy possible.
   //
-  // It is NOT an SDK lag like file_canvas was — it is blocked on a data-model
-  // decision, so do not "just repoint" it:
-  //   * user_profiles is a MIXED table. Its HR subset (bio/city/country/notes/
-  //     title/employmentStatus) already moved to Mongo (User.profile), but the
-  //     FINANCIAL cap-table columns (share_class, shares, vesting_*,
-  //     salary_monthly, hourly_rate, investment, investor_type, valuation,
-  //     equity_pct, stocks, monthly_stocks, grant_*) did not.
-  //   * server/src/core/models/User.js states those columns are PERMANENTLY
-  //     OUT of Mongo and "must NEVER be written here", and the profile store's
-  //     mongo-mode read still STARTS from the Supabase `people` view and
-  //     overlays Mongo HR on top (domains/profile/store/mongoStore.js
-  //     overlayPeopleRows). So the financial columns have no Mongo home to
-  //     move to today.
+  // WHAT MOVED, precisely: the HR subset (bio / city / country / notes /
+  // position→title / status→employmentStatus). The FINANCIAL cap-table columns
+  // did NOT move, and do not need to: in the default PROFILE_STORE=mongo mode
+  // they had ALREADY stopped reaching callers. PeopleService only fills its
+  // Supabase profile map on the `!hrFromMongo` rollback path, so `stocks` /
+  // `monthly_stocks` have resolved to null in the live product since the
+  // 2026-07-03 cutover. The Supabase ROWS still hold that data — export it
+  // before the project is decommissioned if anyone needs the history.
   //
-  // Retiring `/sb` therefore needs someone to decide where the cap-table
-  // lives; inventing a schema for equity/salary data here would be the wrong
-  // call to make silently. See tickets/server.md "user_profiles cap-table
-  // plane — the last /sb dependency".
+  // `userId` is accepted but NOT used to target the row, and that is not an
+  // oversight. The proxy hard-pinned this table to the caller
+  // (USER_SCOPED_TABLES: `_scopeQuery` overwrote any user_id filter,
+  // `_scopeBody` overwrote row.user_id), so no caller has ever been able to
+  // write another user's profile here. The /core route keeps that boundary
+  // rather than silently widening it during a data-plane move. The parameter
+  // stays so the 7 existing call sites need no edit.
   //
-  // user_profiles is keyed by user_id, not numeric id — hence the filter-based
-  // get/update rather than an id sub-path.
+  // list / get are REMOVED — neither had a live caller anywhere in the
+  // monorepo (every apparent hit was the EntityDispatcher's own method map).
   userProfiles = {
-    list: (filter, options) =>
-      this._sb('userProfiles.list', 'user_profiles', 'list', {
-        filter,
-        options
-      }),
-    get: (userId) =>
-      this._sb('userProfiles.get', 'user_profiles', 'list', {
-        filter: { user_id: userId },
-        options: { single: true }
-      }),
     update: (userId, payload) =>
-      this._sb('userProfiles.update', 'user_profiles', 'update', {
-        filter: { user_id: userId },
-        payload
-      })
+      this._request('/user-profile', {
+        method: 'PATCH',
+        body: JSON.stringify(payload || {}),
+        methodName: 'userProfiles.update'
+      }).then((r) => r?.data ?? r)
   }
 
   // The activity routes are path-scoped (/workspaces/:workspaceId/...), so a

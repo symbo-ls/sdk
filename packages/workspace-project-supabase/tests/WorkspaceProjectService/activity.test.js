@@ -13,9 +13,6 @@ const sandbox = sinon.createSandbox()
 const makeService = (ctx = { activeWorkspaceId: 'ws_1' }) => {
   const svc = new WorkspaceProjectService()
   sandbox.stub(svc, '_requireReady').resolves()
-  sandbox.stub(svc, '_sb').callsFake(() => {
-    throw new Error('_sb() must not be reached — activity is on /core routes')
-  })
   svc._context = { ...(svc._context || {}), ...ctx }
   return svc
 }

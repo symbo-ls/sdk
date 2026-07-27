@@ -20,7 +20,6 @@ const makeService = () => {
 test('userPreferences.get GETs /core/prefs/user + unwraps { prefs }', async (t) => {
   t.plan(4)
   const svc = makeService()
-  const sbStub = sandbox.stub(svc, '_sb').rejects(new Error('SB MUST NOT BE HIT'))
   const reqStub = sandbox
     .stub(svc, '_request')
     .resolves({ prefs: { user_id: 'u', email_digest: 'daily', homeWelcomeDismissed: true } })
@@ -28,7 +27,8 @@ test('userPreferences.get GETs /core/prefs/user + unwraps { prefs }', async (t) 
   const [endpoint, opts] = reqStub.firstCall.args
   t.equal(endpoint, '/prefs/user', 'targets /core/prefs/user (BaseService prepends /core)')
   t.equal(opts.method, 'GET', 'GET')
-  t.equal(sbStub.callCount, 0, '_sb (PostgREST passthrough) never called')
+  // The passthrough itself is gone now — a stronger guarantee than "not called".
+  t.equal(svc._sb, undefined, '_sb (PostgREST passthrough) no longer exists')
   t.deepEqual(
     out,
     { user_id: 'u', email_digest: 'daily', homeWelcomeDismissed: true },
