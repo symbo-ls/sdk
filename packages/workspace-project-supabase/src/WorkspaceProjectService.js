@@ -344,28 +344,13 @@ export class WorkspaceProjectService extends BaseService {
     return this._requestExternal(url, init)
   }
 
-  // Factory for the common (filter, options) / (id) / (id, payload) shape
-  // — most table-only entity namespaces follow it. Each method returns the
-  // raw _sb() promise so consumers see the unwrapped Supabase response.
-  _sbCrud(table, listOptions = {}) {
-    return {
-      list: (filter, options) =>
-        this._sb(`${table}.list`, table, 'list', {
-          filter,
-          options: { ...listOptions, ...(options || {}) }
-        }),
-      get: (id) =>
-        this._sb(`${table}.get`, table, 'get', {
-          id,
-          options: { single: true }
-        }),
-      create: (payload) =>
-        this._sb(`${table}.create`, table, 'create', { payload }),
-      update: (id, payload) =>
-        this._sb(`${table}.update`, table, 'update', { id, payload }),
-      remove: (id) => this._sb(`${table}.remove`, table, 'remove', { id })
-    }
-  }
+  // _sbCrud(table) — the generic PostgREST CRUD factory — is REMOVED. It was
+  // the thing that made adding a new `/sb` table a one-liner, and its last
+  // caller (file_canvas) moved to /core. Every namespace in this file now
+  // addresses a /core route except `userProfiles`, which is the single
+  // remaining `_sb()` caller and blocked on where the cap-table lives (see the
+  // note there). Do not reintroduce this factory: a new table on the
+  // passthrough should be a deliberate, visible act, not a one-liner.
 
   // Resolve the workspaceId a chat READ should scope to: an explicit
   // caller-supplied value wins; otherwise fall back to the SDK's own
@@ -1276,7 +1261,31 @@ export class WorkspaceProjectService extends BaseService {
   // userGrants entity removed 2026-07 — user_grants table dropped with the
   // workspace-project Supabase org retirement; no live consumer.
 
-  // user_profiles is keyed by user_id, not numeric id. Override get/update.
+  // ⚠️ THE LAST `/sb` CALLER IN THE SDK. Everything else in this file now
+  // addresses a /core route; these three call sites are the entire remaining
+  // reason the workspace-project worker's PostgREST passthrough exists.
+  //
+  // It is NOT an SDK lag like file_canvas was — it is blocked on a data-model
+  // decision, so do not "just repoint" it:
+  //   * user_profiles is a MIXED table. Its HR subset (bio/city/country/notes/
+  //     title/employmentStatus) already moved to Mongo (User.profile), but the
+  //     FINANCIAL cap-table columns (share_class, shares, vesting_*,
+  //     salary_monthly, hourly_rate, investment, investor_type, valuation,
+  //     equity_pct, stocks, monthly_stocks, grant_*) did not.
+  //   * server/src/core/models/User.js states those columns are PERMANENTLY
+  //     OUT of Mongo and "must NEVER be written here", and the profile store's
+  //     mongo-mode read still STARTS from the Supabase `people` view and
+  //     overlays Mongo HR on top (domains/profile/store/mongoStore.js
+  //     overlayPeopleRows). So the financial columns have no Mongo home to
+  //     move to today.
+  //
+  // Retiring `/sb` therefore needs someone to decide where the cap-table
+  // lives; inventing a schema for equity/salary data here would be the wrong
+  // call to make silently. See tickets/server.md "user_profiles cap-table
+  // plane — the last /sb dependency".
+  //
+  // user_profiles is keyed by user_id, not numeric id — hence the filter-based
+  // get/update rather than an id sub-path.
   userProfiles = {
     list: (filter, options) =>
       this._sb('userProfiles.list', 'user_profiles', 'list', {
