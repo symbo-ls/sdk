@@ -1021,6 +1021,27 @@ export class WorkspaceProjectService extends BaseService {
   }
 
   records = {
+    // Pagination (tickets/server.md "records plane silently CAPS list at
+    // 100 rows, no marker, no total, no warning" — this is the SDK half of
+    // the fix, server half in WorkspaceRecordsController/Service). The
+    // route now always answers { success, data, pagination } where
+    // pagination is { page, limit, totalCount, pages, hasMore } (the same
+    // shape UserController.getUserProjects uses elsewhere in /core) — an
+    // explicit `limit` above the 100-row cap is REFUSED (HTTP 400
+    // limit_exceeds_max, surfaced here as a thrown Error via _request) so a
+    // caller can never silently receive a partial page.
+    //
+    // Backward compat: this method has ALWAYS returned a bare row array,
+    // and a live consumer (icca-manage's iccaListAll) type-checks the
+    // return with `Array.isArray()`, treating anything else as an EMPTY
+    // page — switching to a `{ data, pagination }` wrapper would silently
+    // zero out every collection for that caller (and any other consumer
+    // doing the same reasonable check). Arrays are objects in JS, so
+    // `pagination` is attached directly ONTO the returned array instead of
+    // wrapping it: `Array.isArray()`, `.length`, `.map()`, spread and
+    // `for...of` all stay byte-identical to before, while a caller that
+    // knows to look can read `rows.pagination.hasMore` /
+    // `rows.pagination.totalCount` to detect a partial page.
     list: async (filter, options) => {
       const ws = this._recordsWorkspaceId(filter, options)
       const params = new URLSearchParams()
@@ -1028,6 +1049,9 @@ export class WorkspaceProjectService extends BaseService {
         filter && typeof filter === 'object' && filter.collection ? filter.collection : null
       if (collection) params.set('collection', String(collection))
       if (options?.limit != null) params.set('limit', String(options.limit))
+      // `page` (1-indexed, the canonical /core convention) wins server-side
+      // when both are given — see WorkspaceRecordsController.list.
+      if (options?.page != null) params.set('page', String(options.page))
       if (options?.offset != null) params.set('offset', String(options.offset))
       if (options?.order) params.set('order', String(options.order))
       const qs = params.toString()
@@ -1035,7 +1059,9 @@ export class WorkspaceProjectService extends BaseService {
         method: 'GET',
         methodName: 'records.list'
       })
-      return r?.data ?? []
+      const rows = r?.data ?? []
+      if (r?.pagination) rows.pagination = r.pagination
+      return rows
     },
     get: async (id, options) => {
       const ws = this._recordsWorkspaceId(null, options)
