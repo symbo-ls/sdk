@@ -1,23 +1,16 @@
-// @symbo.ls/workspace-project-supabase — the Supabase-backed surface for
-// the workspace-project worker. The SDK (`@symbo.ls/sdk`) re-exports
-// everything here via its `./services/index.js` so the historic import
-// shape (`import { WorkspaceProjectService, workspaceProjectEdgeFunctionUrl }
-// from '@symbo.ls/sdk'`) keeps working unchanged.
+// The SDK surface for the workspace-project worker.
 //
-// Why a separate package: every namespace inside WorkspaceProjectService
-// still routes to either the curated `/workspace-project/*` REST handlers
-// (Supabase under the hood) or the PostgREST passthrough at
-// `/workspace-project/sb/rest/v1/*`. Mongo-migrated surfaces moved out
-// (tickets → TicketService, docs → DocService, etc.). Keeping the
-// Supabase-coupled surface in its own package lets consumers that only
-// need the Mongo APIs install just `@symbo.ls/sdk` without pulling in the
-// PostgREST adapter machinery.
+// ⚠️ THE PACKAGE NAME IS NOW A MISNOMER. Nothing in here is Supabase-backed
+// any more: the `/sb` PostgREST passthrough (`_sb` / `_sbCrud`) and the
+// edge-function URL helper are deleted, and every namespace addresses either a
+// `/core/*` route on the main server or one of the worker's own CURATED
+// `/workspace-project/*` handlers. Renaming the package is a mechanical
+// follow-up gated only on the dependent package.json files.
+//
+// The original reason for a separate package — "let consumers that only need
+// the Mongo APIs skip the PostgREST adapter machinery" — no longer applies,
+// because that machinery is gone. It stays a package purely so the historic
+// import shape (`import { WorkspaceProjectService } from '@symbo.ls/sdk'`)
+// keeps working; `@symbo.ls/sdk` re-exports it via `./services/index.js`.
 
-export {
-  WorkspaceProjectService,
-  workspaceProjectBaseUrl
-} from './WorkspaceProjectService.js'
-
-export {
-  workspaceProjectEdgeFunctionUrl
-} from './supabasePassthrough.js'
+export { WorkspaceProjectService, workspaceProjectBaseUrl } from './WorkspaceProjectService.js'

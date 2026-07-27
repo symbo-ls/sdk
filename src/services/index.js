@@ -31,7 +31,6 @@ import { WorkspaceService } from './WorkspaceService.js'
 import {
   WorkspaceProjectService,
   workspaceProjectBaseUrl,
-  workspaceProjectEdgeFunctionUrl,
 } from '@symbo.ls/workspace-project-supabase'
 import { AllocationRuleService } from './AllocationRuleService.js'
 import { SharedAssetService } from './SharedAssetService.js'
@@ -312,7 +311,6 @@ export {
   WorkspaceService,
   WorkspaceProjectService,
   workspaceProjectBaseUrl,
-  workspaceProjectEdgeFunctionUrl,
   AiChatService,
   AiService,
   DocService,

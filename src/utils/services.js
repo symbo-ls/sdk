@@ -68,6 +68,11 @@ export const SERVICE_METHODS = {
   // User methods
   getUserProfile: 'auth',
   updateUserProfile: 'auth',
+  // Target-scoped HR write (PATCH /core/users/:userId/hr-profile). Distinct
+  // from the self-scoped `workspaceProject.userProfiles.update` entity — see
+  // the method comment in AuthService for why an admin acting on another user
+  // MUST come through here.
+  updateUserHrProfile: 'auth',
   getUserProjects: 'auth',
   getUser: 'auth',
   getUserByEmail: 'auth',

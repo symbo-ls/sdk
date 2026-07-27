@@ -746,6 +746,54 @@ export class AuthService extends BaseService {
     }
   }
 
+  // Write the HR subset of ANOTHER user's profile — bio / city / country /
+  // notes / position / status — through the target-scoped route
+  // `PATCH /core/users/:userId/hr-profile` (UserHrProfileService, server
+  // 972b0af0).
+  //
+  // WHY THIS EXISTS SEPARATELY FROM `workspaceProject.userProfiles.update`.
+  // That entity addressed the `/sb` PostgREST passthrough, which lists
+  // `user_profiles` in USER_SCOPED_TABLES and therefore OVERWRITES the
+  // request's `user_id` with the caller's own on both the URL filter and the
+  // body. A caller that passed someone else's id got a 200 having written its
+  // OWN row — the id was accepted and silently discarded. Any admin surface
+  // acting on behalf of a different user needs a route that scopes by the
+  // TARGET, and this is it: the server resolves the reference across all three
+  // id spaces the people roster emits (Mongo _id | supabaseUserId UUID |
+  // email), allows a self-write unconditionally, requires a platform admin for
+  // anyone else, and answers 403 instead of corrupting a row.
+  //
+  // `userId` is REQUIRED and load-bearing — do not add a "defaults to me"
+  // fallback. Self-writes have their own self-scoped path
+  // (`workspaceProject.userProfiles.update`); an omitted id here means the
+  // caller lost track of its target, which is precisely the bug this replaces.
+  //
+  // Returns the proxy's wire shape — `[{ user_id, ...hr columns }]`.
+  async updateUserHrProfile(userId, payload) {
+    this._requireReady('updateUserHrProfile')
+    if (!userId) {
+      throw new Error(
+        'updateUserHrProfile requires a target userId — refusing to fall back to the caller'
+      )
+    }
+    try {
+      const response = await this._request(
+        `/users/${encodeURIComponent(userId)}/hr-profile`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify(payload || {}),
+          methodName: 'updateUserHrProfile'
+        }
+      )
+      if (response.success) {
+        return response.data
+      }
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Failed to update user HR profile: ${error.message}`, { cause: error })
+    }
+  }
+
   async getUserProjects() {
     this._requireReady('getUserProjects')
     try {
