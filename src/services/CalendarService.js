@@ -166,17 +166,22 @@ export class CalendarService extends BaseService {
    * Read external-sync cursor status (last sync time, per-cursor state).
    * Readable by any member tier.
    *
+   * `organization` goes in the QUERY, not a body: this is a GET, and
+   * requireOrgRole resolves the org from `params.orgId || body.organization ||
+   * body.orgId || query.orgId` — so a body-only org would 400 here.
+   *
    * @param {object} args
+   * @param {string} args.organization
    * @param {string} [args.workspaceId]
    * @returns {Promise<object>}
    */
-  calendarSyncStatus({ workspaceId } = {}) {
-    const params = new URLSearchParams()
+  calendarSyncStatus({ organization, workspaceId } = {}) {
+    if (!organization) throw new Error('organization is required')
+    const params = new URLSearchParams({ orgId: organization })
     if (workspaceId) params.set('workspaceId', workspaceId)
-    const qs = params.toString()
     return this._call(
       'calendarSyncStatus',
-      `/calendar/sync${qs ? `?${qs}` : ''}`,
+      `/calendar/sync?${params.toString()}`,
       { method: 'GET' }
     )
   }
