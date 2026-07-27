@@ -1,6 +1,6 @@
 import test from 'tape'
 import sinon from 'sinon'
-import { WorkspaceProjectService } from '../../src/WorkspaceProjectService.js'
+import { WorkspaceProjectService } from '../../WorkspaceProjectService.js'
 
 // Storage — GCS cutover complete (SDK side). storage.{createSignedUrl,remove,
 // publicUrl} route unconditionally to the GCS-backed /core/storage routes via

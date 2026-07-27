@@ -1,6 +1,6 @@
 import test from 'tape'
 import sinon from 'sinon'
-import { WorkspaceProjectService } from '../../src/WorkspaceProjectService.js'
+import { WorkspaceProjectService } from '../../WorkspaceProjectService.js'
 
 // PREFS-trio — Mongo cutover complete (SDK side). userPreferences /
 // homeDashboardPrefs / workspaceDashboardDefaults route unconditionally to

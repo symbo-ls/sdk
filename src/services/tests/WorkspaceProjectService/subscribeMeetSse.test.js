@@ -1,6 +1,6 @@
 import test from 'tape'
 import sinon from 'sinon'
-import { WorkspaceProjectService } from '../../src/WorkspaceProjectService.js'
+import { WorkspaceProjectService } from '../../WorkspaceProjectService.js'
 
 // Meet realtime SSE cutover (spec §4) — verifies the SDK's server-SSE meet
 // subscription:

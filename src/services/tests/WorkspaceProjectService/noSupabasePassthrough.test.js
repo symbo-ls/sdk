@@ -1,5 +1,5 @@
 import test from 'tape'
-import { WorkspaceProjectService } from '../../src/WorkspaceProjectService.js'
+import { WorkspaceProjectService } from '../../WorkspaceProjectService.js'
 
 // The `/sb` PostgREST passthrough is GONE. This file is the lock.
 //

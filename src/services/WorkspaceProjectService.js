@@ -9,7 +9,7 @@
 //     packages' dists is cheaper than coordinating a third
 //     `@symbo.ls/sdk-core` shared package and is acceptable for the
 //     bundle-size budget (browser consumers tree-shake the duplicate).
-import { BaseService } from '../../../src/services/BaseService.js'
+import { BaseService } from './BaseService.js'
 
 const WORKSPACE_PROJECT_PREFIX = '/workspace-project'
 
@@ -220,13 +220,15 @@ export class WorkspaceProjectService extends BaseService {
   // visible owner — which is exactly how file_canvas outlived its own /core
   // route by three weeks.
 
-  // _sbCrud(table) — the generic PostgREST CRUD factory — is REMOVED. It was
-  // the thing that made adding a new `/sb` table a one-liner, and its last
-  // caller (file_canvas) moved to /core. Every namespace in this file now
-  // addresses a /core route except `userProfiles`, which is the single
-  // remaining `_sb()` caller and blocked on where the cap-table lives (see the
-  // note there). Do not reintroduce this factory: a new table on the
-  // passthrough should be a deliberate, visible act, not a one-liner.
+  // _sbCrud(table) — the generic PostgREST CRUD factory — is REMOVED, and so is
+  // the `/sb` proxy it fed (deleted from the worker in server 17ff789a). EVERY
+  // namespace in this file now addresses either a `/core/*` route or one of the
+  // worker's own CURATED `/workspace-project/*` handlers.
+  //
+  // Do not reintroduce either helper. Their convenience was the failure mode: a
+  // table joined the passthrough in one line and then kept it alive with no
+  // visible owner. See noSupabasePassthrough.test.js, which fails if they come
+  // back.
 
   // Resolve the workspaceId a chat READ should scope to: an explicit
   // caller-supplied value wins; otherwise fall back to the SDK's own

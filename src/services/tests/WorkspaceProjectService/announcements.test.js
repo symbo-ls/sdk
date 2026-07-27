@@ -1,6 +1,6 @@
 import test from 'tape'
 import sinon from 'sinon'
-import { WorkspaceProjectService } from '../../src/WorkspaceProjectService.js'
+import { WorkspaceProjectService } from '../../WorkspaceProjectService.js'
 
 // Announcements — Mongo cutover complete (SDK side). Every method routes
 // unconditionally to the /core/announcements routes and unwraps the

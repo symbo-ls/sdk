@@ -1,6 +1,6 @@
 import test from 'tape'
 import sinon from 'sinon'
-import { WorkspaceProjectService } from '../../src/WorkspaceProjectService.js'
+import { WorkspaceProjectService } from '../../WorkspaceProjectService.js'
 
 // Generic records plane (workspace_records data-plane split, tickets/server.md).
 // Mongo cutover complete server-side (server 06638f83): every op routes to

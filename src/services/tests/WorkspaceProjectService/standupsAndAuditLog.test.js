@@ -1,6 +1,6 @@
 import test from 'tape'
 import sinon from 'sinon'
-import { WorkspaceProjectService } from '../../src/WorkspaceProjectService.js'
+import { WorkspaceProjectService } from '../../WorkspaceProjectService.js'
 
 // standup_activity + activity_events — the last two activity-domain tables to
 // leave the `/sb` PostgREST passthrough (tickets/server.md :120). ActivityService

@@ -1,5 +1,5 @@
 import test from 'tape'
-import { WorkspaceProjectService } from '../../src/WorkspaceProjectService.js'
+import { WorkspaceProjectService } from '../../WorkspaceProjectService.js'
 
 // "workspace-scoping gaps in the chat transport" (tickets/sdk.md, 2026-07-13)
 // item 1 — `_resolveAuthHeader` must NOT let a cached/localStorage federated

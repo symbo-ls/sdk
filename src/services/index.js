@@ -23,15 +23,13 @@ import { IntegrationService } from './IntegrationService.js'
 import { FeatureFlagService } from './FeatureFlagService.js'
 import { OrganizationService } from './OrganizationService.js'
 import { WorkspaceService } from './WorkspaceService.js'
-// WorkspaceProjectService + the Supabase passthrough helpers live in
-// the sibling @symbo.ls/workspace-project-supabase package — we re-export
-// them through ./index.js so the historic import shape
-// (`import { WorkspaceProjectService, workspaceProjectEdgeFunctionUrl }
-// from '@symbo.ls/sdk'`) keeps working.
-import {
-  WorkspaceProjectService,
-  workspaceProjectBaseUrl,
-} from '@symbo.ls/workspace-project-supabase'
+// WorkspaceProjectService lives here like every other service. It used to be a
+// separate @symbo.ls/workspace-project-supabase package, split out so the SDK
+// core could stay "Mongo-only" while that package carried the PostgREST
+// passthrough machinery. That machinery is deleted, so the split had nothing
+// left to isolate and the name described something that no longer existed.
+// (Re-exported from the block at the bottom, like its peers.)
+import { WorkspaceProjectService, workspaceProjectBaseUrl } from './WorkspaceProjectService.js'
 import { AllocationRuleService } from './AllocationRuleService.js'
 import { SharedAssetService } from './SharedAssetService.js'
 import { CreditsService } from './CreditsService.js'

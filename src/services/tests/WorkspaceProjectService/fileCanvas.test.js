@@ -1,6 +1,6 @@
 import test from 'tape'
 import sinon from 'sinon'
-import { WorkspaceProjectService } from '../../src/WorkspaceProjectService.js'
+import { WorkspaceProjectService } from '../../WorkspaceProjectService.js'
 
 // file_canvas — Mongo cutover (SDK side). /core/file-canvas/* has been
 // Mongo-by-default since 2026-07-03; this namespace was the last thing keeping

@@ -1,6 +1,6 @@
 import test from 'tape'
 import sinon from 'sinon'
-import { WorkspaceProjectService } from '../../src/WorkspaceProjectService.js'
+import { WorkspaceProjectService } from '../../WorkspaceProjectService.js'
 
 // standups (`standup_activity`) + auditLog (`activity_events`) — the last two
 // tables the workspace-project worker's /sb PostgREST proxy served for the SDK.

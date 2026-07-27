@@ -1,6 +1,6 @@
 import test from 'tape'
 import sinon from 'sinon'
-import { WorkspaceProjectService } from '../../src/WorkspaceProjectService.js'
+import { WorkspaceProjectService } from '../../WorkspaceProjectService.js'
 
 // Chat realtime SSE cutover (chat-realtime-spec §5) — the EXACT analog of
 // subscribeMeetSse. Verifies the SDK's server-SSE chat subscription:
