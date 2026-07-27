@@ -2,7 +2,7 @@
 // metadata) and a generic client cache keyed by project. The registry
 // itself does not know what a "client" is — it just memoizes whatever
 // `buildClient(cfg)` returns. Backend-specific layers (e.g.
-// @symbo.ls/sdk-supabase-bridge) supply the buildClient strategy.
+// a custom implementation) supply the buildClient strategy.
 
 export function createRegistry({ projects = {}, defaultKey, buildClient } = {}) {
   if (typeof buildClient !== 'function') {

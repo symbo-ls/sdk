@@ -12,11 +12,11 @@ import { BaseService } from '@symbo.ls/sdk'
 //   //      sdk.getService('financials').equityGrants.list({workspaceId})
 //
 // Backs /core/financials/* on the main API server. The actual data lives
-// in the financials Supabase project (bxhdvzwmvptgksqfkgqp), gated by
+// on the main API (Mongo), gated by
 // Organization.enabledExtensions['financials']. Three failure modes:
 //
 //   extension_not_enabled     (403)  — caller's org hasn't installed financials
-//   extension_not_configured  (503)  — operator hasn't provisioned the Supabase project
+//   extension_not_configured  (503)  — legacy code; the Mongo store needs no provisioning
 //   plain HTTP errors                — bubble through as { status, error, message }
 export class FinancialsService extends BaseService {
   equityGrants = {

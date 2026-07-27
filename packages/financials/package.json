@@ -2,7 +2,7 @@
   "name": "@symbo.ls/sdk-financials",
   "version": "3.14.594",
   "type": "module",
-  "description": "Financials extension for @symbo.ls/sdk — equity grants, compensation, investor profiles, valuations. Opt-in per tenant via Organization.enabledExtensions[]. Backed by the separate financials Supabase project (bxhdvzwmvptgksqfkgqp) — accessed only through the main API at /core/financials/*; the SDK never speaks to Supabase directly.",
+  "description": "Financials extension for @symbo.ls/sdk \u2014 equity grants, compensation, investor profiles, valuations. Opt-in per tenant via Organization.enabledExtensions[]. Mongo-backed on the main API at /core/financials/*.",
   "main": "./dist/cjs/src/index.cjs",
   "exports": {
     ".": {
