@@ -58,7 +58,7 @@ test('orgIntegration.upsert → integration.upsertOrgIntegration with the bare p
 
   const payload = {
     orgId: 'org1',
-    kind: 'supabase_project',
+    kind: 'webhook',
     slug: 'acme',
     config: { tableAllowlist: { listings: ['select'] } }
   }
@@ -86,7 +86,7 @@ test('orgIntegration.remove → integration.deleteOrgIntegration with the scope 
 
   await execute('orgIntegration', 'remove', {
     orgId: 'org1',
-    kind: 'supabase_project',
+    kind: 'webhook',
     slug: 'acme',
     scopeType: 'workspace',
     scopeId: 'ws9'
@@ -95,7 +95,7 @@ test('orgIntegration.remove → integration.deleteOrgIntegration with the scope 
   t.equal(calls[0].method, 'deleteOrgIntegration', 'routes to deleteOrgIntegration')
   t.deepEqual(calls[0].args[0], {
     orgId: 'org1',
-    kind: 'supabase_project',
+    kind: 'webhook',
     slug: 'acme',
     scopeType: 'workspace',
     scopeId: 'ws9'
@@ -109,13 +109,13 @@ test('orgIntegration.assignScope + reorder route to their methods with the paylo
 
   await execute('orgIntegration', 'assignScope', {
     orgId: 'org1',
-    kind: 'supabase_project',
+    kind: 'webhook',
     toScopeType: 'workspace',
     toScopeId: 'ws9'
   })
   await execute('orgIntegration', 'reorder', {
     orgId: 'org1',
-    kind: 'supabase_project',
+    kind: 'webhook',
     slugs: ['a', 'b']
   })
 

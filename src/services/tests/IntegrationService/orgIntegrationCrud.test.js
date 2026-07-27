@@ -58,7 +58,7 @@ test('listOrgIntegrations omits undefined params (orgId only)', async t => {
 test('listOrgIntegrations returns the bare { items } payload verbatim (no envelope)', async t => {
   t.plan(2)
   const svc = makeService()
-  const items = [{ kind: 'supabase_project', slug: 'acme' }]
+  const items = [{ kind: 'webhook', slug: 'acme' }]
   const requestStub = sandbox.stub(svc, '_request').resolves({ items })
 
   const result = await svc.listOrgIntegrations({ orgId: 'org1' })
@@ -86,7 +86,7 @@ test('upsertOrgIntegration POSTs /org-integrations with the payload verbatim', a
   const stub = sandbox.stub(svc, '_call').resolves({ ok: true })
   const payload = {
     orgId: 'org1',
-    kind: 'supabase_project',
+    kind: 'webhook',
     slug: 'acme',
     scopeType: 'workspace',
     scopeId: 'ws9',
@@ -109,7 +109,7 @@ test('upsertOrgIntegration POSTs /org-integrations with the payload verbatim', a
 test('upsertOrgIntegration throws without orgId / kind', t => {
   t.plan(2)
   const svc = makeService()
-  t.throws(() => svc.upsertOrgIntegration({ kind: 'supabase_project' }), /orgId is required/)
+  t.throws(() => svc.upsertOrgIntegration({ kind: 'webhook' }), /orgId is required/)
   t.throws(() => svc.upsertOrgIntegration({ orgId: 'org1' }), /kind is required/)
   sandbox.restore()
   t.end()
@@ -124,7 +124,7 @@ test('deleteOrgIntegration DELETEs /org-integrations with the scope key in the b
 
   await svc.deleteOrgIntegration({
     orgId: 'org1',
-    kind: 'supabase_project',
+    kind: 'webhook',
     slug: 'acme',
     scopeType: 'workspace',
     scopeId: 'ws9'
@@ -135,7 +135,7 @@ test('deleteOrgIntegration DELETEs /org-integrations with the scope key in the b
   t.equal(opts.method, 'DELETE', 'method DELETE (identity in the body, not the path)')
   t.deepEqual(
     opts.body,
-    { orgId: 'org1', kind: 'supabase_project', slug: 'acme', scopeType: 'workspace', scopeId: 'ws9' },
+    { orgId: 'org1', kind: 'webhook', slug: 'acme', scopeType: 'workspace', scopeId: 'ws9' },
     'body carries the exact-scope natural key'
   )
   sandbox.restore()
@@ -147,11 +147,11 @@ test('deleteOrgIntegration omits undefined optional fields from the body', async
   const svc = makeService()
   const stub = sandbox.stub(svc, '_call').resolves({ ok: true })
 
-  await svc.deleteOrgIntegration({ orgId: 'org1', kind: 'supabase_project' })
+  await svc.deleteOrgIntegration({ orgId: 'org1', kind: 'webhook' })
 
   t.deepEqual(
     stub.firstCall.args[2].body,
-    { orgId: 'org1', kind: 'supabase_project' },
+    { orgId: 'org1', kind: 'webhook' },
     'only defined fields on the wire (slug/scopeType/scopeId default server-side)'
   )
   sandbox.restore()
@@ -161,7 +161,7 @@ test('deleteOrgIntegration omits undefined optional fields from the body', async
 test('deleteOrgIntegration throws without orgId / kind', t => {
   t.plan(2)
   const svc = makeService()
-  t.throws(() => svc.deleteOrgIntegration({ kind: 'supabase_project' }), /orgId is required/)
+  t.throws(() => svc.deleteOrgIntegration({ kind: 'webhook' }), /orgId is required/)
   t.throws(() => svc.deleteOrgIntegration({ orgId: 'org1' }), /kind is required/)
   sandbox.restore()
   t.end()
@@ -175,7 +175,7 @@ test('assignOrgIntegrationScope POSTs /org-integrations/assign-scope verbatim', 
   const stub = sandbox.stub(svc, '_call').resolves({ ok: true })
   const payload = {
     orgId: 'org1',
-    kind: 'supabase_project',
+    kind: 'webhook',
     slug: 'acme',
     fromScopeType: 'org',
     toScopeType: 'workspace',
@@ -196,7 +196,7 @@ test('reorderOrgIntegrations POSTs /org-integrations/reorder verbatim', async t 
   t.plan(3)
   const svc = makeService()
   const stub = sandbox.stub(svc, '_call').resolves({ ok: true })
-  const payload = { orgId: 'org1', kind: 'supabase_project', slugs: ['a', 'b', 'c'] }
+  const payload = { orgId: 'org1', kind: 'webhook', slugs: ['a', 'b', 'c'] }
 
   await svc.reorderOrgIntegrations(payload)
 
@@ -238,7 +238,7 @@ test('listOrgIntegrationKinds GETs /org-integrations/kinds', async t => {
 test('listOrgIntegrationKinds returns the bare { kinds } payload verbatim', async t => {
   t.plan(1)
   const svc = makeService()
-  const kinds = [{ kind: 'supabase_project', label: 'Supabase' }]
+  const kinds = [{ kind: 'webhook', label: 'Webhook' }]
   sandbox.stub(svc, '_request').resolves({ kinds })
 
   const result = await svc.listOrgIntegrationKinds()
@@ -269,7 +269,7 @@ test('org-integration methods throw the server message on { success: false }', a
   sandbox.stub(svc, '_request').resolves({ success: false, message: 'Insufficient organization role' })
 
   try {
-    await svc.upsertOrgIntegration({ orgId: 'org1', kind: 'supabase_project' })
+    await svc.upsertOrgIntegration({ orgId: 'org1', kind: 'webhook' })
     t.fail('should have thrown')
   } catch (err) {
     t.equal(err.message, 'Insufficient organization role', 'server message surfaces verbatim')

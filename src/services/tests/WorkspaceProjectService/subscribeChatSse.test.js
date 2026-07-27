@@ -8,7 +8,7 @@ import { WorkspaceProjectService } from '../../WorkspaceProjectService.js'
 //       query params (the chat route reads req.query.workspaceId, not
 //       filter[...]), and the `chat.<entity>.<verb>` event vocabulary; and
 //   (b) re-frames each SSE entity payload (`{ message|channel|member|mention: row }`)
-//       back into the SAME Supabase-style `{ eventType, new, old, _kind? }`
+//       back into the SAME legacy realtime `{ eventType, new, old, _kind? }`
 //       envelope the postgres_changes path emitted (§5.2), so the consumer
 //       (subscribeRealtime.js) stays byte-unchanged.
 
@@ -47,7 +47,7 @@ test('realtime.subscribeChatSse calls _sseSubscribe with /chat/stream + flatPara
   t.end()
 })
 
-test('subscribeChatSse re-frames SSE entity payloads → Supabase-shape envelope (contract preserved)', t => {
+test('subscribeChatSse re-frames SSE entity payloads → the legacy realtime envelope (contract preserved)', t => {
   t.plan(16)
   const svc = makeService()
 
@@ -93,7 +93,7 @@ test('subscribeChatSse re-frames SSE entity payloads → Supabase-shape envelope
     payload: { eventType: 'UPDATE', new: { id: 'c1', name: 'general' }, old: null }
   }, 'channel.update → chat.channels op, no _kind')
   t.equal(received[3].kind, 'chat.channels', 'member → chat.channels op')
-  t.equal(received[3].payload._kind, 'member', 'member tagged _kind:member (parity with Supabase provider)')
+  t.equal(received[3].payload._kind, 'member', 'member tagged _kind:member (legacy envelope parity)')
   t.deepEqual(received[4], {
     kind: 'chat.mentions',
     payload: { eventType: 'INSERT', new: { id: 'x1', message_id: 'm1', mentioned_email: 'a@b.com', channel_id: 'c1' }, old: null }

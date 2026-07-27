@@ -54,14 +54,17 @@ import {
   createMeetService,
   createCalendarService,
   createBuildsService,
-  workspaceProjectBaseUrl,
+  workspaceProjectBaseUrl
 } from './services/index.js'
 
 import { SERVICE_METHODS } from './utils/services.js'
 import environment from './config/environment.js'
 import { rootBus } from './state/rootEventBus.js'
 import { logger, setDebug } from './utils/logger.js'
-import { createEntityDispatcher, registerEntity } from './services/EntityDispatcher.js'
+import {
+  createEntityDispatcher,
+  registerEntity
+} from './services/EntityDispatcher.js'
 
 const isBrowserEnvironment = () => typeof window !== 'undefined'
 
@@ -70,11 +73,18 @@ export const isLocalhost = () => {
     return false
   }
   const host = window.location && window.location.hostname
-  return host === 'localhost' || host?.endsWith('.localhost') || host === '127.0.0.1' || host === '::1' || host === '' || !host
+  return (
+    host === 'localhost' ||
+    host?.endsWith('.localhost') ||
+    host === '127.0.0.1' ||
+    host === '::1' ||
+    host === '' ||
+    !host
+  )
 }
 
 export class SDK {
-  constructor (options = {}) {
+  constructor(options = {}) {
     this._services = new Map()
     this._context = {}
     this._options = this._validateOptions(options)
@@ -103,7 +113,7 @@ export class SDK {
   }
 
   // Initialize SDK with context
-  async initialize (context = {}) {
+  async initialize(context = {}) {
     this._context = {
       ...this._context,
       ...context
@@ -538,7 +548,7 @@ export class SDK {
   }
 
   // Private helper to initialize a service
-  async _initService (name, service) {
+  async _initService(name, service) {
     // Add service reference to context for inter-service communication
     this._context.services = {
       ...this._context.services,
@@ -554,7 +564,7 @@ export class SDK {
     this._services.set(name, service)
   }
 
-  _validateOptions (options) {
+  _validateOptions(options) {
     const defaults = {
       useNewServices: true, // Use new service implementations by default
       apiUrl: environment.apiUrl,
@@ -586,7 +596,7 @@ export class SDK {
   }
 
   // Get service instance
-  getService (name) {
+  getService(name) {
     if (!this._services.has(name)) {
       throw new Error(`Service '${name}' not found`)
     }
@@ -594,7 +604,7 @@ export class SDK {
   }
 
   // Update context
-  updateContext (newContext) {
+  updateContext(newContext) {
     // Do not persist authToken in SDK context; TokenManager is the source of truth
     const { ...sanitized } = newContext || {}
 
@@ -619,37 +629,37 @@ export class SDK {
   //      org on next access.
   //   3. Invalidates TokenManager cached claims (next request re-mints).
   //   4. Walks per-service `switchOrg(newOrgId, previousOrgId)` hooks.
-  //   5. Federates workspace-project Supabase to the new org's home
-  //      workspace via `switchWorkspace`, IF `opts.homeWorkspaceId` is
-  //      supplied AND `opts.skipFederation !== true`. This keeps Mongo
-  //      and the workspace-project session pointing at the same org —
-  //      without it, RLS-scoped reads (announcements, tickets, chat,
-  //      calendar, …) silently stay scoped to the previous workspace.
+  //   5. Aligns the ACTIVE WORKSPACE to the new org's home workspace via
+  //      `switchWorkspace`, IF `opts.homeWorkspaceId` is supplied AND
+  //      `opts.skipFederation !== true` (option name kept for caller
+  //      compat; it predates the Supabase-federation retirement). Without
+  //      it, workspace-scoped reads (tickets, chat, calendar, …) silently
+  //      stay scoped to the previous org's workspace.
   //   6. Emits `sdk.orgSwitched` on rootBus.
   //
   // Opts:
   //   skipPersist     — don't PATCH Mongo (use this in socket-echo paths
   //                     where another session already persisted).
-  //   skipFederation  — don't refresh the workspace-project Supabase JWT
-  //                     (use for the rare org with no federated workspace,
-  //                     or when the caller wants to manage the federation
-  //                     hop separately).
-  //   homeWorkspaceId — the workspace-project Supabase workspace id whose
-  //                     `org_id === newOrgId`. Callers compute this from
-  //                     their `root.jwtClaims.workspaces` snapshot (or
-  //                     equivalent). When omitted, no federation hop runs
-  //                     and Mongo-only state advances.
+  //   skipFederation  — don't run the active-workspace alignment hop
+  //                     (legacy name kept for caller compat).
+  //   homeWorkspaceId — the workspace id whose org is `newOrgId`. When
+  //                     omitted, no workspace hop runs and Mongo-only
+  //                     state advances.
   //
   // If `setActiveOrganization` throws, the whole switch aborts BEFORE
   // touching local context — Mongo's pre-write state is the source of
   // truth, and the UI must stay pointed at the previous org so a failed
   // server write doesn't leave the user looking at a context that
   // server-side reads will reject.
-  async switchOrg (newOrgId, opts = {}) {
+  async switchOrg(newOrgId, opts = {}) {
     if (!newOrgId) throw new Error('[sdk.switchOrg] newOrgId is required')
     const previousOrgId = this._context.activeOrgId
     if (previousOrgId === newOrgId) return { changed: false, orgId: newOrgId }
-    const { skipPersist = false, skipFederation = false, homeWorkspaceId = null } = opts
+    const {
+      skipPersist = false,
+      skipFederation = false,
+      homeWorkspaceId = null
+    } = opts
 
     // 1. Persist to Mongo FIRST. If this fails, we never touched local
     //    context; the caller surfaces the error and the UI stays put.
@@ -663,7 +673,9 @@ export class SDK {
 
     // 3. Token manager — clear cached claims so next request re-mints.
     if (this._tokenManager?.invalidateClaims) {
-      try { this._tokenManager.invalidateClaims() } catch {}
+      try {
+        this._tokenManager.invalidateClaims()
+      } catch {}
     }
 
     // 4. Walk per-service switchOrg hooks. Services that don't implement
@@ -672,25 +684,36 @@ export class SDK {
     for (const [name, service] of this._services.entries()) {
       if (typeof service.switchOrg === 'function') {
         switchPromises.push(
-          Promise.resolve(service.switchOrg(newOrgId, previousOrgId)).catch((err) => {
-            logger.error(`[sdk.switchOrg] Service '${name}' switchOrg failed:`, err)
-          })
+          Promise.resolve(service.switchOrg(newOrgId, previousOrgId)).catch(
+            (err) => {
+              logger.error(
+                `[sdk.switchOrg] Service '${name}' switchOrg failed:`,
+                err
+              )
+            }
+          )
         )
       }
     }
     await Promise.all(switchPromises)
 
-    // 5. Federate workspace-project Supabase to the org's home workspace
-    //    so RLS-scoped reads re-scope. Errors here don't abort: Mongo
-    //    is already updated and the SDK-side context advanced; a Supabase
-    //    federation hiccup is recoverable (the next JWT refresh will
-    //    settle it) and shouldn't roll back the org switch.
+    // 5. Align the active workspace to the org's home workspace so
+    //    workspace-scoped reads re-scope. Errors here don't abort: Mongo is
+    //    already updated and the SDK-side context advanced; the hop is
+    //    recoverable and shouldn't roll back the org switch.
     let federationResult = null
-    if (!skipFederation && homeWorkspaceId && typeof this.switchWorkspace === 'function') {
+    if (
+      !skipFederation &&
+      homeWorkspaceId &&
+      typeof this.switchWorkspace === 'function'
+    ) {
       try {
         federationResult = await this.switchWorkspace(homeWorkspaceId)
       } catch (err) {
-        logger.warn('[sdk.switchOrg] switchWorkspace federation failed:', err?.message || err)
+        logger.warn(
+          '[sdk.switchOrg] switchWorkspace hop failed:',
+          err?.message || err
+        )
       }
     }
 
@@ -701,7 +724,7 @@ export class SDK {
       previousOrgId,
       newOrgId,
       persist: persistResult,
-      federation: federationResult,
+      federation: federationResult
     })
 
     return {
@@ -709,7 +732,7 @@ export class SDK {
       previousOrgId,
       newOrgId,
       persist: persistResult,
-      federation: federationResult,
+      federation: federationResult
     }
   }
 
@@ -722,13 +745,14 @@ export class SDK {
   //
   // Frontend contract:
   //   await sdk.switchWorkspace(workspaceId)
-  // — single entry point. Federation, state cleanup, event emission, and
+  // — single entry point. Mongo persist, state cleanup, event emission, and
   // localStorage persistence are all SDK-internal.
   //
-  // Returns the federation result so the caller can decide on UI feedback
+  // Returns the switch result so the caller can decide on UI feedback
   // (e.g. dismiss a transition overlay only on { ok: true }).
-  async switchWorkspace (newWorkspaceId) {
-    if (!newWorkspaceId) throw new Error('[sdk.switchWorkspace] workspaceId is required')
+  async switchWorkspace(newWorkspaceId) {
+    if (!newWorkspaceId)
+      throw new Error('[sdk.switchWorkspace] workspaceId is required')
     const previousWorkspaceId = this._context.activeWorkspaceId
     if (previousWorkspaceId === newWorkspaceId) {
       return { ok: true, changed: false, workspaceId: newWorkspaceId }
@@ -736,8 +760,7 @@ export class SDK {
 
     // Mongo-native switch (mirrors switchOrg's setActiveOrganization persist):
     // write the active workspace to Mongo FIRST — that's the source of truth
-    // the workspace-project `userResolver` reads, so the switch resolves the
-    // right tenant WITHOUT any Supabase federation. If the Mongo write fails,
+    // the workspace-project `userResolver` reads. If the Mongo write fails,
     // that's a genuine failure → surface it (throws to the caller).
     if (typeof this.setActiveWorkspace === 'function') {
       await this.setActiveWorkspace(newWorkspaceId)
@@ -746,7 +769,9 @@ export class SDK {
     this.updateContext({ activeWorkspaceId: newWorkspaceId })
 
     if (this._tokenManager?.invalidateClaims) {
-      try { this._tokenManager.invalidateClaims() } catch {}
+      try {
+        this._tokenManager.invalidateClaims()
+      } catch {}
     }
 
     // Walk services; per-service switchWorkspace hooks get notified.
@@ -754,8 +779,13 @@ export class SDK {
     for (const [name, service] of this._services.entries()) {
       if (typeof service.switchWorkspace === 'function') {
         switchPromises.push(
-          Promise.resolve(service.switchWorkspace(newWorkspaceId, previousWorkspaceId)).catch((err) => {
-            logger.error(`[sdk.switchWorkspace] Service '${name}' switchWorkspace failed:`, err)
+          Promise.resolve(
+            service.switchWorkspace(newWorkspaceId, previousWorkspaceId)
+          ).catch((err) => {
+            logger.error(
+              `[sdk.switchWorkspace] Service '${name}' switchWorkspace failed:`,
+              err
+            )
           })
         )
       }
@@ -763,7 +793,9 @@ export class SDK {
     await Promise.all(switchPromises)
 
     if (typeof globalThis !== 'undefined' && globalThis.localStorage) {
-      try { globalThis.localStorage.setItem('activeWorkspace', newWorkspaceId) } catch {}
+      try {
+        globalThis.localStorage.setItem('activeWorkspace', newWorkspaceId)
+      } catch {}
     }
 
     // The federated JWT re-mint is now OPTIONAL/legacy enrichment — fire it
@@ -795,13 +827,22 @@ export class SDK {
         })
     }
 
-    this.rootBus?.emit?.('sdk.workspaceSwitched', { previousWorkspaceId, newWorkspaceId })
+    this.rootBus?.emit?.('sdk.workspaceSwitched', {
+      previousWorkspaceId,
+      newWorkspaceId
+    })
 
-    return { ok: true, changed: true, previousWorkspaceId, newWorkspaceId, federation: federationResult }
+    return {
+      ok: true,
+      changed: true,
+      previousWorkspaceId,
+      newWorkspaceId,
+      federation: federationResult
+    }
   }
 
   // Check if SDK is ready
-  isReady () {
+  isReady() {
     const sdkServices = Array.from(this._services.values())
     return (
       sdkServices.length > 0 &&
@@ -810,7 +851,7 @@ export class SDK {
   }
 
   // Get SDK status
-  getStatus () {
+  getStatus() {
     return {
       ready: this.isReady(),
       services: Array.from(this._services.entries()).map(([name, service]) => ({
@@ -822,7 +863,7 @@ export class SDK {
   }
 
   // Create proxy methods for direct service access
-  _createServiceProxies () {
+  _createServiceProxies() {
     for (const [methodName, serviceName] of Object.entries(SERVICE_METHODS)) {
       // Skip if method already exists on SDK
       if (!this[methodName]) {
@@ -844,7 +885,7 @@ export class SDK {
    * Destroys all services and cleans up resources
    * @returns {Promise<boolean>} Returns true when cleanup is complete
    */
-  async destroy () {
+  async destroy() {
     try {
       // Call destroy on all services
       const destroyPromises = Array.from(this._services.entries())
@@ -924,12 +965,15 @@ export {
   createMeetService,
   createCalendarService,
   createBuildsService,
-  workspaceProjectBaseUrl,
+  workspaceProjectBaseUrl
 } from './services/index.js'
 
 // Re-export entity dispatcher helpers so external packages (e.g. plugins
 // extending the fetch adapter) can add their own routes at boot.
-export { registerEntity, createEntityDispatcher } from './services/EntityDispatcher.js'
+export {
+  registerEntity,
+  createEntityDispatcher
+} from './services/EntityDispatcher.js'
 
 // Re-export BaseService so opt-in extension packages (e.g.
 // @symbo.ls/sdk-financials) can subclass it without depending on the

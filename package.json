@@ -37,15 +37,15 @@
       "import": "./dist/esm/src/config/environment.js",
       "default": "./dist/esm/src/config/environment.js"
     },
-    "./federation": {
-      "development": "./src/federation/index.js",
-      "import": "./dist/esm/src/federation/index.js",
-      "default": "./dist/esm/src/federation/index.js"
-    },
     "./utils/services": {
       "development": "./src/utils/services.js",
       "import": "./dist/esm/src/utils/services.js",
       "default": "./dist/esm/src/utils/services.js"
+    },
+    "./cross-app-auth": {
+      "development": "./src/crossAppAuth.js",
+      "import": "./dist/esm/src/crossAppAuth.js",
+      "default": "./dist/esm/src/crossAppAuth.js"
     }
   },
   "scripts": {
@@ -53,7 +53,7 @@
     "lint:fix": "ESLINT_USE_FLAT_CONFIG=true eslint . --fix",
     "build:esm": "esbuild $(find . -type f -name \"*.js\" -not -path \"*/dist/*\" -not -path \"*/node_modules/*\" -not -path \"*/__tests__/*\" -not -path \"*/test/*\" -not -path \"*/demo/*\" -not -path \"*/demos/*\" -not -path \"*/examples/*\" -not -path \"*/fixtures/*\" -not -name \"*.test.js\") --target=es2022 --format=esm --outbase=. --outdir=dist/esm --minify --log-level=warning",
     "build:node": "esbuild $(find src -name '*.js' ! -name '*.test.js') --target=node16 --format=esm --platform=node --outdir=dist/node --define:process.env.NODE_ENV=process.env.NODE_ENV",
-    "build:types": "tsc -p tsconfig.json || echo '::warning::tsc exited non-zero — type declarations may be incomplete (publish proceeds; fix as separate work)'",
+    "build:types": "tsc -p tsconfig.json || echo '::warning::tsc exited non-zero \u2014 type declarations may be incomplete (publish proceeds; fix as separate work)'",
     "build": "rimraf dist && npm run build:esm && npm run build:types",
     "watch": "esbuild $(find . -type f -name \"*.js\" -not -path \"*/dist/*\" -not -path \"*/node_modules/*\" -not -path \"*/__tests__/*\" -not -path \"*/test/*\" -not -path \"*/demo/*\" -not -path \"*/demos/*\" -not -path \"*/examples/*\" -not -path \"*/fixtures/*\" -not -name \"*.test.js\") --target=es2022 --format=esm --outbase=. --outdir=dist/esm --watch=forever --log-level=warning",
     "prepublishOnly": "npm run build",
@@ -73,7 +73,7 @@
     "test:collab": "bun run _inf -- tape integration-tests/index.js integration-tests/collab/*.test.js | tap-spec",
     "test:user": "bun run _inf -- tape integration-tests/index.js integration-tests/user/*.test.js | tap-spec",
     "test:unit-all": "tape src/services/tests/**/*.test.js | tap-spec",
-    "test:bridges": "tape packages/sdk-bridge/tests/*.test.js packages/sdk-supabase-bridge/tests/*.test.js | tap-spec"
+    "test:bridges": "tape packages/sdk-bridge/tests/*.test.js | tap-spec"
   },
   "dependencies": {
     "@symbo.ls/channels": "^3.14.105",
@@ -92,24 +92,15 @@
     "yjs": "^13.6.27"
   },
   "peerDependencies": {
-    "@supabase/supabase-js": "^2.0.0",
-    "@symbo.ls/sdk-bridge": "^3.14.142",
-    "@symbo.ls/sdk-supabase-bridge": "^3.14.142"
+    "@symbo.ls/sdk-bridge": "^3.14.142"
   },
   "peerDependenciesMeta": {
-    "@supabase/supabase-js": {
-      "optional": true
-    },
     "@symbo.ls/sdk-bridge": {
-      "optional": true
-    },
-    "@symbo.ls/sdk-supabase-bridge": {
       "optional": true
     }
   },
   "devDependencies": {
     "@faker-js/faker": "^9.5.1",
-    "@supabase/supabase-js": "^2.0.0",
     "esbuild": "^0.27.4",
     "esbuild-plugins-node-modules-polyfill": "^1.6.8",
     "glob": "^12.0.0",
