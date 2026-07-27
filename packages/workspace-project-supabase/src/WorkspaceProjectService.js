@@ -1295,41 +1295,105 @@ export class WorkspaceProjectService extends BaseService {
       })
   }
 
-  // Daily standup rows — one per (author_email, date). Upsert merges on
-  // the unique index from migration 0033 so idempotent re-submits replace.
-  standups = {
-    list: (filter, options) =>
-      this._sb('standups.list', 'standup_activity', 'list', {
-        filter,
-        options
-      }),
-    get: (id) => this._sb('standups.get', 'standup_activity', 'get', { id }),
-    create: (payload) =>
-      this._sb('standups.create', 'standup_activity', 'create', { payload }),
-    update: (id, payload) =>
-      this._sb('standups.update', 'standup_activity', 'update', {
-        id,
-        payload
-      }),
-    upsert: (payload) =>
-      // SDK-WORKSPACE-STANDUPS-UPSERT-WRONG-CONFLICT-COL — table is keyed
-      // on `(author, date)` per migration 0033_standup_activity.sql:13-25.
-      // The legacy `author_email` token caused PostgREST to reject every
-      // upsert with `column "author_email" does not exist` (/logs id=77428).
-      this._sb('standups.upsert', 'standup_activity', 'create', {
-        payload,
-        options: { upsertOnConflict: 'author,date' }
-      })
+  // The activity routes are path-scoped (/workspaces/:workspaceId/...), so a
+  // workspace is REQUIRED — throw like records rather than returning null, so a
+  // scopeless call fails at the SDK instead of 404-ing on a malformed path.
+  _activityWorkspaceId (source, options) {
+    const ws =
+      (options && options.workspaceId) ||
+      (source && typeof source === 'object' && source.workspaceId) ||
+      this._context?.activeWorkspaceId
+    if (!ws) {
+      throw new Error(
+        "[sdk activity] no workspace scope — pass { workspaceId } or set the SDK's activeWorkspaceId."
+      )
+    }
+    return encodeURIComponent(String(ws))
   }
 
-  // Audit log — backend table is `activity_events`. Filter shape passes
-  // straight through PostgREST: { actor_email_in: [...], created_at: { gte } }
+  // Daily standup rows — one per (author, date).
+  //
+  // Mongo cutover: routes to /core/workspaces/:id/standups (ActivityService →
+  // the activity store's Mongo arm, which carries the A1/A5 guards). Was the
+  // `standup_activity` /sb passthrough; the store and service shipped with the
+  // cutover but the routes were never mounted, so the SDK had nowhere to move
+  // to and kept the proxy alive by itself.
+  //
+  // POST is an UPSERT on (author, date) server-side, so `create` and `upsert`
+  // are the same call. That also retires
+  // SDK-WORKSPACE-STANDUPS-UPSERT-WRONG-CONFLICT-COL by construction: the
+  // conflict target is no longer a token the client spells — PostgREST used to
+  // reject every upsert with `column "author_email" does not exist`
+  // (/logs id=77428) because the legacy caller passed the wrong column name.
+  standups = {
+    list: (filter, options) => {
+      const ws = this._activityWorkspaceId(filter, options)
+      const params = new URLSearchParams()
+      const author =
+        (filter && typeof filter === 'object' && (filter.author ?? filter.author_email)) || null
+      if (author) params.set('author', String(author))
+      if (filter && typeof filter === 'object' && filter.date) {
+        params.set('date', String(filter.date))
+      }
+      if (options?.limit != null) params.set('limit', String(options.limit))
+      const qs = params.toString()
+      return this._request(`/workspaces/${ws}/standups${qs ? `?${qs}` : ''}`, {
+        method: 'GET',
+        methodName: 'standups.list'
+      }).then((r) => r?.data ?? [])
+    },
+    get: (id, options) => {
+      const ws = this._activityWorkspaceId(null, options)
+      return this._request(`/workspaces/${ws}/standups/${encodeURIComponent(id)}`, {
+        method: 'GET',
+        methodName: 'standups.get'
+      }).then((r) => r?.data ?? null)
+    },
+    create: (payload, options) => {
+      const ws = this._activityWorkspaceId(payload, options)
+      return this._request(`/workspaces/${ws}/standups`, {
+        method: 'POST',
+        body: JSON.stringify(payload || {}),
+        methodName: 'standups.create'
+      }).then((r) => r?.data ?? r)
+    },
+    update: (id, payload, options) => {
+      const ws = this._activityWorkspaceId(payload, options)
+      return this._request(`/workspaces/${ws}/standups/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload || {}),
+        methodName: 'standups.update'
+      }).then((r) => r?.data ?? r)
+    },
+    upsert: (payload, options) => {
+      const ws = this._activityWorkspaceId(payload, options)
+      return this._request(`/workspaces/${ws}/standups`, {
+        method: 'POST',
+        body: JSON.stringify(payload || {}),
+        methodName: 'standups.upsert'
+      }).then((r) => r?.data ?? r)
+    }
+  }
+
+  // Audit log — was the `activity_events` /sb passthrough, now
+  // GET /core/workspaces/:id/activity-log. The read stays superadmin-only,
+  // enforced in ActivityService.listAudit by the store's A3 guard (the same
+  // boundary the proxy applied via ADMIN_ONLY_TABLES) — the route being
+  // membership-gated does not widen it.
+  //
+  // The old PostgREST filter shape ({ actor_email_in, created_at: { gte } })
+  // is NOT forwarded: the /core route takes `limit` only and orders by
+  // created_at desc server-side. No live caller passed those filters.
   auditLog = {
-    list: (filter, options) =>
-      this._sb('auditLog.list', 'activity_events', 'list', {
-        filter,
-        options: { order: 'created_at.desc', ...(options || {}) }
-      })
+    list: (filter, options) => {
+      const ws = this._activityWorkspaceId(filter, options)
+      const limit = options?.limit ?? (filter && typeof filter === 'object' ? filter.limit : null)
+      const qs = limit != null ? `?limit=${encodeURIComponent(String(limit))}` : ''
+      return this._request(`/workspaces/${ws}/activity-log${qs}`, {
+        method: 'GET',
+        methodName: 'auditLog.list'
+      }).then((r) => r?.data ?? [])
+    }
   }
 
   // rolePermissions entity removed — dead SDK surface with zero callers
