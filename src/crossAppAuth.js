@@ -14,7 +14,7 @@
 // separate apex like `.symbo.ls` for preview/mermaid) — otherwise
 // untrusted code can read the cookie.
 
-import { readCookie, writeCookie } from '@symbo.ls/sdk-bridge'
+import { readCookie, writeCookie } from './cookies.js'
 
 export const DEFAULT_TOKEN_KEYS = [
   'symbols_access_token',

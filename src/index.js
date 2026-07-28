@@ -989,6 +989,12 @@ export { default as environment } from './config/environment.js'
 // consumers that do).
 export { createCrossAppAuth, DEFAULT_TOKEN_KEYS } from './crossAppAuth.js'
 
+// Parent-domain cookie primitives. Canonical home is the SDK as of
+// 2026-07-28 (moved off the deprecated @symbo.ls/sdk-bridge federation
+// package — see src/cookies.js). Exported so the remaining sdk-bridge
+// cookie consumers (workspace shared/prefs.js) can migrate here.
+export { parentDomain, readCookie, writeCookie } from './cookies.js'
+
 // Role → permission tables. Exported from the MAIN entry for the same reason
 // as above: consumers gate UI on these, and `sdk.hasPermission` is unusable
 // for that because the workspace shell wraps every SDK method in an init gate,

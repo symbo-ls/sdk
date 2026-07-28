@@ -91,14 +91,6 @@
     "y-indexeddb": "^9.0.12",
     "yjs": "^13.6.27"
   },
-  "peerDependencies": {
-    "@symbo.ls/sdk-bridge": "^3.14.595"
-  },
-  "peerDependenciesMeta": {
-    "@symbo.ls/sdk-bridge": {
-      "optional": true
-    }
-  },
   "devDependencies": {
     "@faker-js/faker": "^9.5.1",
     "esbuild": "^0.27.4",
