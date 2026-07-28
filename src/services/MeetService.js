@@ -1,7 +1,7 @@
 import { BaseService } from './BaseService.js'
 
-// MeetService — wraps the core server's /core/meet/* surface (Mongo +
-// Supabase-passthrough meet domain on the main API server).
+// MeetService — wraps the core server's /core/meet/* surface (the meet
+// domain on the main API server).
 //
 // Routes:
 //   POST /core/meet/guest/request  → { waitingId, status, autoAdmitted,
@@ -17,11 +17,9 @@ import { BaseService } from './BaseService.js'
 // signed-out visitor can call them. `meetMuteParticipant` is
 // authenticated (host-only on the server).
 //
-// Replaces the legacy meet-guest-{request,status,token} Supabase Edge
-// Functions, which were called via raw fetch against a hardcoded
-// local-dev Supabase project id — broken on every deployed env. The API
-// base here resolves per environment through BaseService/_apiUrl like
-// every other SDK request.
+// The API base resolves per environment through BaseService/_apiUrl like
+// every other SDK request (its legacy raw-fetch predecessor was pinned to
+// a hardcoded local-dev host — broken on every deployed env).
 
 export class MeetService extends BaseService {
   /**

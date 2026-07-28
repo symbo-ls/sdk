@@ -191,15 +191,13 @@ export const createBuildsService = config =>
   createService(BuildsService, config)
 
 // Meet service — guest waiting-room flow (anonymous) + host-side remote
-// mute against /core/meet/* on the main server. Replaces the legacy
-// meet-guest-* Supabase Edge Function raw-fetch calls.
+// mute against /core/meet/* on the main server.
 export const createMeetService = config =>
   createService(MeetService, config)
 
 // Calendar service — workspace-scoped calendar events against
-// /core/calendar/events on the main server. DORMANT until CALENDAR_STORE is
-// flipped off 'supabase' (Supabase → Mongo migration Phase 4). Writes are
-// owner/admin-gated server-side (calendar-agnostic-spec.md §7).
+// /core/calendar/events on the main server. Writes are owner/admin-gated
+// server-side (calendar-agnostic-spec.md §7).
 export const createCalendarService = config =>
   createService(CalendarService, config)
 

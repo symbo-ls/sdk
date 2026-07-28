@@ -631,8 +631,8 @@ export class SDK {
   //   4. Walks per-service `switchOrg(newOrgId, previousOrgId)` hooks.
   //   5. Aligns the ACTIVE WORKSPACE to the new org's home workspace via
   //      `switchWorkspace`, IF `opts.homeWorkspaceId` is supplied AND
-  //      `opts.skipFederation !== true` (option name kept for caller
-  //      compat; it predates the Supabase-federation retirement). Without
+  //      `opts.skipFederation !== true` (legacy option name, kept for
+  //      caller compat). Without
   //      it, workspace-scoped reads (tickets, chat, calendar, …) silently
   //      stay scoped to the previous org's workspace.
   //   6. Emits `sdk.orgSwitched` on rootBus.

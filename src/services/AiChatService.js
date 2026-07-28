@@ -2,10 +2,8 @@ import { BaseService } from './BaseService.js'
 
 // AiChatService wraps the MAIN SERVER /chat/* routes (Mongo-backed).
 //
-// Replaces the legacy Supabase ai-chat edge function path
-// (`workspaceProject.aiChat` rpc → /workspace-project/ai/chat → Supabase
-// edge fn). The new flow is end-to-end Mongo: threads + messages persist
-// in chat_threads / chat_messages collections; LLM call routes through
+// End-to-end Mongo: threads + messages persist in chat_threads /
+// chat_messages collections; the LLM call routes through
 // @symbo-ls/ai-providers (ModelRouterService) on the server.
 //
 // Streaming uses POST + SSE response (the `_streamPost` BaseService helper)

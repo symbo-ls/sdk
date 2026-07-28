@@ -516,8 +516,8 @@ export class TicketService extends BaseService {
   // ==================== RESOLUTIONS ====================
 
   /**
-   * List resolved tickets — done tickets with a non-null resolution blob.
-   * Server-side equivalent of the former Supabase v_resolutions view.
+   * List resolved tickets — done tickets with a non-null resolution blob
+   * (legacy v_resolutions wire shape).
    *
    * @param {object} [opts]
    * @param {number} [opts.limit=100]

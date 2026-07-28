@@ -68,7 +68,7 @@ export class AnalyzedService extends BaseService {
   }
 
   // GET /core/analyzed/users?projectId=&since=&limit=&offset=
-  // Server-side aggregation replaces the Supabase analyzed_user_summaries view.
+  // Server-side aggregation (legacy analyzed_user_summaries shape).
   listUsers (filter = {}, options = {}) {
     const params = new URLSearchParams()
     if (filter.projectId) params.set('projectId', filter.projectId)
