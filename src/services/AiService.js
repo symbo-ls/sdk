@@ -437,7 +437,7 @@ export class AiService extends BaseService {
     const blocksToText = (content) =>
       (content || []).filter((p) => p && p.type === 'text').map((p) => p.text).join('')
 
-    const finishAnswer = (txt, messageId) => {
+    const finishAnswer = (txt, messageId, suggestions) => {
       if (answered || cancelled) return
       answered = true
       clearFallback()
@@ -450,8 +450,22 @@ export class AiService extends BaseService {
       // message into the server id-space — without that, the live buffer (synthetic
       // a-… ids) and reloaded history (Mongo _ids) never reconcile and messages
       // duplicate or vanish on the next thread switch/reload.
-      onDone?.({ text: txt, conversationId: resolvedConvId, messageId: messageId || null })
+      // `suggestions` = the server-validated follow-up actions from the
+      // assistant message's metadata (buttons the surface renders under the
+      // reply); [] when the answer carries none.
+      onDone?.({
+        text: txt,
+        conversationId: resolvedConvId,
+        messageId: messageId || null,
+        suggestions: Array.isArray(suggestions) ? suggestions : []
+      })
       stopStream()
+    }
+
+    // Pull the follow-up suggestions off a serialized assistant message.
+    const messageSuggestions = (msg) => {
+      const list = msg && msg.metadata && msg.metadata.suggestions
+      return Array.isArray(list) ? list : []
     }
 
     const fail = (err) => {
@@ -498,7 +512,11 @@ export class AiService extends BaseService {
           }
           const txt = blocksToText(resume.assistantMessage?.content)
           if (txt) {
-            finishAnswer(txt, resume.assistantMessage?._id || resume.assistantMessage?.id || null)
+            finishAnswer(
+              txt,
+              resume.assistantMessage?._id || resume.assistantMessage?.id || null,
+              messageSuggestions(resume.assistantMessage)
+            )
           }
         })
         .catch(() => { /* resume-response consumption is best-effort */ })
@@ -579,7 +597,7 @@ export class AiService extends BaseService {
             // the turn on an empty message. Only the final, text-bearing
             // assistant message ends the turn.
             const txt = blocksToText(data.content)
-            if (txt) finishAnswer(txt, data.id || data._id || null)
+            if (txt) finishAnswer(txt, data.id || data._id || null, messageSuggestions(data))
           }
         },
         onError: (err) => fail(err)
@@ -613,7 +631,8 @@ export class AiService extends BaseService {
         if (finalTxt) {
           finishAnswer(
             finalTxt,
-            outcome?.assistantMessage?._id || outcome?.assistantMessage?.id || null
+            outcome?.assistantMessage?._id || outcome?.assistantMessage?.id || null,
+            messageSuggestions(outcome?.assistantMessage)
           )
           return
         }
@@ -677,7 +696,10 @@ export class AiService extends BaseService {
         (m?.content || []).filter((p) => p && p.type === 'text').map((p) => p.text).join('')
       const assistant = [...messages].reverse().find((m) => m?.role === 'assistant' && textOf(m))
       const txt = assistant ? textOf(assistant) : ''
-      if (txt) finishAnswer(txt, (assistant && (assistant.id || assistant._id)) || null)
+      const sg = assistant && assistant.metadata && Array.isArray(assistant.metadata.suggestions)
+        ? assistant.metadata.suggestions
+        : []
+      if (txt) finishAnswer(txt, (assistant && (assistant.id || assistant._id)) || null, sg)
       else fail(new Error('[sdk.ai] no assistant response'))
     } catch (err) {
       fail(err)
