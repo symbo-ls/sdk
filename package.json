@@ -1,6 +1,6 @@
 {
   "name": "@symbo.ls/sdk",
-  "version": "3.14.596",
+  "version": "3.14.599",
   "type": "module",
   "source": "./src/index.js",
   "module": "./dist/esm/src/index.js",
@@ -76,9 +76,9 @@
     "test:bridges": "tape packages/sdk-bridge/tests/*.test.js | tap-spec"
   },
   "dependencies": {
-    "@symbo.ls/channels": "^3.14.105",
-    "@symbo.ls/utils": "^3.14.595",
-    "@symbo.ls/analyzing": "^3.14.142",
+    "@symbo.ls/channels": "^3.14.599",
+    "@symbo.ls/utils": "^3.14.599",
+    "@symbo.ls/analyzing": "^3.14.599",
     "acorn": "^8.14.0",
     "acorn-walk": "^8.3.4",
     "chalk": "^5.4.1",

@@ -1,6 +1,6 @@
 {
   "name": "@symbo.ls/sdk-bridge",
-  "version": "3.14.595",
+  "version": "3.14.599",
   "type": "module",
   "description": "Abstract federation primitive — multi-project registry, client cache, and storage helpers. Framework-agnostic; build your own backend layer on top via a custom buildClient implementation.",
   "main": "./dist/cjs/src/index.cjs",

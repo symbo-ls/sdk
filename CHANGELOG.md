@@ -1,5 +1,17 @@
 # @symbo.ls/sdk
 
+## 3.14.599
+
+### Patch Changes
+
+- Manual patch bump triggered via workflow_dispatch (scope: all).
+  No source change behind this bump — released to refresh dist or
+  coordinate a cross-package version line.
+- Updated dependencies
+  - @symbo.ls/analyzing@3.14.599
+  - @symbo.ls/channels@3.14.599
+  - @symbo.ls/utils@3.14.599
+
 ## 3.14.596
 
 ### Patch Changes
