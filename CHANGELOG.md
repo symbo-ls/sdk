@@ -1,5 +1,14 @@
 # @symbo.ls/sdk
 
+## 3.14.595
+
+### Patch Changes
+
+- Auto-generated cross-repo patch release.
+- Updated dependencies
+  - @symbo.ls/utils@3.14.595
+  - @symbo.ls/sdk-bridge@3.14.595
+
 ## 3.14.594
 
 ### Patch Changes
