@@ -988,3 +988,16 @@ export { default as environment } from './config/environment.js'
 // `exports` subpaths (the `./cross-app-auth` subpath stays for Node
 // consumers that do).
 export { createCrossAppAuth, DEFAULT_TOKEN_KEYS } from './crossAppAuth.js'
+
+// Role → permission tables. Exported from the MAIN entry for the same reason
+// as above: consumers gate UI on these, and `sdk.hasPermission` is unusable
+// for that because the workspace shell wraps every SDK method in an init gate,
+// so it returns a Promise and `Boolean(promise)` is always true (workspace
+// a0a81ea6). Consumers needing a SYNCHRONOUS permission answer read the table
+// directly against an already-resolved role instead of calling the SDK.
+export {
+  PERMISSION_MAP,
+  ROLE_PERMISSIONS,
+  PROJECT_ROLE_PERMISSIONS,
+  TIER_FEATURES
+} from './utils/permission.js'
