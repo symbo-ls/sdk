@@ -220,7 +220,13 @@ export class AiService extends BaseService {
           const result = {
             intent: INTENT_ANSWER,
             text: donePayload?.text || buffered,
-            conversationId: donePayload?.conversationId || null
+            conversationId: donePayload?.conversationId || null,
+            // Server assistant-message id — the transport re-keys its
+            // optimistic message into the server id-space with this.
+            messageId: donePayload?.messageId || null,
+            // Follow-up suggestions (server-validated) — rendered as
+            // tappable pills under the reply.
+            suggestions: Array.isArray(donePayload?.suggestions) ? donePayload.suggestions : []
           }
           callbacks.onDone?.(result)
           resolve(result)
