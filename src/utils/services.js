@@ -600,5 +600,14 @@ export const SERVICE_METHODS = {
   getProjectDomainInstructions: 'dns',
   getProjectCustomDomainInstructions: 'dns',
   startProjectCustomDomainSetup: 'dns',
-  pollProjectCustomDomainStatus: 'dns'
+  pollProjectCustomDomainStatus: 'dns',
+
+  // Public, unauthenticated storefront catalog reads (StorefrontService,
+  // tickets/server.md "storefront catalog read API", NAT-V1-25..30). No
+  // workspace-membership identity — see BaseService._requiresInit for the
+  // no-auth-header carve-out these three method names share with the
+  // meet-guest / demo flows.
+  listStorefrontProducts: 'storefront',
+  getStorefrontProduct: 'storefront',
+  listStorefrontCollection: 'storefront'
 }

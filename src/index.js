@@ -54,6 +54,7 @@ import {
   createMeetService,
   createCalendarService,
   createBuildsService,
+  createStorefrontService,
   workspaceProjectBaseUrl
 } from './services/index.js'
 
@@ -541,6 +542,16 @@ export class SDK {
           context: this._context,
           options: this._options
         })
+      ),
+      // Public, unauthenticated storefront catalog reads against
+      // /core/storefront/* (tickets/server.md "storefront catalog read
+      // API") — see StorefrontService.js header.
+      this._initService(
+        'storefront',
+        createStorefrontService({
+          context: this._context,
+          options: this._options
+        })
       )
     ])
 
@@ -965,6 +976,7 @@ export {
   createMeetService,
   createCalendarService,
   createBuildsService,
+  createStorefrontService,
   workspaceProjectBaseUrl
 } from './services/index.js'
 

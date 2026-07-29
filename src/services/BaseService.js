@@ -380,7 +380,12 @@ export class BaseService {
       'meetGuestToken',
       // Demo flow — unauthenticated visitor starts a demo session
       'startDemo',
-      'enterDemo'
+      'enterDemo',
+      // Public storefront catalog reads (StorefrontService, tickets/server.md
+      // "storefront catalog read API") — anonymous shoppers, no bearer token.
+      'listStorefrontProducts',
+      'getStorefrontProduct',
+      'listStorefrontCollection'
     ])
     return !noInitMethods.has(methodName)
   }

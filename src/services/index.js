@@ -81,6 +81,10 @@ import { CanvasLayoutService } from './CanvasLayoutService.js'
 import { MeetService } from './MeetService.js'
 import { CalendarService } from './CalendarService.js'
 import { BuildsService } from './BuildsService.js'
+// Public, unauthenticated natali storefront catalog reads (tickets/server.md
+// "storefront catalog read API", NAT-V1-25..30) — peer to ProductService but
+// with NO workspace-membership identity (anonymous shoppers).
+import { StorefrontService } from './StorefrontService.js'
 
 const createService = (ServiceClass, config) => new ServiceClass(config)
 
@@ -189,6 +193,10 @@ export const createCanvasLayoutService = config =>
 // Cloud Build/buildpacks → Cloud Run). Backs the /infra deployment canvas.
 export const createBuildsService = config =>
   createService(BuildsService, config)
+
+// Public storefront catalog service — see StorefrontService.js header.
+export const createStorefrontService = config =>
+  createService(StorefrontService, config)
 
 // Meet service — guest waiting-room flow (anonymous) + host-side remote
 // mute against /core/meet/* on the main server.
@@ -341,5 +349,6 @@ export {
   BookingService,
   AvailabilityRuleService,
   ConversationService,
-  RecurrenceService
+  RecurrenceService,
+  StorefrontService
 }
