@@ -386,6 +386,12 @@ export class BaseService {
       'listStorefrontProducts',
       'getStorefrontProduct',
       'listStorefrontCollection',
+      // Job-application pipeline (tickets/server.md "job-application
+      // pipeline backend") — public job listings + the public application
+      // WRITE, same anonymous no-bearer-token surface as the catalog reads.
+      'listStorefrontJobs',
+      'getStorefrontJob',
+      'applyToStorefrontJob',
       // Storefront customer identity (tickets/server.md "storefront customer
       // identity layer", NAT-V1-25/27/28) — register/login/OTP/reset are the
       // anonymous-visitor surface itself, no bearer token. `getStorefrontCustomerMe`

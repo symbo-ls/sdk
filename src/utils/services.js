@@ -611,6 +611,13 @@ export const SERVICE_METHODS = {
   getStorefrontProduct: 'storefront',
   listStorefrontCollection: 'storefront',
 
+  // Job-application pipeline (tickets/server.md "job-application pipeline
+  // backend") — public job listings + the public application WRITE, same
+  // no-auth-header carve-out as the catalog reads above.
+  listStorefrontJobs: 'storefront',
+  getStorefrontJob: 'storefront',
+  applyToStorefrontJob: 'storefront',
+
   // Storefront customer identity (tickets/server.md "storefront customer
   // identity layer", NAT-V1-25/27/28) — register/login/OTP/reset are
   // unauthenticated (see BaseService._requiresInit); getStorefrontCustomerMe

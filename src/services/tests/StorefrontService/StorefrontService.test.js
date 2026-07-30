@@ -132,6 +132,102 @@ test('BaseService._requiresInit treats all three storefront methods as anonymous
   t.end()
 })
 
+// ── job-application pipeline (tickets/server.md "job-application pipeline
+// backend") ────────────────────────────────────────────────────────────────
+
+test('listStorefrontJobs GETs /storefront/:workspaceId/jobs with no filter', async t => {
+  t.plan(2)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves([])
+  await svc.listStorefrontJobs('ws1')
+  t.equal(stub.firstCall.args[0], 'listStorefrontJobs', 'methodName')
+  t.equal(stub.firstCall.args[1], '/storefront/ws1/jobs', 'no query string')
+  sandbox.restore()
+  t.end()
+})
+
+test('listStorefrontJobs threads limit/page', async t => {
+  t.plan(2)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves([])
+  await svc.listStorefrontJobs('ws1', { limit: 10, page: 2 })
+  const path = stub.firstCall.args[1]
+  t.ok(path.includes('limit=10'), 'limit threaded')
+  t.ok(path.includes('page=2'), 'page threaded')
+  sandbox.restore()
+  t.end()
+})
+
+test('getStorefrontJob GETs /storefront/:workspaceId/jobs/:id encoded', async t => {
+  t.plan(2)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({})
+  await svc.getStorefrontJob('ws1', 'op/1')
+  t.equal(stub.firstCall.args[0], 'getStorefrontJob', 'methodName')
+  t.equal(stub.firstCall.args[1], '/storefront/ws1/jobs/op%2F1', 'encoded id')
+  sandbox.restore()
+  t.end()
+})
+
+test('getStorefrontJob throws without id', async t => {
+  t.plan(1)
+  const svc = makeService()
+  sandbox.stub(svc, '_call').resolves({})
+  try {
+    await svc.getStorefrontJob('ws1')
+    t.fail('should have thrown')
+  } catch (err) {
+    t.ok(/id/.test(err.message), 'validation guard')
+  }
+  sandbox.restore()
+  t.end()
+})
+
+test('applyToStorefrontJob POSTs /storefront/:workspaceId/jobs/:id/apply with the application payload', async t => {
+  t.plan(3)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({ received: true })
+  await svc.applyToStorefrontJob('ws1', 'op1', {
+    fullName: 'Nino Beridze',
+    email: 'nino@example.com',
+    cvUrl: 'https://cv.example.com/nino.pdf'
+  })
+  t.equal(stub.firstCall.args[0], 'applyToStorefrontJob')
+  t.equal(stub.firstCall.args[1], '/storefront/ws1/jobs/op1/apply')
+  t.equal(stub.firstCall.args[2].method, 'POST')
+  sandbox.restore()
+  t.end()
+})
+
+test('applyToStorefrontJob throws without workspaceId or id', async t => {
+  t.plan(2)
+  const svc = makeService()
+  sandbox.stub(svc, '_call').resolves({})
+  try {
+    await svc.applyToStorefrontJob(undefined, 'op1', { fullName: 'x', email: 'x@x.com' })
+    t.fail('should have thrown')
+  } catch (err) {
+    t.ok(/workspaceId/.test(err.message))
+  }
+  try {
+    await svc.applyToStorefrontJob('ws1', undefined, { fullName: 'x', email: 'x@x.com' })
+    t.fail('should have thrown')
+  } catch (err) {
+    t.ok(/id/.test(err.message))
+  }
+  sandbox.restore()
+  t.end()
+})
+
+test('BaseService._requiresInit treats all three job-pipeline methods as anonymous (no bearer token attached)', t => {
+  t.plan(3)
+  const svc = new BaseService()
+  t.equal(svc._requiresInit('listStorefrontJobs'), false)
+  t.equal(svc._requiresInit('getStorefrontJob'), false)
+  t.equal(svc._requiresInit('applyToStorefrontJob'), false)
+  t.end()
+})
+
 // ── storefront customer identity (tickets/server.md "storefront customer
 // identity layer", NAT-V1-25/27/28) ─────────────────────────────────────
 

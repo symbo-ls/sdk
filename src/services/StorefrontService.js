@@ -88,6 +88,56 @@ export class StorefrontService extends BaseService {
     )
   }
 
+  // ── Job-application pipeline (tickets/server.md "job-application
+  // pipeline backend") — public job listings (read) + the public
+  // application WRITE. Same no-auth-header carve-out as the catalog reads
+  // above (see BaseService._requiresInit) — anonymous applicants, no
+  // workspace-membership identity. `applyToStorefrontJob` is the SDK's
+  // wrapper around the platform's first anonymous public WRITE; the server
+  // NEVER echoes applicant PII back and returns the identical
+  // `{received:true}` body whether the submission was fresh or a deduped
+  // repeat (see server StorefrontJobsService.js header "NO ENUMERATION") —
+  // callers should not try to infer anything from this response beyond
+  // "the server accepted the request".
+
+  // GET /core/storefront/:workspaceId/jobs?limit=&page=
+  // PUBLIC — published + active openings only.
+  listStorefrontJobs (workspaceId, { limit, page } = {}) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    return this._call(
+      'listStorefrontJobs',
+      `/storefront/${encodeURIComponent(workspaceId)}/jobs${_qs({ limit, page })}`
+    )
+  }
+
+  // GET /core/storefront/:workspaceId/jobs/:id
+  // PUBLIC — published + active only; an unpublished/archived/missing/
+  // cross-workspace id 404s.
+  getStorefrontJob (workspaceId, id) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!id) throw new Error('id is required')
+    return this._call(
+      'getStorefrontJob',
+      `/storefront/${encodeURIComponent(workspaceId)}/jobs/${encodeURIComponent(id)}`
+    )
+  }
+
+  // POST /core/storefront/:workspaceId/jobs/:id/apply
+  // PUBLIC — the anonymous public WRITE. `cvUrl` is a link (Drive/Dropbox/
+  // LinkedIn/…), not a file upload — v1 has no anonymous-safe upload path
+  // server-side (see server StorefrontJobsService.js header). Rate-limited
+  // far stricter than the catalog reads (5/hr per-IP, 30/hr per-opening) —
+  // a 429 here means slow down, not a bug.
+  applyToStorefrontJob (workspaceId, id, { fullName, email, phone, coverLetter, cvUrl } = {}) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!id) throw new Error('id is required')
+    return this._call(
+      'applyToStorefrontJob',
+      `/storefront/${encodeURIComponent(workspaceId)}/jobs/${encodeURIComponent(id)}/apply`,
+      { method: 'POST', body: { fullName, email, phone, coverLetter, cvUrl } }
+    )
+  }
+
   // POST /core/storefront/:workspaceId/auth/register
   // PUBLIC — physical customers only (juridical customers cannot self-
   // register, §8.10 — there is no `type` param here to request it).
