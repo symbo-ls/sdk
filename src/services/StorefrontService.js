@@ -15,6 +15,26 @@ import { BaseService } from './BaseService.js'
 // non-expired availability, active/filterable/searchable flags for the
 // supporting catalog collections) — this service is a thin HTTP wrapper,
 // it does NOT re-implement any of that filtering client-side.
+//
+// ── Storefront customer identity (tickets/server.md "storefront customer
+// identity layer", NAT-V1-25/27/28) ─────────────────────────────────────
+// register/login/requestOtp/verifyOtp/resetPassword wrap
+// `/core/storefront/:workspaceId/auth/*` — ALSO unauthenticated (that's the
+// point: this IS the anonymous-visitor-becomes-a-customer surface), so they
+// are registered in `_requiresInit`'s no-auth-header set the same as the
+// catalog reads above.
+//
+// `getStorefrontCustomerMe` is different: it is the one authenticated route
+// on this router, but its identity is a STOREFRONT CUSTOMER session token —
+// a completely separate identity plane from the SDK's own signed-in-user
+// session (see server core/utils/auth.js `CUSTOMER_ACCESS_TOKEN_AUDIENCE`
+// for why a customer token and a platform-user token are mutually
+// non-substitutable). It therefore does NOT go through the SDK's shared
+// TokenManager/session — the caller passes the customer token explicitly
+// (the one returned by `loginStorefrontCustomer`), and this method attaches
+// it as a one-off `Authorization` header. Mixing it into the TokenManager
+// would risk a customer session silently riding along on other, unrelated
+// SDK calls for the signed-in platform user (or vice versa).
 
 const _qs = (params) => {
   const usp = new URLSearchParams()
@@ -65,6 +85,81 @@ export class StorefrontService extends BaseService {
     return this._call(
       'listStorefrontCollection',
       `/storefront/${encodeURIComponent(workspaceId)}/collections/${encodeURIComponent(collection)}${_qs({ limit, page })}`
+    )
+  }
+
+  // POST /core/storefront/:workspaceId/auth/register
+  // PUBLIC — physical customers only (juridical customers cannot self-
+  // register, §8.10 — there is no `type` param here to request it).
+  registerStorefrontCustomer (workspaceId, { phone, email, fullName, password, birthDate, identificationNumber } = {}) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    return this._call(
+      'registerStorefrontCustomer',
+      `/storefront/${encodeURIComponent(workspaceId)}/auth/register`,
+      { method: 'POST', body: { phone, email, fullName, password, birthDate, identificationNumber } }
+    )
+  }
+
+  // POST /core/storefront/:workspaceId/auth/login
+  // PUBLIC — email or phone + password. Resolves `{ token, customer }` on
+  // success; `token` is a storefront-customer session token, pass it to
+  // `getStorefrontCustomerMe`.
+  loginStorefrontCustomer (workspaceId, { email, phone, identifier, password } = {}) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    return this._call(
+      'loginStorefrontCustomer',
+      `/storefront/${encodeURIComponent(workspaceId)}/auth/login`,
+      { method: 'POST', body: { email, phone, identifier, password } }
+    )
+  }
+
+  // POST /core/storefront/:workspaceId/auth/request-otp
+  // PUBLIC — `purpose` is 'verify' (default) or 'reset'. v1 is EMAIL-ONLY
+  // (no SMS provider wired server-side yet) — a phone-only request resolves
+  // `{ success:false }` with `error:'sms_not_available'`, never a silent
+  // no-op.
+  requestStorefrontCustomerOtp (workspaceId, { phone, email, purpose } = {}) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    return this._call(
+      'requestStorefrontCustomerOtp',
+      `/storefront/${encodeURIComponent(workspaceId)}/auth/request-otp`,
+      { method: 'POST', body: { phone, email, purpose } }
+    )
+  }
+
+  // POST /core/storefront/:workspaceId/auth/verify-otp
+  verifyStorefrontCustomerOtp (workspaceId, { phone, email, code, purpose } = {}) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    return this._call(
+      'verifyStorefrontCustomerOtp',
+      `/storefront/${encodeURIComponent(workspaceId)}/auth/verify-otp`,
+      { method: 'POST', body: { phone, email, code, purpose } }
+    )
+  }
+
+  // POST /core/storefront/:workspaceId/auth/reset-password
+  // PUBLIC — phone/email + the OTP from requestStorefrontCustomerOtp
+  // (purpose:'reset') + newPassword, in one call.
+  resetStorefrontCustomerPassword (workspaceId, { phone, email, code, newPassword } = {}) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    return this._call(
+      'resetStorefrontCustomerPassword',
+      `/storefront/${encodeURIComponent(workspaceId)}/auth/reset-password`,
+      { method: 'POST', body: { phone, email, code, newPassword } }
+    )
+  }
+
+  // GET /core/storefront/:workspaceId/auth/me
+  // Behind `requireCustomer` on the server — pass the storefront-customer
+  // token returned by `loginStorefrontCustomer` explicitly. See the class
+  // header for why this does NOT use the SDK's shared TokenManager session.
+  getStorefrontCustomerMe (workspaceId, customerToken) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!customerToken) throw new Error('customerToken is required')
+    return this._call(
+      'getStorefrontCustomerMe',
+      `/storefront/${encodeURIComponent(workspaceId)}/auth/me`,
+      { headers: { Authorization: `Bearer ${customerToken}` } }
     )
   }
 }

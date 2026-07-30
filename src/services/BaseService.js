@@ -385,7 +385,20 @@ export class BaseService {
       // "storefront catalog read API") — anonymous shoppers, no bearer token.
       'listStorefrontProducts',
       'getStorefrontProduct',
-      'listStorefrontCollection'
+      'listStorefrontCollection',
+      // Storefront customer identity (tickets/server.md "storefront customer
+      // identity layer", NAT-V1-25/27/28) — register/login/OTP/reset are the
+      // anonymous-visitor surface itself, no bearer token. `getStorefrontCustomerMe`
+      // is ALSO listed here even though it IS authenticated — its identity is
+      // a storefront-customer token passed explicitly via an options.headers
+      // override, never the SDK's own TokenManager session (see
+      // StorefrontService.js header for why the two must never mix).
+      'registerStorefrontCustomer',
+      'loginStorefrontCustomer',
+      'requestStorefrontCustomerOtp',
+      'verifyStorefrontCustomerOtp',
+      'resetStorefrontCustomerPassword',
+      'getStorefrontCustomerMe'
     ])
     return !noInitMethods.has(methodName)
   }

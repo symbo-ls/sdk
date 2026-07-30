@@ -609,5 +609,17 @@ export const SERVICE_METHODS = {
   // meet-guest / demo flows.
   listStorefrontProducts: 'storefront',
   getStorefrontProduct: 'storefront',
-  listStorefrontCollection: 'storefront'
+  listStorefrontCollection: 'storefront',
+
+  // Storefront customer identity (tickets/server.md "storefront customer
+  // identity layer", NAT-V1-25/27/28) — register/login/OTP/reset are
+  // unauthenticated (see BaseService._requiresInit); getStorefrontCustomerMe
+  // is authenticated but via an explicitly-passed storefront-customer token,
+  // never the SDK's own signed-in-user session (see StorefrontService.js).
+  registerStorefrontCustomer: 'storefront',
+  loginStorefrontCustomer: 'storefront',
+  requestStorefrontCustomerOtp: 'storefront',
+  verifyStorefrontCustomerOtp: 'storefront',
+  resetStorefrontCustomerPassword: 'storefront',
+  getStorefrontCustomerMe: 'storefront'
 }

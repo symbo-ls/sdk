@@ -131,3 +131,101 @@ test('BaseService._requiresInit treats all three storefront methods as anonymous
   t.equal(svc._requiresInit('listStorefrontCollection'), false)
   t.end()
 })
+
+// ── storefront customer identity (tickets/server.md "storefront customer
+// identity layer", NAT-V1-25/27/28) ─────────────────────────────────────
+
+test('registerStorefrontCustomer POSTs /storefront/:workspaceId/auth/register with the full payload', async t => {
+  t.plan(3)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({})
+  await svc.registerStorefrontCustomer('ws1', {
+    phone: '+995500000001',
+    fullName: 'Nino',
+    password: 'Str0ng!Pass'
+  })
+  t.equal(stub.firstCall.args[0], 'registerStorefrontCustomer')
+  t.equal(stub.firstCall.args[1], '/storefront/ws1/auth/register')
+  t.equal(stub.firstCall.args[2].method, 'POST')
+  sandbox.restore()
+  t.end()
+})
+
+test('loginStorefrontCustomer POSTs /storefront/:workspaceId/auth/login', async t => {
+  t.plan(2)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({ token: 't', customer: {} })
+  await svc.loginStorefrontCustomer('ws1', { phone: '+995500000001', password: 'x' })
+  t.equal(stub.firstCall.args[1], '/storefront/ws1/auth/login')
+  t.equal(stub.firstCall.args[2].method, 'POST')
+  sandbox.restore()
+  t.end()
+})
+
+test('requestStorefrontCustomerOtp POSTs /storefront/:workspaceId/auth/request-otp', async t => {
+  t.plan(1)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({})
+  await svc.requestStorefrontCustomerOtp('ws1', { email: 'a@b.com', purpose: 'reset' })
+  t.equal(stub.firstCall.args[1], '/storefront/ws1/auth/request-otp')
+  sandbox.restore()
+  t.end()
+})
+
+test('verifyStorefrontCustomerOtp POSTs /storefront/:workspaceId/auth/verify-otp', async t => {
+  t.plan(1)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({})
+  await svc.verifyStorefrontCustomerOtp('ws1', { email: 'a@b.com', code: '123456' })
+  t.equal(stub.firstCall.args[1], '/storefront/ws1/auth/verify-otp')
+  sandbox.restore()
+  t.end()
+})
+
+test('resetStorefrontCustomerPassword POSTs /storefront/:workspaceId/auth/reset-password', async t => {
+  t.plan(1)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({})
+  await svc.resetStorefrontCustomerPassword('ws1', { email: 'a@b.com', code: '123456', newPassword: 'N3w!Pass' })
+  t.equal(stub.firstCall.args[1], '/storefront/ws1/auth/reset-password')
+  sandbox.restore()
+  t.end()
+})
+
+test('getStorefrontCustomerMe GETs /storefront/:workspaceId/auth/me with an explicit Authorization header (never the TokenManager session)', async t => {
+  t.plan(3)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({})
+  await svc.getStorefrontCustomerMe('ws1', 'customer-jwt')
+  t.equal(stub.firstCall.args[0], 'getStorefrontCustomerMe')
+  t.equal(stub.firstCall.args[1], '/storefront/ws1/auth/me')
+  t.equal(stub.firstCall.args[2].headers.Authorization, 'Bearer customer-jwt')
+  sandbox.restore()
+  t.end()
+})
+
+test('getStorefrontCustomerMe throws without a customerToken', async t => {
+  t.plan(1)
+  const svc = makeService()
+  sandbox.stub(svc, '_call').resolves({})
+  try {
+    await svc.getStorefrontCustomerMe('ws1')
+    t.fail('should have thrown')
+  } catch (err) {
+    t.ok(/customerToken/.test(err.message))
+  }
+  sandbox.restore()
+  t.end()
+})
+
+test('BaseService._requiresInit treats all six storefront-customer methods as anonymous/self-authenticated (never the shared TokenManager session)', t => {
+  t.plan(6)
+  const svc = new BaseService()
+  t.equal(svc._requiresInit('registerStorefrontCustomer'), false)
+  t.equal(svc._requiresInit('loginStorefrontCustomer'), false)
+  t.equal(svc._requiresInit('requestStorefrontCustomerOtp'), false)
+  t.equal(svc._requiresInit('verifyStorefrontCustomerOtp'), false)
+  t.equal(svc._requiresInit('resetStorefrontCustomerPassword'), false)
+  t.equal(svc._requiresInit('getStorefrontCustomerMe'), false)
+  t.end()
+})
