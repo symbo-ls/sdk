@@ -1585,37 +1585,20 @@ export class AuthService extends BaseService {
     if (this._currentUser && typeof this._currentUser === 'object') {
       this._currentUser.activeOrganization = next
     }
-    // Project the new Mongo activeOrganization onto the workspace-project
-    // Supabase session so `app_metadata.active_workspace_id` stays in sync
-    // and every `/workspace-project/*` read scopes to the right tenant
-    // (WORKSPACE-AUTH-DRIFT). The federation refresh hits
-    // `symbols-refresh-claims` with the SDK Mongo access token; the edge fn
-    // re-fetches the canonical claims from the Symbols server (which now
-    // reflects the PATCH above) and writes them to `app_metadata`, then
-    // we `refreshSession` to mint a JWT with the new claims.
-    //
-    // Best-effort: a Supabase refresh failure must NOT roll back the Mongo
-    // write — Mongo is the source of truth, and the next session.refresh
-    // can re-settle the JWT. We log + carry on.
-    const refresh = this._context?.federationRefreshClaims
-    if (typeof refresh === 'function') {
-      try {
-        await refresh()
-      } catch (err) {
-        logger.warn(
-          '[sdk.setActiveOrganization] federation refreshClaims failed:',
-          err?.message || err
-        )
-      }
-    }
+    // Mongo is the sole source of truth for the active org — the
+    // `symbols-refresh-claims` edge-fn projection onto a workspace-project
+    // Supabase session (WORKSPACE-AUTH-DRIFT's original fix) was retired
+    // with the rest of the auth federation plane (2026-07-31); the
+    // `/workspace-project/*` wrapper now resolves the tenant straight off
+    // this Mongo write via the SDK access token, no claim re-mint needed.
     return { activeOrganization: next }
   }
 
   // PATCH /auth/me/active-workspace — Mongo-native workspace switch. Persists
   // the chosen workspace on the User doc (the workspace-project userResolver
-  // reads it), so a switch works WITHOUT the Supabase federation claim. The
-  // optional federation re-mint is fired separately + best-effort by
-  // SDK.switchWorkspace; this method is purely the authoritative Mongo write.
+  // reads it). This is the sole authoritative write — the old Supabase
+  // federation re-mint that used to also fire on workspace switch is
+  // retired.
   async setActiveWorkspace (workspaceId) {
     this._requireReady('setActiveWorkspace')
     if (!workspaceId) throw new Error('[sdk.setActiveWorkspace] workspaceId is required')

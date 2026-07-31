@@ -642,20 +642,24 @@ export class SDK {
   //   4. Walks per-service `switchOrg(newOrgId, previousOrgId)` hooks.
   //   5. Aligns the ACTIVE WORKSPACE to the new org's home workspace via
   //      `switchWorkspace`, IF `opts.homeWorkspaceId` is supplied AND
-  //      `opts.skipFederation !== true` (legacy option name, kept for
-  //      caller compat). Without
-  //      it, workspace-scoped reads (tickets, chat, calendar, …) silently
-  //      stay scoped to the previous org's workspace.
+  //      `opts.skipWorkspaceHop !== true`. Without it, workspace-scoped
+  //      reads (tickets, chat, calendar, …) silently stay scoped to the
+  //      previous org's workspace.
   //   6. Emits `sdk.orgSwitched` on rootBus.
   //
   // Opts:
-  //   skipPersist     — don't PATCH Mongo (use this in socket-echo paths
-  //                     where another session already persisted).
-  //   skipFederation  — don't run the active-workspace alignment hop
-  //                     (legacy name kept for caller compat).
-  //   homeWorkspaceId — the workspace id whose org is `newOrgId`. When
-  //                     omitted, no workspace hop runs and Mongo-only
-  //                     state advances.
+  //   skipPersist      — don't PATCH Mongo (use this in socket-echo paths
+  //                      where another session already persisted).
+  //   skipWorkspaceHop — don't run the active-workspace alignment hop
+  //                      (renamed 2026-07-31 from the legacy
+  //                      `skipFederation`; the hop is a pure Mongo
+  //                      `switchWorkspace` call now that the Supabase
+  //                      federation re-mint it used to also trigger is
+  //                      deleted — nothing in the monorepo passed the old
+  //                      name).
+  //   homeWorkspaceId  — the workspace id whose org is `newOrgId`. When
+  //                      omitted, no workspace hop runs and Mongo-only
+  //                      state advances.
   //
   // If `setActiveOrganization` throws, the whole switch aborts BEFORE
   // touching local context — Mongo's pre-write state is the source of
@@ -668,7 +672,7 @@ export class SDK {
     if (previousOrgId === newOrgId) return { changed: false, orgId: newOrgId }
     const {
       skipPersist = false,
-      skipFederation = false,
+      skipWorkspaceHop = false,
       homeWorkspaceId = null
     } = opts
 
@@ -712,14 +716,14 @@ export class SDK {
     //    workspace-scoped reads re-scope. Errors here don't abort: Mongo is
     //    already updated and the SDK-side context advanced; the hop is
     //    recoverable and shouldn't roll back the org switch.
-    let federationResult = null
+    let workspaceHopResult = null
     if (
-      !skipFederation &&
+      !skipWorkspaceHop &&
       homeWorkspaceId &&
       typeof this.switchWorkspace === 'function'
     ) {
       try {
-        federationResult = await this.switchWorkspace(homeWorkspaceId)
+        workspaceHopResult = await this.switchWorkspace(homeWorkspaceId)
       } catch (err) {
         logger.warn(
           '[sdk.switchOrg] switchWorkspace hop failed:',
@@ -735,7 +739,7 @@ export class SDK {
       previousOrgId,
       newOrgId,
       persist: persistResult,
-      federation: federationResult
+      workspaceHop: workspaceHopResult
     })
 
     return {
@@ -743,16 +747,18 @@ export class SDK {
       previousOrgId,
       newOrgId,
       persist: persistResult,
-      federation: federationResult
+      workspaceHop: workspaceHopResult
     }
   }
 
   // Switch the active workspace within the current org. `setActiveWorkspace`
   // writes the new active workspace to Mongo — the source of truth the
   // workspace-project `userResolver` reads to scope the tenant. The old
-  // federated JWT re-mint (that stamped the `active_workspace_id` claim) is
-  // retired/legacy; this method still fires it best-effort via the optional
-  // `context.federationSwitchWorkspace` callback registered at init time.
+  // federated JWT re-mint (that used to stamp the `active_workspace_id`
+  // claim via the Supabase auth-bridge) was retired with the Mongo cutover
+  // (2026-07-03) and deleted for good along with `@symbo.ls/sdk-bridge`
+  // (2026-07-31) — Mongo is now the sole source of truth, no best-effort
+  // federation callback fires here any more.
   //
   // Frontend contract:
   //   await sdk.switchWorkspace(workspaceId)
@@ -809,35 +815,6 @@ export class SDK {
       } catch {}
     }
 
-    // The federated JWT re-mint is now OPTIONAL/legacy enrichment — fire it
-    // best-effort (mirrors switchOrg) so any lingering federation callback can
-    // refresh its `active_workspace_id` in the background, but NEVER let a
-    // federation hiccup (CORS / cold endpoint / no callback registered) abort
-    // the switch. This is the detach: Mongo is authoritative; the callback is a
-    // chainable adapter. (Previously this fetch was the blocking critical path
-    // that surfaced "Failed to fetch".)
-    let federationResult = { ok: true, skipped: true }
-    const federationFn = this._context.federationSwitchWorkspace
-    if (typeof federationFn === 'function') {
-      federationResult = { ok: true, pending: true }
-      Promise.resolve()
-        .then(() => federationFn(newWorkspaceId))
-        .then((res) => {
-          if (res && res.ok === false) {
-            logger.warn(
-              '[sdk.switchWorkspace] federation refresh failed (non-fatal):',
-              res?.error?.message || res?.error
-            )
-          }
-        })
-        .catch((err) => {
-          logger.warn(
-            '[sdk.switchWorkspace] federation refresh error (non-fatal):',
-            err?.message || err
-          )
-        })
-    }
-
     this.rootBus?.emit?.('sdk.workspaceSwitched', {
       previousWorkspaceId,
       newWorkspaceId
@@ -847,8 +824,7 @@ export class SDK {
       ok: true,
       changed: true,
       previousWorkspaceId,
-      newWorkspaceId,
-      federation: federationResult
+      newWorkspaceId
     }
   }
 
@@ -1001,10 +977,11 @@ export { default as environment } from './config/environment.js'
 // consumers that do).
 export { createCrossAppAuth, DEFAULT_TOKEN_KEYS } from './crossAppAuth.js'
 
-// Parent-domain cookie primitives. Canonical home is the SDK as of
-// 2026-07-28 (moved off the deprecated @symbo.ls/sdk-bridge federation
-// package — see src/cookies.js). Exported so the remaining sdk-bridge
-// cookie consumers (workspace shared/prefs.js) can migrate here.
+// Parent-domain cookie primitives. Canonical home is the SDK (moved off the
+// Supabase federation package `@symbo.ls/sdk-bridge` on 2026-07-28 — see
+// src/cookies.js); that package's last consumer (workspace shared/prefs.js)
+// finished migrating to this export (workspace 2230a8ca) and sdk-bridge
+// itself is deleted (2026-07-31).
 export { parentDomain, readCookie, writeCookie } from './cookies.js'
 
 // Role → permission tables. Exported from the MAIN entry for the same reason
