@@ -370,6 +370,15 @@ export const SERVICE_METHODS = {
   assignOrgIntegrationScope: 'integration',
   reorderOrgIntegrations: 'integration',
   listOrgIntegrationKinds: 'integration',
+  // Capability dispatch (data plane) — the per-kind call surface behind the
+  // CRUD above.
+  callOrgIntegrationCapability: 'integration',
+  // Marketplace install/uninstall/entitlement lifecycle (CU-INT §180) —
+  // /marketplace/integrations/*.
+  listMarketplaceEntitlements: 'integration',
+  checkMarketplaceEntitlement: 'integration',
+  installMarketplaceIntegration: 'integration',
+  uninstallMarketplaceIntegration: 'integration',
 
   // Feature flag methods (system-level + experiments)
   getFeatureFlags: 'featureFlag',

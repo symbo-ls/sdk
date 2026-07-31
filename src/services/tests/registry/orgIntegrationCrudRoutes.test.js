@@ -147,6 +147,26 @@ test('orgIntegration rejects unsupported ops', async t => {
   t.end()
 })
 
+// ─── orgIntegration.call — capability dispatch (data plane) ─────────────────
+
+test('orgIntegration.call → integration.callOrgIntegrationCapability with the bare payload', async t => {
+  const calls = []
+  const execute = createEntityDispatcher(makeSdk(calls))
+
+  const payload = {
+    orgId: 'org1',
+    idOrSlug: 'row123',
+    capability: 'sendEmail',
+    args: { to: 'a@b.com' },
+    workspaceId: 'ws9'
+  }
+  await execute('orgIntegration', 'call', payload)
+
+  t.equal(calls[0].method, 'callOrgIntegrationCapability', 'routes to callOrgIntegrationCapability')
+  t.deepEqual(calls[0].args[0], payload, 'payload passes through as the single arg (same as upsert/assignScope)')
+  t.end()
+})
+
 // ─── workspace.settings ──────────────────────────────────────────────────────
 
 test('workspace.settings.update → workspace.updateWorkspaceSettings passes (id, partial)', async t => {

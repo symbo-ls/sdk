@@ -1674,10 +1674,13 @@ const ENTITY_ROUTES = {
   // Ops map to IntegrationService's org-integration CRUD methods. The server
   // gates mutations (upsert/remove/assignScope/reorder) to owner/admin, `list`
   // to any org member, and `kinds` to any authenticated user. This is the
-  // management surface; per-kind data-plane dispatch is the .../call verb.
+  // management surface; `call` is the per-kind data-plane dispatch verb
+  // (gated per-kind server-side — owner/admin by default; instantdb admits
+  // any org member) — see IntegrationService.callOrgIntegrationCapability.
   //   sdk.execute('orgIntegration', 'list', { orgId, scopeType, scopeId })
   //   sdk.execute('orgIntegration', 'upsert', { orgId, kind, slug, config, secret })
   //   sdk.execute('orgIntegration', 'kinds')
+  //   sdk.execute('orgIntegration', 'call', { orgId, idOrSlug, capability, args, workspaceId })
   'orgIntegration': {
     service: 'integration',
     methods: {
@@ -1687,6 +1690,7 @@ const ENTITY_ROUTES = {
       assignScope: 'assignOrgIntegrationScope',
       reorder: 'reorderOrgIntegrations',
       kinds: 'listOrgIntegrationKinds',
+      call: 'callOrgIntegrationCapability',
     },
     argMap: {
       list: (a) => [orgIntegrationListArgs(a)],
@@ -1695,6 +1699,36 @@ const ENTITY_ROUTES = {
       assignScope: argMaps.payload,
       reorder: argMaps.payload,
       kinds: () => [],
+      call: argMaps.payload,
+    },
+  },
+
+  // ─── Marketplace integrations — install/uninstall/entitlement lifecycle ──
+  // /marketplace/integrations/* (CU-INT §180). A distinct resource from
+  // 'marketplace.listings' above (the project-template marketplace) and
+  // from 'orgIntegration' above (the connect/grant/scope CRUD) — this is
+  // the paid-install + entitlement surface that gates 'orgIntegration'
+  // call's workspace_required / no_active_entitlement errors for paid kinds.
+  //   sdk.execute('marketplace.integrations', 'list', { workspaceId })
+  //   sdk.execute('marketplace.integrations', 'get', { workspaceId, kind })
+  //   sdk.execute('marketplace.integrations', 'create', { orgId, workspaceId, kind })
+  //   sdk.execute('marketplace.integrations', 'remove', { orgId, workspaceId, kind })
+  'marketplace.integrations': {
+    service: 'integration',
+    methods: {
+      list: 'listMarketplaceEntitlements',
+      get: 'checkMarketplaceEntitlement',
+      create: 'installMarketplaceIntegration',
+      remove: 'uninstallMarketplaceIntegration',
+    },
+    argMap: {
+      list: (a) => {
+        const bag = marketplaceIntegrationArgs(a)
+        return [bag.workspaceId, { status: bag.status }]
+      },
+      get: (a) => [marketplaceIntegrationArgs(a)],
+      create: argMaps.payload,
+      remove: argMaps.payload,
     },
   },
 
@@ -1742,6 +1776,16 @@ const orgIntegrationListArgs = (a) => ({
     a?.includeParents ?? a?.params?.includeParents ?? a?.filter?.includeParents,
 })
 
+// Query-param bag builder for the marketplace.integrations list/get ops —
+// same dual-shape tolerance as orgIntegrationListArgs (imperative bag OR
+// fetch-adapter { filter, params } pack). `kind` only matters for `get`
+// (entitlement-check); `status` only matters for `list` (entitlements);
+// each argMap picks the field it needs and drops the rest.
+const marketplaceIntegrationArgs = (a) => ({
+  workspaceId: a?.workspaceId ?? a?.params?.workspaceId ?? a?.filter?.workspaceId,
+  kind: a?.kind ?? a?.params?.kind ?? a?.filter?.kind,
+  status: a?.status ?? a?.params?.status ?? a?.filter?.status,
+})
 
 const resolveDottedMethod = (target, methodPath) => {
   if (!target || !methodPath) return null

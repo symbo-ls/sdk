@@ -794,6 +794,76 @@ export class IntegrationService extends BaseService {
     return this._call('listOrgIntegrationKinds', '/org-integrations/kinds')
   }
 
+  // ── Capability dispatch (data plane) ──────────────────────────────────
+  // The CRUD above manages OrgIntegration rows; this is the per-kind call
+  // surface that actually reaches the connected integration. Two server
+  // routes cover it — row-addressed (idOrSlug known) and body-addressed
+  // (kind + scope known) — see callOrgIntegrationCapability below.
+
+  /**
+   * Invoke a capability on an org integration — the per-kind data-plane
+   * dispatcher behind the CRUD above. Routes to the row-addressed endpoint
+   * when `idOrSlug` is given (a Mongo id or slug; `kind` then only
+   * disambiguates an ambiguous slug), else the body-addressed endpoint
+   * keyed on (orgId, kind, scopeType, scopeId, slug).
+   *
+   * `workspaceId` is REQUIRED for a paid kind whose row is not itself
+   * workspace-scoped — the server 400s `workspace_required` without it (it
+   * needs a workspace to resolve the row's WorkspaceMarketplaceEntitlement
+   * against). Always safe to pass when known.
+   *
+   * Mirrors: POST /org-integrations/:idOrSlug/call — idOrSlug given
+   *          POST /org-integrations/call           — idOrSlug omitted
+   *
+   * @param {object} args
+   * @param {string} args.orgId — required; org ObjectId
+   * @param {string} [args.idOrSlug] — Mongo id or slug of the row; when given, uses the row-addressed route
+   * @param {string} [args.kind] — required when idOrSlug is omitted; optional slug-disambiguator otherwise
+   * @param {string} args.capability — required; must be in the kind's catalogue `capabilities`
+   * @param {object} [args.args] — capability-specific arguments; server default {}
+   * @param {string} [args.workspaceId] — required for paid kinds not already workspace-scoped
+   * @param {string} [args.slug] — body-addressed route only; server default 'default'
+   * @param {'org'|'workspace'|'project'} [args.scopeType] — body-addressed route only; server default 'org'
+   * @param {string} [args.scopeId] — body-addressed route only; required when scopeType is workspace|project
+   * @returns {Promise<{ ok: boolean, status: number, result: any, entitlementId?: string }>}
+   */
+  callOrgIntegrationCapability ({
+    orgId,
+    idOrSlug,
+    kind,
+    capability,
+    args,
+    workspaceId,
+    slug,
+    scopeType,
+    scopeId,
+  } = {}) {
+    if (!orgId) throw new Error('orgId is required')
+    if (!capability) throw new Error('capability is required')
+
+    const body = { orgId, capability }
+    if (args !== undefined) body.args = args
+    if (workspaceId !== undefined) body.workspaceId = workspaceId
+
+    if (idOrSlug) {
+      if (kind !== undefined) body.kind = kind
+      return this._call('callOrgIntegrationCapability', `/org-integrations/${idOrSlug}/call`, {
+        method: 'POST',
+        body,
+      })
+    }
+
+    if (!kind) throw new Error('kind is required when idOrSlug is not provided')
+    body.kind = kind
+    if (slug !== undefined) body.slug = slug
+    if (scopeType !== undefined) body.scopeType = scopeType
+    if (scopeId !== undefined) body.scopeId = scopeId
+    return this._call('callOrgIntegrationCapability', '/org-integrations/call', {
+      method: 'POST',
+      body,
+    })
+  }
+
   /**
    * Trigger a manual "Pull now" sync for an org's GitHub Projects v2 board.
    *
@@ -821,5 +891,124 @@ export class IntegrationService extends BaseService {
     } catch (error) {
       throw new Error(`Failed to sync GitHub integration: ${error.message}`, { cause: error })
     }
+  }
+
+  // ==================== MARKETPLACE INTEGRATIONS (/marketplace/integrations/*) ==
+  //
+  // Install / uninstall / entitlement lifecycle for the integrations
+  // marketplace (CU-INT §180). Distinct from the /org-integrations/* CRUD
+  // above: these routes own the paid-kind Stripe Checkout branch and the
+  // WorkspaceMarketplaceEntitlement rows that gate a paid kind's capability
+  // calls (see callOrgIntegrationCapability's `workspace_required` /
+  // `no_active_entitlement` errors above).
+  //
+  // Server gating (server/src/domains/billing/routes/marketplaceIntegrations.js):
+  //   GET  /marketplace/integrations/entitlements       — any org member
+  //   GET  /marketplace/integrations/entitlement-check  — any org member
+  //   POST /marketplace/integrations/install            — owner/admin only
+  //   POST /marketplace/integrations/uninstall          — owner/admin only
+  //
+  // These routes emit BARE payloads (`{ items }`, `{ active, entitlement }`,
+  // `{ ok, ... }`), not the `{ success, data, message }` envelope — `_call`
+  // returns them verbatim, same contract as the org-integration CRUD block.
+
+  /**
+   * List a workspace's marketplace entitlements.
+   *
+   * Mirrors: GET /marketplace/integrations/entitlements?workspaceId=&status=
+   *
+   * @param {string} workspaceId — required; Workspace ObjectId
+   * @param {object} [options]
+   * @param {string} [options.status] — comma-separated status list; server default 'active,trialing'
+   * @returns {Promise<{ items: object[] }>}
+   */
+  listMarketplaceEntitlements (workspaceId, { status } = {}) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    const params = new URLSearchParams()
+    params.set('workspaceId', String(workspaceId))
+    if (status !== undefined) params.set('status', String(status))
+    return this._call('listMarketplaceEntitlements', `/marketplace/integrations/entitlements?${params.toString()}`)
+  }
+
+  /**
+   * Check whether a workspace holds an active entitlement for a marketplace
+   * integration kind — used to decide "Install" vs "Manage" in the UI.
+   *
+   * Mirrors: GET /marketplace/integrations/entitlement-check?workspaceId=&kind=
+   *
+   * @param {object} args
+   * @param {string} args.workspaceId — required
+   * @param {string} args.kind — required
+   * @returns {Promise<{ active: boolean, entitlement: object|null }>}
+   */
+  checkMarketplaceEntitlement ({ workspaceId, kind } = {}) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!kind) throw new Error('kind is required')
+    const params = new URLSearchParams()
+    params.set('workspaceId', String(workspaceId))
+    params.set('kind', String(kind))
+    return this._call('checkMarketplaceEntitlement', `/marketplace/integrations/entitlement-check?${params.toString()}`)
+  }
+
+  /**
+   * Install a marketplace integration into a workspace. Free kinds create
+   * the OrgIntegration row immediately (`installed: 'free'`); paid kinds
+   * with an existing active entitlement do the same
+   * (`installed: 'paid_existing_entitlement'`); paid kinds without one
+   * return a Stripe Checkout URL to redirect the user to
+   * (`installed: 'checkout_required'`).
+   *
+   * Mirrors: POST /marketplace/integrations/install
+   *
+   * @param {object} payload
+   * @param {string} payload.orgId — required
+   * @param {string} payload.workspaceId — required
+   * @param {string} payload.kind — required
+   * @param {string} [payload.slug] — server default 'default'
+   * @param {'org'|'workspace'|'project'} [payload.scopeType] — server default 'workspace'
+   * @param {string} [payload.scopeId] — required when scopeType is 'project'; defaults to workspaceId when scopeType is 'workspace'
+   * @param {string} [payload.displayName]
+   * @param {object} [payload.config]
+   * @param {string} [payload.secret] — write-only; → server secret store, never echoed
+   * @param {string} [payload.successUrl] — paid path Stripe Checkout redirect
+   * @param {string} [payload.cancelUrl] — paid path Stripe Checkout redirect
+   * @returns {Promise<{ ok: boolean, installed: 'free'|'paid_existing_entitlement'|'checkout_required', orgIntegrationId: string, entitlementId?: string, checkoutUrl?: string, sessionId?: string }>}
+   */
+  installMarketplaceIntegration (payload = {}) {
+    if (!payload.orgId) throw new Error('orgId is required')
+    if (!payload.workspaceId) throw new Error('workspaceId is required')
+    if (!payload.kind) throw new Error('kind is required')
+    return this._call('installMarketplaceIntegration', '/marketplace/integrations/install', {
+      method: 'POST',
+      body: payload,
+    })
+  }
+
+  /**
+   * Uninstall a marketplace integration from a workspace. Deletes the
+   * OrgIntegration row + its secret, and (by default) cancels the backing
+   * Stripe subscription for paid kinds — the resulting webhook flips the
+   * entitlement to status='canceled'.
+   *
+   * Mirrors: POST /marketplace/integrations/uninstall
+   *
+   * @param {object} payload
+   * @param {string} payload.orgId — required
+   * @param {string} payload.workspaceId — required
+   * @param {string} payload.kind — required
+   * @param {string} [payload.slug] — server default 'default'
+   * @param {'org'|'workspace'|'project'} [payload.scopeType] — server default 'workspace'
+   * @param {string} [payload.scopeId]
+   * @param {boolean} [payload.cancelSubscription] — server default true
+   * @returns {Promise<{ ok: boolean, uninstalled: boolean, canceledSubscription: boolean, entitlementId: string|null }>}
+   */
+  uninstallMarketplaceIntegration (payload = {}) {
+    if (!payload.orgId) throw new Error('orgId is required')
+    if (!payload.workspaceId) throw new Error('workspaceId is required')
+    if (!payload.kind) throw new Error('kind is required')
+    return this._call('uninstallMarketplaceIntegration', '/marketplace/integrations/uninstall', {
+      method: 'POST',
+      body: payload,
+    })
   }
 }
