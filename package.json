@@ -72,8 +72,7 @@
     "test:favorite-project": "bun run _inf -- tape integration-tests/index.js integration-tests/favorite-project/*.test.js | tap-spec",
     "test:collab": "bun run _inf -- tape integration-tests/index.js integration-tests/collab/*.test.js | tap-spec",
     "test:user": "bun run _inf -- tape integration-tests/index.js integration-tests/user/*.test.js | tap-spec",
-    "test:unit-all": "tape src/services/tests/**/*.test.js | tap-spec",
-    "test:bridges": "tape packages/sdk-bridge/tests/*.test.js | tap-spec"
+    "test:unit-all": "tape src/services/tests/**/*.test.js | tap-spec"
   },
   "dependencies": {
     "@symbo.ls/channels": "^3.14.599",
