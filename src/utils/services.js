@@ -440,6 +440,12 @@ export const SERVICE_METHODS = {
   getScim: 'organization',
   updateScim: 'organization',
 
+  // Single-round-trip boot composite — GET /core/boot. Collapses the
+  // workspace shell's boot-sequence waterfall (getMe -> getOrganization +
+  // listWorkspaces + getWorkspace -> users.members + homeDashboardPrefs)
+  // into one call. See services/BootService.js.
+  boot: 'boot',
+
   createWorkspace: 'workspace',
   listWorkspaces: 'workspace',
   getWorkspace: 'workspace',

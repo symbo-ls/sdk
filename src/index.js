@@ -18,6 +18,7 @@ import {
   createFeatureFlagService,
   createOrganizationService,
   createWorkspaceService,
+  createBootService,
   createWorkspaceProjectService,
   createAiChatService,
   createAiService,
@@ -253,6 +254,15 @@ export class SDK {
       this._initService(
         'workspace',
         createWorkspaceService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      // GET /core/boot single-round-trip composite (me + org + workspaces +
+      // workspace + members + prefs) — see BootService.js.
+      this._initService(
+        'boot',
+        createBootService({
           context: this._context,
           options: this._options
         })
@@ -918,6 +928,7 @@ export {
   createFeatureFlagService,
   createOrganizationService,
   createWorkspaceService,
+  createBootService,
   createWorkspaceProjectService,
   createDocService,
   createResourceLinkService,

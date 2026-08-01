@@ -23,6 +23,11 @@ import { IntegrationService } from './IntegrationService.js'
 import { FeatureFlagService } from './FeatureFlagService.js'
 import { OrganizationService } from './OrganizationService.js'
 import { WorkspaceService } from './WorkspaceService.js'
+// Single-round-trip boot composite (GET /core/boot) — collapses the
+// workspace shell's boot-sequence waterfall (getMe -> getOrganization +
+// listWorkspaces + getWorkspace -> users.members + homeDashboardPrefs) into
+// one call. See BootService.js.
+import { BootService } from './BootService.js'
 // WorkspaceProjectService lives here like every other service. It used to be a
 // separate @symbo.ls/workspace-project-supabase package, split out so the SDK
 // core could stay "Mongo-only" while that package carried the PostgREST
@@ -146,6 +151,10 @@ export const createOrganizationService = config =>
 // enrichment both depend on listWorkspaces here.
 export const createWorkspaceService = config =>
   createService(WorkspaceService, config)
+
+// Boot service factory — GET /core/boot single-round-trip composite.
+export const createBootService = config =>
+  createService(BootService, config)
 
 // Workspace-project service — typed surface against
 // next.api.symbols.app/workspace-project/* (the
@@ -313,6 +322,7 @@ export {
   FeatureFlagService,
   OrganizationService,
   WorkspaceService,
+  BootService,
   WorkspaceProjectService,
   workspaceProjectBaseUrl,
   AiChatService,
