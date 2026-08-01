@@ -1061,34 +1061,6 @@ Available factory functions: `createAuthService`, `createCollabService`, `create
 
 ---
 
-## Federation
-
-`@symbo.ls/sdk/federation` is the abstract multi-Supabase registry primitive.
-
-```javascript
-import { createFederation, createSupabaseClient } from '@symbo.ls/sdk/federation'
-
-const federation = createFederation({
-  projects: {
-    governance: { key: 'governance', url, anonKey, anonJwt },
-    financials: { key: 'financials', url, anonKey, anonJwt }
-  },
-  defaultKey: 'governance'
-})
-
-federation.getClient('governance')      // cached Supabase client
-federation.getDefaultClient()
-federation.listConfiguredProjects()
-federation.forEachClient((client, key) => { ... })
-federation.addProject(key, cfg)
-```
-
-Project-specific federation logic (governance + financials, MCP connectors,
-claim refresh) lives in `@symbo.ls/sdk-bridge`, which imports this abstract
-core.
-
----
-
 ## Validations
 
 ```javascript
