@@ -13,22 +13,17 @@ import { BaseService } from './BaseService.js'
 // changes.
 export class AiChatService extends BaseService {
   // Resolve the { orgId, workspaceId } tenant scope an aiChat call should
-  // carry: an explicit caller-supplied value wins per-key; otherwise falls
-  // back to the SDK's own `_context.activeOrgId` / `_context.activeWorkspaceId`
-  // (kept fresh by sdk.switchOrg/switchWorkspace). Same context-defaulting
-  // approach the chat transport uses (see "workspace-scoping gaps in the chat
-  // transport", sdk@5a8d798) — sent for BOTH keys: `workspaceId` is the new
-  // primary key the server's resolveWorkspaceId reads, `orgId` is kept for
-  // back-compat with today's req.user.activeOrganization inference.
-  // Returns `undefined` for a key when neither source has a value, so
-  // callers can omit the param entirely (byte-identical request when no
-  // tenant context is set anywhere).
+  // carry — thin wrapper over BaseService._resolveScope (shared with
+  // TicketService, AiService, WorkspaceProjectService; see
+  // tickets/sdk.md "hoist a BaseService tenant-scope defaulter"). Sent for
+  // BOTH keys: `workspaceId` is the primary key the server's
+  // resolveWorkspaceId reads, `orgId` is kept for back-compat with today's
+  // req.user.activeOrganization inference. Returns `undefined` for a key
+  // when neither source has a value, so callers can omit the param
+  // entirely (byte-identical request when no tenant context is set
+  // anywhere).
   _aiChatScope(scope) {
-    return {
-      orgId: scope?.orgId ?? this._context?.activeOrgId ?? undefined,
-      workspaceId:
-        scope?.workspaceId ?? this._context?.activeWorkspaceId ?? undefined
-    }
+    return this._resolveScope(scope)
   }
 
   // Append the resolved tenant scope onto `params` and return the `?…` (or '')

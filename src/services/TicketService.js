@@ -18,14 +18,15 @@ export class TicketService extends BaseService {
    * Active-workspace scope. The server's /tickets list, epic-counts and
    * resolutions routes are workspace-scoped (workspaceId REQUIRED — 400
    * without it). Auto-attach the active workspace when the caller didn't
-   * pass one, resolved the same way AiService does: live SDK context first,
-   * then the persisted `activeWorkspace` storage key.
+   * pass one — thin wrapper over BaseService._resolveWorkspaceId (shared
+   * with AiChatService, AiService, WorkspaceProjectService; see
+   * tickets/sdk.md "hoist a BaseService tenant-scope defaulter"): live SDK
+   * context first, then the persisted `activeWorkspace` storage key.
    *
-   * @returns {string|null} Active workspace id, or null when unknown
+   * @returns {string|null|undefined} Active workspace id, or a falsy value when unknown
    */
   _workspaceScope () {
-    if (this._context?.activeWorkspaceId) return this._context.activeWorkspaceId
-    try { return globalThis.localStorage?.getItem('activeWorkspace') || null } catch (_) { return null }
+    return this._resolveWorkspaceId(undefined, { fallbackToStorage: true })
   }
 
   /**

@@ -134,6 +134,61 @@ export class BaseService {
     return this._ready
   }
 
+  // ==================== TENANT-SCOPE DEFAULTING ====================
+  //
+  // Shared `explicit ?? _context.active* ?? …` resolvers. Hoisted from four
+  // hand-rolled per-service versions (AiChatService._aiChatScope,
+  // TicketService._workspaceScope, AiService's inline
+  // `this._context?.activeWorkspaceId || this._readActiveWorkspace()` (6
+  // call-sites), WorkspaceProjectService._chatWorkspaceId) that had drifted
+  // subtly differently — see tickets/sdk.md "hoist a BaseService
+  // tenant-scope defaulter". Each service keeps its own thin,
+  // purpose-named wrapper around these for call-site readability and
+  // back-compat with existing tests; the defaulting logic itself lives
+  // here once.
+
+  // Resolve a single `workspaceId`: explicit arg wins, then the live SDK
+  // context (`_context.activeWorkspaceId`, kept fresh by
+  // sdk.switchOrg/switchWorkspace), then — only when opted in — a
+  // persisted storage fallback for callers that may run before context is
+  // seeded. Returns `undefined` (or storage's own `null`) when nothing
+  // resolves, so callers can omit the param entirely for a byte-identical
+  // request.
+  _resolveWorkspaceId (explicit, { fallbackToStorage = false } = {}) {
+    if (explicit !== undefined && explicit !== null && explicit !== '') return explicit
+    if (this._context?.activeWorkspaceId) return this._context.activeWorkspaceId
+    return fallbackToStorage ? this._readActiveWorkspaceStorage() : undefined
+  }
+
+  // Resolve the { orgId, workspaceId } tenant-scope PAIR a call should
+  // carry: each key defaults independently — explicit per-key value wins,
+  // otherwise falls back to `_context.activeOrgId` / `_context.activeWorkspaceId`.
+  // No storage fallback (context is expected to be live by the time these
+  // calls fire); a key resolves to `undefined` when neither source has a
+  // value, so callers can omit it entirely.
+  _resolveScope (explicit = {}) {
+    return {
+      orgId: explicit?.orgId ?? this._context?.activeOrgId ?? undefined,
+      workspaceId: explicit?.workspaceId ?? this._context?.activeWorkspaceId ?? undefined
+    }
+  }
+
+  // Last-resort workspace pointer for callers that opt into
+  // `fallbackToStorage`. MWT-aware by precedence: with multi-workspace tabs
+  // ON, the tab's own pointer lives in `sessionStorage`; `localStorage`
+  // holds only the shared "last default" a fresh tab seeds from. Reading
+  // localStorage first would answer about whichever workspace the BROWSER
+  // last defaulted to rather than the tab in question. With MWT OFF,
+  // sessionStorage is never written, so this falls through to the
+  // equivalent localStorage read.
+  _readActiveWorkspaceStorage () {
+    try {
+      const perTab = globalThis.sessionStorage?.getItem('activeWorkspace')
+      if (perTab) return perTab
+    } catch (_) { /* sessionStorage unavailable — fall through */ }
+    try { return globalThis.localStorage?.getItem('activeWorkspace') || null } catch (_) { return null }
+  }
+
   // Protected helper methods
   _setReady (ready = true) {
     this._ready = ready

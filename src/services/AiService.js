@@ -414,7 +414,7 @@ export class AiService extends BaseService {
       base = `${this._apiUrl}/core/agents/projects/${encodeURIComponent(projectId)}/conversations`
       cacheKey = `symbols_ai_conversation_project_${projectId}`
     } else {
-      const wsId = this._context?.activeWorkspaceId || this._readActiveWorkspace()
+      const wsId = this._activeWorkspaceId()
       if (!wsId) {
         onError?.(new Error('[sdk.ai] no active workspace or project selected'))
         return () => {}
@@ -723,7 +723,7 @@ export class AiService extends BaseService {
     if (projectId) {
       return `${this._apiUrl}/core/agents/projects/${encodeURIComponent(projectId)}/conversations`
     }
-    const wsId = this._context?.activeWorkspaceId || this._readActiveWorkspace()
+    const wsId = this._activeWorkspaceId()
     if (!wsId) throw new Error('[sdk.ai] no active workspace or project selected')
     return `${this._apiUrl}/core/agents/workspaces/${encodeURIComponent(wsId)}/conversations`
   }
@@ -733,7 +733,7 @@ export class AiService extends BaseService {
   // Powers the /add-app sidebar: created extensions appear and survive reload
   // (clicking re-renders the persisted source into the pane).
   async listExtensions (opts = {}) {
-    const wsId = opts?.workspaceId || this._context?.activeWorkspaceId || this._readActiveWorkspace()
+    const wsId = this._activeWorkspaceId(opts?.workspaceId)
     if (!wsId) return []
     const res = await this._requestExternal(
       `${this._apiUrl}/core/agents/workspaces/${encodeURIComponent(wsId)}/extensions`,
@@ -748,7 +748,7 @@ export class AiService extends BaseService {
   // created { projectId, key, name, route }. The saved extension appears in
   // listExtensions (→ the /add-app sidebar) and survives reload.
   async createExtension (body = {}) {
-    const wsId = body?.workspaceId || this._context?.activeWorkspaceId || this._readActiveWorkspace()
+    const wsId = this._activeWorkspaceId(body?.workspaceId)
     if (!wsId) throw new Error('[sdk.ai] no active workspace for createExtension')
     const res = await this._requestExternal(
       `${this._apiUrl}/core/agents/workspaces/${encodeURIComponent(wsId)}/extensions`,
@@ -764,7 +764,7 @@ export class AiService extends BaseService {
   // Re-save an existing extension's source and/or scope. body:
   // { workspaceId?, source?, scope? }. Owner/admin only (server-enforced).
   async updateExtension (projectId, body = {}) {
-    const wsId = body?.workspaceId || this._context?.activeWorkspaceId || this._readActiveWorkspace()
+    const wsId = this._activeWorkspaceId(body?.workspaceId)
     if (!wsId) throw new Error('[sdk.ai] no active workspace for updateExtension')
     if (!projectId) throw new Error('[sdk.ai] projectId required for updateExtension')
     const res = await this._requestExternal(
@@ -828,7 +828,7 @@ export class AiService extends BaseService {
   async turn (payload = {}, opts = {}) {
     // Workspace-scoped only — the /turn route lives on the workspace, so an
     // active project context must not divert the URL to /projects/:id.
-    const wsId = opts?.workspaceId || this._context?.activeWorkspaceId || this._readActiveWorkspace()
+    const wsId = this._activeWorkspaceId(opts?.workspaceId)
     if (!wsId) throw new Error('[sdk.ai] no active workspace selected')
     const url = `${this._apiUrl}/core/agents/workspaces/${encodeURIComponent(wsId)}/turn`
     const body = {
@@ -910,23 +910,16 @@ export class AiService extends BaseService {
 
   // ==================== STORAGE HELPERS (private) ====================
 
-  // Last-resort workspace pointer (every call site prefers
-  // `_context.activeWorkspaceId`, which boot sets per tab).
-  //
-  // MWT-aware by precedence, without importing the shell's
-  // activeWorkspacePointer (wrong dependency direction — the shell depends on
-  // the SDK): with multi-workspace tabs ON the tab's own pointer lives in
-  // `sessionStorage`, while `localStorage` holds only the shared "last default"
-  // a fresh tab seeds from. Reading localStorage first made the assistant answer
-  // about whichever workspace the BROWSER last defaulted to rather than the tab
-  // you're looking at. With MWT OFF sessionStorage is never written, so this
-  // falls through to the identical localStorage read as before.
-  _readActiveWorkspace () {
-    try {
-      const perTab = globalThis.sessionStorage?.getItem('activeWorkspace')
-      if (perTab) return perTab
-    } catch (_) { /* sessionStorage unavailable — fall through */ }
-    return this._readStorage('activeWorkspace')
+  // Resolve the active workspaceId for a call — thin wrapper over
+  // BaseService._resolveWorkspaceId (shared with AiChatService,
+  // TicketService, WorkspaceProjectService; see tickets/sdk.md "hoist a
+  // BaseService tenant-scope defaulter"): explicit arg wins, then the live
+  // `_context.activeWorkspaceId` (boot sets per tab), then the persisted
+  // storage pointer (MWT-aware: sessionStorage's per-tab pointer before
+  // localStorage's shared "last default" — see
+  // BaseService._readActiveWorkspaceStorage for the precedence rationale).
+  _activeWorkspaceId (explicit) {
+    return this._resolveWorkspaceId(explicit, { fallbackToStorage: true })
   }
 
   _readStorage (key) {

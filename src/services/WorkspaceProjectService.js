@@ -230,19 +230,21 @@ export class WorkspaceProjectService extends BaseService {
   // visible owner. See noSupabasePassthrough.test.js, which fails if they come
   // back.
 
-  // Resolve the workspaceId a chat READ should scope to: an explicit
-  // caller-supplied value wins; otherwise fall back to the SDK's own
-  // `activeWorkspaceId` context (kept fresh by sdk.switchOrg/
-  // switchWorkspace — see the staleness guard in `_resolveAuthHeader`
-  // above). The server-side wrapper still authorizes off the bearer
-  // token; this query param additionally lets it enforce the caller's
-  // chosen tenant instead of trusting whichever workspace the (possibly
-  // stale) federated JWT claims. Returns `undefined` when neither source
-  // has a value, so callers can omit the param entirely.
+  // Resolve the workspaceId a chat READ should scope to — thin wrapper over
+  // BaseService._resolveWorkspaceId (shared with AiChatService, TicketService,
+  // AiService; see tickets/sdk.md "hoist a BaseService tenant-scope
+  // defaulter"): an explicit caller-supplied value wins; otherwise falls
+  // back to the SDK's own `activeWorkspaceId` context (kept fresh by
+  // sdk.switchOrg/switchWorkspace — see the staleness guard in
+  // `_resolveAuthHeader` above). The server-side wrapper still authorizes
+  // off the bearer token; this query param additionally lets it enforce
+  // the caller's chosen tenant instead of trusting whichever workspace the
+  // (possibly stale) federated JWT claims. Returns `undefined` when
+  // neither source has a value, so callers can omit the param entirely.
   // (Named for its chat origin; since the SERVER-CHAT-WS-SCOPE-EXPLICIT
   // sweep it is the generic workspace-scope resolver for every surface.)
   _chatWorkspaceId(workspaceId) {
-    return workspaceId ?? this._context?.activeWorkspaceId ?? undefined
+    return this._resolveWorkspaceId(workspaceId)
   }
 
   // --- Chat -------------------------------------------------------------------
