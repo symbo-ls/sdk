@@ -43,7 +43,15 @@
 // (filter, options) / (id) / (id, payload) pattern.
 // Keys of the list args bag that are NOT filter fields: the two filter packs
 // themselves + the pagination/shape options filterOptions splits out.
-const LIST_OPTION_KEYS = ['filter', 'params', 'options', 'single', 'limit', 'offset', 'order']
+const LIST_OPTION_KEYS = [
+  'filter',
+  'params',
+  'options',
+  'single',
+  'limit',
+  'offset',
+  'order'
+]
 
 const argMaps = {
   // (filter, options) for list — splits the adapter's params/options bag.
@@ -68,14 +76,19 @@ const argMaps = {
     }
     const filter =
       bag.filter ?? bag.params ?? (Object.keys(rest).length ? rest : undefined)
-    return [filter, {
-      single: bag.single,
-      limit: bag.limit,
-      offset: bag.offset,
-      order: bag.order,
-      ...(bag.workspaceId !== undefined ? { workspaceId: bag.workspaceId } : {}),
-      ...(bag.options || {})
-    }]
+    return [
+      filter,
+      {
+        single: bag.single,
+        limit: bag.limit,
+        offset: bag.offset,
+        order: bag.order,
+        ...(bag.workspaceId !== undefined
+          ? { workspaceId: bag.workspaceId }
+          : {}),
+        ...(bag.options || {})
+      }
+    ]
   },
   // (id) for get/remove — accepts id, number, or the bare arg.
   id: (a) => [a?.id ?? a?.number ?? a],
@@ -84,11 +97,13 @@ const argMaps = {
   // (id, payload) for update — id pulled like .id helper, payload like .payload helper.
   idPayload: (a) => [
     a?.id ?? a?.number,
-    a?.payload ?? a?.data ?? (() => {
-      const { id, number, ...rest } = a || {}
-      return rest
-    })()
-  ],
+    a?.payload ??
+      a?.data ??
+      (() => {
+        const { id, number, ...rest } = a || {}
+        return rest
+      })()
+  ]
 }
 
 const CRUD_ARG_MAP = {
@@ -96,7 +111,7 @@ const CRUD_ARG_MAP = {
   get: argMaps.id,
   create: argMaps.payload,
   update: argMaps.idPayload,
-  remove: argMaps.id,
+  remove: argMaps.id
 }
 
 // Workspace-scoped CRUD adapters — the Phase-2/3/4 entity services share ONE
@@ -116,7 +131,8 @@ const _stripWs = (a, extraKeys) => {
   if (!a || typeof a !== 'object' || Array.isArray(a)) return a
   const rest = {}
   for (const k in a) {
-    if (k !== 'workspaceId' && !(extraKeys && extraKeys.includes(k))) rest[k] = a[k]
+    if (k !== 'workspaceId' && !(extraKeys && extraKeys.includes(k)))
+      rest[k] = a[k]
   }
   return rest
 }
@@ -127,7 +143,7 @@ const wsArgMaps = {
     a?.id ?? a?.number,
     a?.payload ?? a?.data ?? _stripWs(a, ['id', 'number']),
     ..._wsOpts(a)
-  ],
+  ]
 }
 
 const WS_CRUD_ARG_MAP = {
@@ -135,7 +151,7 @@ const WS_CRUD_ARG_MAP = {
   get: wsArgMaps.id,
   create: wsArgMaps.payload,
   update: wsArgMaps.idPayload,
-  remove: wsArgMaps.id,
+  remove: wsArgMaps.id
 }
 
 // Party sub-resource body adapter (roles / relationships). Pulls the POST
@@ -143,21 +159,27 @@ const WS_CRUD_ARG_MAP = {
 // packed caller (`{ partyId, payload: { role } }`) and a flat caller
 // (`{ partyId, role, ... }`) yield the right body. Mirrors argMaps.idPayload's
 // rest-strip, keyed on the party's partyId/id instead of id/number.
-const partySubPayload = (a) => a?.payload ?? a?.data ?? (() => {
-  // workspaceId is a routing param (→ `?workspaceId=`), never role/edge body —
-  // strip it here so the sub-resource argMaps can forward it as the opts arg.
-  const { partyId, id, workspaceId, ...rest } = a || {}
-  return rest
-})()
+const partySubPayload = (a) =>
+  a?.payload ??
+  a?.data ??
+  (() => {
+    // workspaceId is a routing param (→ `?workspaceId=`), never role/edge body —
+    // strip it here so the sub-resource argMaps can forward it as the opts arg.
+    const { partyId, id, workspaceId, ...rest } = a || {}
+    return rest
+  })()
 
 // Conversation message body adapter (Phase-4 §6.7). Same shape-tolerance as
 // partySubPayload, keyed on the thread's conversationId/id instead — so both a
 // packed caller (`{ conversationId, payload: { body } }`) and a flat caller
 // (`{ conversationId, direction, body, ... }`) yield the right POST body.
-const conversationMessagePayload = (a) => a?.payload ?? a?.data ?? (() => {
-  const { conversationId, id, ...rest } = a || {}
-  return rest
-})()
+const conversationMessagePayload = (a) =>
+  a?.payload ??
+  a?.data ??
+  (() => {
+    const { conversationId, id, ...rest } = a || {}
+    return rest
+  })()
 
 // §7 spine-capability list adapter. The entity-scoped lists (comments,
 // attachments, watchers, activityEntries, tags — and watchers' unwatch-by-
@@ -170,7 +192,12 @@ const conversationMessagePayload = (a) => a?.payload ?? a?.data ?? (() => {
 // the fetch adapter hoists OUT of `params` to the top level (e.g. `limit`).
 const spineListArgs = (a) => [
   a?.filter ?? a?.params ?? a,
-  { workspaceId: a?.workspaceId, since: a?.since, limit: a?.limit, ...(a?.options || {}) },
+  {
+    workspaceId: a?.workspaceId,
+    since: a?.since,
+    limit: a?.limit,
+    ...(a?.options || {})
+  }
 ]
 
 const ENTITY_ROUTES = {
@@ -184,21 +211,28 @@ const ENTITY_ROUTES = {
   'i18n.translations': {
     service: 'workspaceProject',
     methods: { subscribe: 'i18n.subscribeTranslations' },
-    argMap: { subscribe: (a) => [{ lang: a?.lang ?? a?.filter?.lang, namespace: a?.namespace ?? a?.filter?.namespace }] },
+    argMap: {
+      subscribe: (a) => [
+        {
+          lang: a?.lang ?? a?.filter?.lang,
+          namespace: a?.namespace ?? a?.filter?.namespace
+        }
+      ]
+    }
   },
 
   // ─── Auth + identity ───────────────────────────────────────────────────────
   'auth.session': {
     service: 'auth',
-    methods: { list: 'getSession', subscribe: 'onAuthStateChange' },
+    methods: { list: 'getSession', subscribe: 'onAuthStateChange' }
   },
   'auth.me': {
     service: 'auth',
-    methods: { list: 'getMe', get: 'getMe', update: 'updateMe' },
+    methods: { list: 'getMe', get: 'getMe', update: 'updateMe' }
   },
   'auth.permissions': {
     service: 'auth',
-    methods: { list: 'getPermissions' },
+    methods: { list: 'getPermissions' }
   },
 
   // Intranet members list — replaces 'workspaceProject.people' (Supabase
@@ -215,19 +249,25 @@ const ENTITY_ROUTES = {
       list: (a) =>
         a?.workspaceId || a?.orgSlug
           ? [{ workspaceId: a?.workspaceId, orgSlug: a?.orgSlug }]
-          : [undefined],
-    },
+          : [undefined]
+    }
   },
 
   // ─── Organization (top-level tenant) ──────────────────────────────────────
-  'organization': {
+  organization: {
     service: 'organization',
-    methods: { list: 'list', get: 'get', create: 'create', update: 'update', remove: 'remove' },
+    methods: {
+      list: 'list',
+      get: 'get',
+      create: 'create',
+      update: 'update',
+      remove: 'remove'
+    }
   },
   // Namespaced delete entry — sdk.execute('organizations', 'delete', args).
   // Supports mode/dryRun/cascade opts per ticket #4588 spec.
   // Plural alias 'organizations' matches the spec's sdk.organizations.delete(orgId, opts) form.
-  'organizations': {
+  organizations: {
     service: 'organization',
     methods: { delete: 'deleteOrganization' },
     argMap: {
@@ -243,27 +283,31 @@ const ENTITY_ROUTES = {
   },
   'organization.members': {
     service: 'organization',
-    methods: { list: 'listMembers', create: 'inviteMember', remove: 'removeMember' },
+    methods: {
+      list: 'listMembers',
+      create: 'inviteMember',
+      remove: 'removeMember'
+    }
   },
   'organization.roles': {
     service: 'organization',
-    methods: { list: 'listRoles' },
+    methods: { list: 'listRoles' }
   },
 
   // ─── Workspace (build environment / pricing tier) ─────────────────────────
-  'workspace': {
+  workspace: {
     service: 'workspace',
     methods: {
       list: 'listWorkspaces',
       get: 'getWorkspace',
       create: 'createWorkspace',
       update: 'updateWorkspace',
-      remove: 'deleteWorkspace',
-    },
+      remove: 'deleteWorkspace'
+    }
   },
   'workspace.members': {
     service: 'workspace',
-    methods: { list: 'listWorkspaceMembers', create: 'addWorkspaceMember' },
+    methods: { list: 'listWorkspaceMembers', create: 'addWorkspaceMember' }
   },
   // Merge-safe partial settings write — PATCH /workspaces/:id/settings. The
   // single writer for settings.{workspaceModule,navbar,apps,
@@ -281,12 +325,13 @@ const ENTITY_ROUTES = {
     argMap: {
       update: (a) => [
         a?.workspaceId ?? a?.id,
-        a?.payload ?? (() => {
-          const { workspaceId, id, ...rest } = a || {}
-          return rest
-        })(),
-      ],
-    },
+        a?.payload ??
+          (() => {
+            const { workspaceId, id, ...rest } = a || {}
+            return rest
+          })()
+      ]
+    }
   },
 
   // ─── Tickets (TicketService — Mongo-backed, SSE realtime) ────────────────
@@ -295,7 +340,7 @@ const ENTITY_ROUTES = {
   // `workspaceProject.tickets*` and `workspaceProject.realtime.tickets`
   // dispatcher routes were dropped in Phase 4 (SDK-TICKETS-BACKCOMPAT-DROP);
   // every consumer now talks to TicketService directly.
-  'tickets': {
+  tickets: {
     service: 'tickets',
     methods: {
       list: 'list',
@@ -304,21 +349,21 @@ const ENTITY_ROUTES = {
       update: 'update',
       remove: 'remove',
       assign: 'assign',
-      epicCounts: 'epicCounts',
+      epicCounts: 'epicCounts'
     },
     argMap: {
       ...CRUD_ARG_MAP,
       assign: (a) => [a?.id ?? a?.number, a?.assignee ?? a?.email],
-      epicCounts: () => [],
-    },
+      epicCounts: () => []
+    }
   },
   'tickets.columns': {
     service: 'tickets',
     methods: {
       list: 'columns.list',
-      update: 'columns.update',
+      update: 'columns.update'
     },
-    argMap: { list: () => [], update: argMaps.idPayload },
+    argMap: { list: () => [], update: argMaps.idPayload }
   },
   'tickets.comments': {
     service: 'tickets',
@@ -326,9 +371,9 @@ const ENTITY_ROUTES = {
       list: 'comments.list',
       create: 'comments.create',
       update: 'comments.update',
-      remove: 'comments.remove',
+      remove: 'comments.remove'
     },
-    argMap: CRUD_ARG_MAP,
+    argMap: CRUD_ARG_MAP
   },
 
   // Release coordination (workspace + server + sdk). Two-stage flow on
@@ -344,15 +389,15 @@ const ENTITY_ROUTES = {
       listForStaging: 'release.listForStaging',
       listForProd: 'release.listForProd',
       create: 'release.create',
-      promoteToStaging: 'release.promoteToStaging',
+      promoteToStaging: 'release.promoteToStaging'
     },
     argMap: {
       list: (a) => [a || {}],
       listForStaging: (a) => [a || {}],
       listForProd: (a) => [a || {}],
       create: (a) => [a || {}],
-      promoteToStaging: (a) => [a || {}],
-    },
+      promoteToStaging: (a) => [a || {}]
+    }
   },
 
   // Roadmap planning cycles. Surfaced on /tickets/roadmap. Tickets attach
@@ -369,7 +414,7 @@ const ENTITY_ROUTES = {
       archive: 'cycle.archive',
       listTickets: 'cycle.listTickets',
       addTicket: 'cycle.addTicket',
-      removeTicket: 'cycle.removeTicket',
+      removeTicket: 'cycle.removeTicket'
     },
     argMap: {
       list: (a) => [a || {}],
@@ -380,35 +425,35 @@ const ENTITY_ROUTES = {
       archive: (a) => [a?.cycleId ?? a?.id ?? a],
       listTickets: (a) => [a?.cycleId ?? a?.id ?? a],
       addTicket: (a) => [a?.cycleId ?? a?.id, a?.ticketId],
-      removeTicket: (a) => [a?.cycleId ?? a?.id, a?.ticketId],
-    },
+      removeTicket: (a) => [a?.cycleId ?? a?.id, a?.ticketId]
+    }
   },
 
   // ─── ResourceLinks (junction table, Mongo-backed) ───────────────────────────
   // Cross-resource associations between chat_channel / meet_room /
   // calendar_event rows. Pure flat shape; canonical ordering enforced
   // server-side. UI calls go through `sdk.execute('resourceLinks', 'list')`.
-  'resourceLinks': {
+  resourceLinks: {
     service: 'resourceLinks',
     methods: {
       list: 'list',
       create: 'create',
       remove: 'remove',
-      removeByPair: 'removeByPair',
+      removeByPair: 'removeByPair'
     },
     argMap: {
       list: (a) => [a?.filter ?? a ?? {}],
       create: (a) => [a?.payload ?? a],
       remove: argMaps.id,
-      removeByPair: (a) => [a?.payload ?? a],
-    },
+      removeByPair: (a) => [a?.payload ?? a]
+    }
   },
 
   // ─── Phase-1 spine (WORKSPACE_DATA_MODEL §6.5/§6.8/§7/§8) ────────────────────
   // Top-level Mongo-native entities over the main server's /core/* routes.
   // Declarative `fetch: [{ from: 'workflows', ... }]` + imperative
   // `sdk.execute('proposedActions', 'approve', { id })` both resolve here.
-  'proposedActions': {
+  proposedActions: {
     service: 'proposedActions',
     methods: {
       list: 'list',
@@ -416,7 +461,7 @@ const ENTITY_ROUTES = {
       create: 'propose',
       approve: 'approve',
       reject: 'reject',
-      result: 'setResult',
+      result: 'setResult'
     },
     argMap: {
       list: argMaps.filterOptions,
@@ -424,23 +469,41 @@ const ENTITY_ROUTES = {
       create: argMaps.payload,
       approve: argMaps.id,
       reject: argMaps.id,
-      result: argMaps.idPayload,
-    },
+      result: argMaps.idPayload
+    }
   },
-  'workflows': {
+  workflows: {
     service: 'workflows',
-    methods: { list: 'list', get: 'get', create: 'create', update: 'update', remove: 'remove' },
-    argMap: CRUD_ARG_MAP,
+    methods: {
+      list: 'list',
+      get: 'get',
+      create: 'create',
+      update: 'update',
+      remove: 'remove'
+    },
+    argMap: CRUD_ARG_MAP
   },
-  'fieldDefs': {
+  fieldDefs: {
     service: 'fieldDefs',
-    methods: { list: 'list', get: 'get', create: 'create', update: 'update', remove: 'remove' },
-    argMap: CRUD_ARG_MAP,
+    methods: {
+      list: 'list',
+      get: 'get',
+      create: 'create',
+      update: 'update',
+      remove: 'remove'
+    },
+    argMap: CRUD_ARG_MAP
   },
-  'recordCollections': {
+  recordCollections: {
     service: 'recordCollections',
-    methods: { list: 'list', get: 'get', create: 'create', update: 'update', remove: 'remove' },
-    argMap: CRUD_ARG_MAP,
+    methods: {
+      list: 'list',
+      get: 'get',
+      create: 'create',
+      update: 'update',
+      remove: 'remove'
+    },
+    argMap: CRUD_ARG_MAP
   },
 
   // ─── Phase-2 directory (WORKSPACE_DATA_MODEL §5) ────────────────────────────
@@ -449,7 +512,7 @@ const ENTITY_ROUTES = {
   // peers to the Phase-1 spine. Declarative `fetch: [{ from: 'parties', ... }]`
   // + imperative `sdk.execute('parties', 'addRole', { partyId, role })` both
   // resolve here.
-  'parties': {
+  parties: {
     service: 'parties',
     methods: {
       list: 'list',
@@ -462,7 +525,7 @@ const ENTITY_ROUTES = {
       removeRole: 'removeRole',
       listRelationships: 'listRelationships',
       addRelationship: 'addRelationship',
-      removeRelationship: 'removeRelationship',
+      removeRelationship: 'removeRelationship'
     },
     argMap: {
       ...WS_CRUD_ARG_MAP,
@@ -474,20 +537,44 @@ const ENTITY_ROUTES = {
       // the wrong workspace and 404s ("party not found", tickets/server.md).
       // Absent workspaceId → `_qs(undefined)` adds nothing → prior behavior.
       listRoles: (a) => [a?.partyId ?? a?.id, { workspaceId: a?.workspaceId }],
-      addRole: (a) => [a?.partyId ?? a?.id, partySubPayload(a), { workspaceId: a?.workspaceId }],
-      removeRole: (a) => [a?.partyId ?? a?.id, a?.role, { workspaceId: a?.workspaceId }],
-      listRelationships: (a) => [a?.partyId ?? a?.id, { workspaceId: a?.workspaceId }],
-      addRelationship: (a) => [a?.partyId ?? a?.id, partySubPayload(a), { workspaceId: a?.workspaceId }],
+      addRole: (a) => [
+        a?.partyId ?? a?.id,
+        partySubPayload(a),
+        { workspaceId: a?.workspaceId }
+      ],
+      removeRole: (a) => [
+        a?.partyId ?? a?.id,
+        a?.role,
+        { workspaceId: a?.workspaceId }
+      ],
+      listRelationships: (a) => [
+        a?.partyId ?? a?.id,
+        { workspaceId: a?.workspaceId }
+      ],
+      addRelationship: (a) => [
+        a?.partyId ?? a?.id,
+        partySubPayload(a),
+        { workspaceId: a?.workspaceId }
+      ],
       // removeRelationship targets the edge by its own id (relId), not partyId.
-      removeRelationship: (a) => [a?.relId ?? a?.id, { workspaceId: a?.workspaceId }],
-    },
+      removeRelationship: (a) => [
+        a?.relId ?? a?.id,
+        { workspaceId: a?.workspaceId }
+      ]
+    }
   },
-  'interactions': {
+  interactions: {
     service: 'interactions',
-    methods: { list: 'list', get: 'get', create: 'create', update: 'update', remove: 'remove' },
-    argMap: WS_CRUD_ARG_MAP,
+    methods: {
+      list: 'list',
+      get: 'get',
+      create: 'create',
+      update: 'update',
+      remove: 'remove'
+    },
+    argMap: WS_CRUD_ARG_MAP
   },
-  'segments': {
+  segments: {
     service: 'segments',
     methods: {
       list: 'list',
@@ -495,12 +582,12 @@ const ENTITY_ROUTES = {
       create: 'create',
       update: 'update',
       remove: 'remove',
-      members: 'listMembers',
+      members: 'listMembers'
     },
     argMap: {
       ...WS_CRUD_ARG_MAP,
-      members: argMaps.id,
-    },
+      members: argMaps.id
+    }
   },
 
   // ─── Phase-3 commerce (WORKSPACE_DATA_MODEL §6.2/§6.3/§6.4) ──────────────────
@@ -509,22 +596,40 @@ const ENTITY_ROUTES = {
   // native, peers to the Phase-1 spine + Phase-2 directory. Declarative
   // `fetch: [{ from: 'invoices', ... }]` + imperative
   // `sdk.execute('invoices', 'issue', { id })` both resolve here.
-  'products': {
+  products: {
     service: 'products',
-    methods: { list: 'list', get: 'get', create: 'create', update: 'update', remove: 'remove' },
-    argMap: WS_CRUD_ARG_MAP,
+    methods: {
+      list: 'list',
+      get: 'get',
+      create: 'create',
+      update: 'update',
+      remove: 'remove'
+    },
+    argMap: WS_CRUD_ARG_MAP
   },
-  'prices': {
+  prices: {
     service: 'prices',
-    methods: { list: 'list', get: 'get', create: 'create', update: 'update', remove: 'remove' },
-    argMap: WS_CRUD_ARG_MAP,
+    methods: {
+      list: 'list',
+      get: 'get',
+      create: 'create',
+      update: 'update',
+      remove: 'remove'
+    },
+    argMap: WS_CRUD_ARG_MAP
   },
-  'agreements': {
+  agreements: {
     service: 'agreements',
-    methods: { list: 'list', get: 'get', create: 'create', update: 'update', remove: 'remove' },
-    argMap: WS_CRUD_ARG_MAP,
+    methods: {
+      list: 'list',
+      get: 'get',
+      create: 'create',
+      update: 'update',
+      remove: 'remove'
+    },
+    argMap: WS_CRUD_ARG_MAP
   },
-  'invoices': {
+  invoices: {
     service: 'invoices',
     methods: {
       list: 'list',
@@ -532,25 +637,31 @@ const ENTITY_ROUTES = {
       create: 'create',
       update: 'update',
       remove: 'remove',
-      issue: 'issue',
+      issue: 'issue'
     },
     argMap: {
       ...WS_CRUD_ARG_MAP,
       // issue transitions draft → open by id (no body).
-      issue: argMaps.id,
-    },
+      issue: argMaps.id
+    }
   },
-  'transactions': {
+  transactions: {
     service: 'transactions',
-    methods: { list: 'list', get: 'get', create: 'create', update: 'update', remove: 'remove' },
-    argMap: WS_CRUD_ARG_MAP,
+    methods: {
+      list: 'list',
+      get: 'get',
+      create: 'create',
+      update: 'update',
+      remove: 'remove'
+    },
+    argMap: WS_CRUD_ARG_MAP
   },
   // company-profile is a workspace singleton — no id on get/update; update
   // carries the upsert payload.
-  'companyProfile': {
+  companyProfile: {
     service: 'companyProfile',
     methods: { get: 'get', update: 'update' },
-    argMap: { get: () => [], update: argMaps.payload },
+    argMap: { get: () => [], update: argMaps.payload }
   },
 
   // ─── §7 spine capabilities (WORKSPACE_DATA_MODEL §7.3–§7.6/§6.9) ─────────────
@@ -563,28 +674,33 @@ const ENTITY_ROUTES = {
   // entityType, entityId } }]` + imperative `sdk.execute('watchers', 'watch',
   // { entityRef, level })` both resolve here. The entity-scoped lists thread
   // their filter bag via spineListArgs (see the adapter above).
-  'comments': {
+  comments: {
     service: 'comments',
-    methods: { list: 'list', create: 'create', update: 'update', remove: 'remove' },
+    methods: {
+      list: 'list',
+      create: 'create',
+      update: 'update',
+      remove: 'remove'
+    },
     // No `get` — the server exposes no GET /comments/:id (a comment is only
     // read through the entity-scoped list).
     argMap: {
       list: spineListArgs,
       create: argMaps.payload,
       update: argMaps.idPayload,
-      remove: argMaps.id,
-    },
+      remove: argMaps.id
+    }
   },
-  'attachments': {
+  attachments: {
     service: 'attachments',
     methods: { list: 'list', create: 'create', remove: 'remove' },
     argMap: {
       list: spineListArgs,
       create: argMaps.payload,
-      remove: argMaps.id,
-    },
+      remove: argMaps.id
+    }
   },
-  'watchers': {
+  watchers: {
     service: 'watchers',
     methods: { list: 'list', watch: 'watch', unwatch: 'unwatch' },
     argMap: {
@@ -593,27 +709,33 @@ const ENTITY_ROUTES = {
       // bag (flat or packed), threading workspaceId to the query.
       watch: (a) => [
         a?.payload ?? a?.data ?? a,
-        { workspaceId: a?.workspaceId ?? a?.options?.workspaceId },
+        { workspaceId: a?.workspaceId ?? a?.options?.workspaceId }
       ],
       // unwatch = DELETE by query; pass the { entityType, entityId, userEmail }
       // filter bag — same shape-tolerance as list.
-      unwatch: spineListArgs,
-    },
+      unwatch: spineListArgs
+    }
   },
-  'activityEntries': {
+  activityEntries: {
     service: 'activityEntries',
     // Read-only timeline — list only (emission is server-internal).
     methods: { list: 'list' },
-    argMap: { list: spineListArgs },
+    argMap: { list: spineListArgs }
   },
-  'tags': {
+  tags: {
     service: 'tags',
-    methods: { list: 'list', get: 'get', create: 'create', update: 'update', remove: 'remove' },
+    methods: {
+      list: 'list',
+      get: 'get',
+      create: 'create',
+      update: 'update',
+      remove: 'remove'
+    },
     argMap: {
       ...CRUD_ARG_MAP,
       // list threads the optional { group } filter bag (flat or packed).
-      list: spineListArgs,
-    },
+      list: spineListArgs
+    }
   },
 
   // ─── Phase-4 scheduling (WORKSPACE_DATA_MODEL §6.5/§6.7/§6.8) ────────────────
@@ -626,7 +748,7 @@ const ENTITY_ROUTES = {
   // `sdk.execute('bookings', 'confirm', { id })` /
   // `sdk.execute('conversations', 'addMessage', { conversationId, body })`
   // both resolve here.
-  'bookings': {
+  bookings: {
     service: 'bookings',
     methods: {
       list: 'list',
@@ -634,21 +756,27 @@ const ENTITY_ROUTES = {
       create: 'create',
       update: 'update',
       remove: 'remove',
-      confirm: 'confirm',
+      confirm: 'confirm'
     },
     argMap: {
       ...WS_CRUD_ARG_MAP,
       // confirm transitions requested → confirmed by id (no body); remove is
       // the cancel DELETE (status 'cancelled', never a hard delete).
-      confirm: argMaps.id,
-    },
+      confirm: argMaps.id
+    }
   },
-  'availabilityRules': {
+  availabilityRules: {
     service: 'availabilityRules',
-    methods: { list: 'list', get: 'get', create: 'create', update: 'update', remove: 'remove' },
-    argMap: WS_CRUD_ARG_MAP,
+    methods: {
+      list: 'list',
+      get: 'get',
+      create: 'create',
+      update: 'update',
+      remove: 'remove'
+    },
+    argMap: WS_CRUD_ARG_MAP
   },
-  'conversations': {
+  conversations: {
     service: 'conversations',
     methods: {
       list: 'list',
@@ -657,20 +785,29 @@ const ENTITY_ROUTES = {
       update: 'update',
       remove: 'remove',
       messages: 'listMessages',
-      addMessage: 'addMessage',
+      addMessage: 'addMessage'
     },
     argMap: {
       ...WS_CRUD_ARG_MAP,
       // The message sub-resource threads the parent conversationId first, then
       // (for addMessage) the { direction, from, to, body, attachments } body.
       messages: (a) => [a?.conversationId ?? a?.id],
-      addMessage: (a) => [a?.conversationId ?? a?.id, conversationMessagePayload(a)],
-    },
+      addMessage: (a) => [
+        a?.conversationId ?? a?.id,
+        conversationMessagePayload(a)
+      ]
+    }
   },
-  'recurrences': {
+  recurrences: {
     service: 'recurrences',
-    methods: { list: 'list', get: 'get', create: 'create', update: 'update', remove: 'remove' },
-    argMap: WS_CRUD_ARG_MAP,
+    methods: {
+      list: 'list',
+      get: 'get',
+      create: 'create',
+      update: 'update',
+      remove: 'remove'
+    },
+    argMap: WS_CRUD_ARG_MAP
   },
 
   // ─── Docs (DocService — Mongo-backed, SSE realtime) ─────────────────────────
@@ -678,7 +815,7 @@ const ENTITY_ROUTES = {
   // `sdk.execute('docs', 'list')` / `sdk.docs.*`.
   // `workspaceProject.documents.*` dispatcher routes and back-compat aliases
   // on WorkspaceProjectService delegate here for one cutover cycle (Phase 2).
-  'docs': {
+  docs: {
     service: 'docs',
     methods: {
       list: 'list',
@@ -687,13 +824,13 @@ const ENTITY_ROUTES = {
       update: 'update',
       remove: 'remove',
       tree: 'tree',
-      folders: 'folders',
+      folders: 'folders'
     },
     argMap: {
       ...CRUD_ARG_MAP,
       tree: argMaps.id,
-      folders: () => [],
-    },
+      folders: () => []
+    }
   },
 
   // ─── AI Chat (AiChatService — Mongo-backed assistant) ─────────────────────
@@ -706,50 +843,62 @@ const ENTITY_ROUTES = {
       list: 'threads.list',
       get: 'threads.get',
       create: 'threads.create',
-      remove: 'threads.remove',
+      remove: 'threads.remove'
     },
     argMap: {
       // orgId/workspaceId thread through to AiChatService._aiChatScope,
       // which defaults from _context.activeOrgId/activeWorkspaceId when
       // absent — an explicit-but-undefined key here is behaviorally
       // identical to omitting it (back-compat with pre-scoping callers).
-      list: (a) => [{
-        includeArchived: a?.includeArchived ?? a?.filter?.includeArchived ?? false,
-        orgId: a?.orgId ?? a?.filter?.orgId,
-        workspaceId: a?.workspaceId ?? a?.filter?.workspaceId,
-      }],
-      get: (a) => [a?.id ?? a?.number ?? a, { orgId: a?.orgId, workspaceId: a?.workspaceId }],
-      create: (a) => [a?.payload ?? a?.data ?? a, { orgId: a?.orgId, workspaceId: a?.workspaceId }],
-      remove: argMaps.id,
-    },
+      list: (a) => [
+        {
+          includeArchived:
+            a?.includeArchived ?? a?.filter?.includeArchived ?? false,
+          orgId: a?.orgId ?? a?.filter?.orgId,
+          workspaceId: a?.workspaceId ?? a?.filter?.workspaceId
+        }
+      ],
+      get: (a) => [
+        a?.id ?? a?.number ?? a,
+        { orgId: a?.orgId, workspaceId: a?.workspaceId }
+      ],
+      create: (a) => [
+        a?.payload ?? a?.data ?? a,
+        { orgId: a?.orgId, workspaceId: a?.workspaceId }
+      ],
+      remove: argMaps.id
+    }
   },
   'aiChat.messages': {
     service: 'aiChat',
     methods: { list: 'messages.list' },
     argMap: {
-      list: (a) => [a?.threadId ?? a?.id ?? a?.filter?.threadId, {
-        limit: a?.limit ?? a?.options?.limit,
-        beforeId: a?.beforeId ?? a?.options?.beforeId,
-        orgId: a?.orgId ?? a?.options?.orgId,
-        workspaceId: a?.workspaceId ?? a?.options?.workspaceId,
-      }],
-    },
+      list: (a) => [
+        a?.threadId ?? a?.id ?? a?.filter?.threadId,
+        {
+          limit: a?.limit ?? a?.options?.limit,
+          beforeId: a?.beforeId ?? a?.options?.beforeId,
+          orgId: a?.orgId ?? a?.options?.orgId,
+          workspaceId: a?.workspaceId ?? a?.options?.workspaceId
+        }
+      ]
+    }
   },
   'aiChat.completion': {
     service: 'aiChat',
     methods: { rpc: 'completion' },
-    argMap: { rpc: argMaps.payload },
+    argMap: { rpc: argMaps.payload }
   },
   'aiChat.meetAnalyze': {
     service: 'aiChat',
     methods: { rpc: 'meetAnalyze' },
-    argMap: { rpc: argMaps.payload },
+    argMap: { rpc: argMaps.payload }
   },
   // ─── Analyzed (AnalyzedService — Mongo-backed visitor telemetry) ────────────
   // /core/analyzed/* on the main API server. Peer to sdk.docs / sdk.tickets.
   // Replaces the workspaceProject.analyzed* Supabase surface — see
   // architecture/MODEL.md §"Visitor telemetry — Mongo migration".
-  'analyzed': {
+  analyzed: {
     service: 'analyzed',
     methods: {
       ingest: 'ingest',
@@ -758,7 +907,7 @@ const ENTITY_ROUTES = {
       getSession: 'getSession',
       listEvents: 'listEvents',
       listUsers: 'listUsers',
-      listBugs: 'listBugs',
+      listBugs: 'listBugs'
     },
     argMap: {
       ingest: (a) => [a],
@@ -767,8 +916,8 @@ const ENTITY_ROUTES = {
       getSession: argMaps.id,
       listEvents: (a) => [a?.filter ?? {}, a?.options ?? {}],
       listUsers: (a) => [a?.filter ?? {}, a?.options ?? {}],
-      listBugs: (a) => [a?.filter ?? {}, a?.options ?? {}],
-    },
+      listBugs: (a) => [a?.filter ?? {}, a?.options ?? {}]
+    }
   },
   'docs.documents': {
     service: 'docs',
@@ -776,9 +925,9 @@ const ENTITY_ROUTES = {
       list: 'documents.list',
       get: 'documents.get',
       create: 'documents.create',
-      update: 'documents.update',
+      update: 'documents.update'
     },
-    argMap: CRUD_ARG_MAP,
+    argMap: CRUD_ARG_MAP
   },
   'docs.kbArticles': {
     service: 'docs',
@@ -787,12 +936,12 @@ const ENTITY_ROUTES = {
       get: 'kbArticles.get',
       create: 'kbArticles.create',
       update: 'kbArticles.update',
-      children: 'kbArticles.children',
+      children: 'kbArticles.children'
     },
     argMap: {
       ...CRUD_ARG_MAP,
-      children: argMaps.id,
-    },
+      children: argMaps.id
+    }
   },
   'docs.notes': {
     service: 'docs',
@@ -800,9 +949,9 @@ const ENTITY_ROUTES = {
       list: 'notes.list',
       get: 'notes.get',
       create: 'notes.create',
-      update: 'notes.update',
+      update: 'notes.update'
     },
-    argMap: CRUD_ARG_MAP,
+    argMap: CRUD_ARG_MAP
   },
   'docs.userDocs': {
     service: 'docs',
@@ -810,9 +959,9 @@ const ENTITY_ROUTES = {
       list: 'userDocs.list',
       get: 'userDocs.get',
       create: 'userDocs.create',
-      update: 'userDocs.update',
+      update: 'userDocs.update'
     },
-    argMap: CRUD_ARG_MAP,
+    argMap: CRUD_ARG_MAP
   },
 
   // ─── Workspace Project (activity — chat, calendar, etc.) ─────────
@@ -825,7 +974,7 @@ const ENTITY_ROUTES = {
       list: 'chat.listChannels',
       create: 'chat.createChannel',
       update: 'chat.updateChannel',
-      remove: 'chat.removeChannel',
+      remove: 'chat.removeChannel'
     },
     argMap: {
       // workspaceId is optional — WorkspaceProjectService.chat.listChannels
@@ -833,8 +982,8 @@ const ENTITY_ROUTES = {
       list: (a) => [a?.workspaceId],
       create: argMaps.payload,
       update: argMaps.idPayload,
-      remove: argMaps.id,
-    },
+      remove: argMaps.id
+    }
   },
   'workspaceProject.chat.members': {
     service: 'workspaceProject',
@@ -847,7 +996,7 @@ const ENTITY_ROUTES = {
       update: 'chat.updateMember',
       remove: 'chat.removeMember',
       markRead: 'chat.markRead',
-      mute: 'chat.muteChannel',
+      mute: 'chat.muteChannel'
     },
     argMap: {
       // No silent channel→workspace escalation at the service layer (see
@@ -859,12 +1008,19 @@ const ENTITY_ROUTES = {
         const channelId = a?.channelId ?? a?.filter?.channelId
         return [channelId, { bulk: !channelId, workspaceId: a?.workspaceId }]
       },
-      create: (a) => [a?.channelId, a?.payload ?? { user_id: a?.userId, role: a?.role }],
+      create: (a) => [
+        a?.channelId,
+        a?.payload ?? { user_id: a?.userId, role: a?.role }
+      ],
       update: (a) => [a?.channelId, a?.userId, a?.payload ?? a?.data ?? a],
       remove: (a) => [a?.channelId, a?.userId],
-      markRead: (a) => [a?.channelId, a?.userId, a?.lastReadAt ?? new Date().toISOString()],
-      mute: (a) => [a?.channelId, a?.userId, a?.muted],
-    },
+      markRead: (a) => [
+        a?.channelId,
+        a?.userId,
+        a?.lastReadAt ?? new Date().toISOString()
+      ],
+      mute: (a) => [a?.channelId, a?.userId, a?.muted]
+    }
   },
   'workspaceProject.chat.messages': {
     service: 'workspaceProject',
@@ -880,7 +1036,7 @@ const ENTITY_ROUTES = {
       // Org-admin-only bulk purge of every message in the caller's active
       // workspace (admin gate + workspace scoping enforced by the worker
       // route POST /chat/messages/purge). Takes no args.
-      purge: 'chat.purgeMessages',
+      purge: 'chat.purgeMessages'
     },
     argMap: {
       // Same "no silent escalation" contract as chat.members.list above —
@@ -889,26 +1045,36 @@ const ENTITY_ROUTES = {
       // no channelId keeps working byte-identically for declarative
       // fetch: consumers (the chat page's 500-row bulk load).
       list: (a) => {
-        const channelId = a?.channelId ?? a?.filter?.channelId ?? a?.params?.channelId
+        const channelId =
+          a?.channelId ?? a?.filter?.channelId ?? a?.params?.channelId
         return [
           channelId,
           {
-            single: a?.single, limit: a?.limit, offset: a?.offset, order: a?.order,
+            single: a?.single,
+            limit: a?.limit,
+            offset: a?.offset,
+            order: a?.order,
             ...(a?.options || {}),
             bulk: !channelId,
-            workspaceId: a?.workspaceId ?? a?.options?.workspaceId,
+            workspaceId: a?.workspaceId ?? a?.options?.workspaceId
           }
         ]
       },
-      create: (a) => [a?.channelId ?? a?.filter?.channelId, a?.payload ?? a?.data ?? (() => {
-        const { channelId, filter, options, ...rest } = a || {}; return rest
-      })()],
+      create: (a) => [
+        a?.channelId ?? a?.filter?.channelId,
+        a?.payload ??
+          a?.data ??
+          (() => {
+            const { channelId, filter, options, ...rest } = a || {}
+            return rest
+          })()
+      ],
       update: (a) => [a?.messageId ?? a?.id, a?.payload ?? a?.data ?? a],
       remove: (a) => [a?.messageId ?? a?.id],
       react: (a) => [a?.messageId ?? a?.id, a?.emoji, a?.userId],
       // No args — the active workspace is derived server-side from the token.
-      purge: () => [],
-    },
+      purge: () => []
+    }
   },
   'workspaceProject.chat.mentions': {
     service: 'workspaceProject',
@@ -916,7 +1082,7 @@ const ENTITY_ROUTES = {
       list: 'chat.listMentions',
       // markRead — chat.markMentionsRead(channelId, callerEmail). Bulk-clears
       // every chat_mention row for the caller in one channel.
-      markRead: 'chat.markMentionsRead',
+      markRead: 'chat.markMentionsRead'
     },
     argMap: {
       // workspaceId threads into options.workspaceId — WorkspaceProjectService
@@ -925,13 +1091,16 @@ const ENTITY_ROUTES = {
       list: (a) => [
         a?.filter ?? a?.params,
         {
-          single: a?.single, limit: a?.limit, offset: a?.offset, order: a?.order,
+          single: a?.single,
+          limit: a?.limit,
+          offset: a?.offset,
+          order: a?.order,
           ...(a?.options || {}),
-          workspaceId: a?.workspaceId ?? a?.options?.workspaceId,
+          workspaceId: a?.workspaceId ?? a?.options?.workspaceId
         }
       ],
-      markRead: (a) => [a?.channelId, a?.callerEmail ?? a?.userId ?? a?.email],
-    },
+      markRead: (a) => [a?.channelId, a?.callerEmail ?? a?.userId ?? a?.email]
+    }
   },
   // Full-text search over chat messages — wraps chat_search_messages RPC.
   // Use sdk.execute('workspaceProject.chat.search', 'rpc', { q, callerEmail }).
@@ -939,8 +1108,12 @@ const ENTITY_ROUTES = {
     service: 'workspaceProject',
     methods: { rpc: 'chat.searchMessages' },
     argMap: {
-      rpc: (a) => [a?.q ?? a?.query, a?.callerEmail ?? a?.userId ?? a?.email, a?.workspaceId],
-    },
+      rpc: (a) => [
+        a?.q ?? a?.query,
+        a?.callerEmail ?? a?.userId ?? a?.email,
+        a?.workspaceId
+      ]
+    }
   },
   'workspaceProject.calendar': {
     service: 'workspaceProject',
@@ -949,7 +1122,7 @@ const ENTITY_ROUTES = {
       get: 'calendar.getEvent',
       create: 'calendar.createEvent',
       update: 'calendar.updateEvent',
-      remove: 'calendar.deleteEvent',
+      remove: 'calendar.deleteEvent'
       // upsert op removed 2026-07 — calendar.upsertEvent was the last
       // PostgREST-upsert path on the calendar namespace (dropped with the
       // workspace-project Supabase org retirement).
@@ -959,8 +1132,8 @@ const ENTITY_ROUTES = {
       get: argMaps.id,
       create: argMaps.payload,
       update: argMaps.idPayload,
-      remove: argMaps.id,
-    },
+      remove: argMaps.id
+    }
   },
   // workspaceProject.documents{,.kb,.notes,.userDocuments,.resourceLinks}
   // were removed 2026-05-19. The docs surface migrated from
@@ -981,42 +1154,42 @@ const ENTITY_ROUTES = {
       // wrapper exposes a /notifications/bulk endpoint.
       create: 'notifications.create',
       update: 'notifications.markRead',
-      markAllRead: 'notifications.markAllRead',
+      markAllRead: 'notifications.markAllRead'
     },
     argMap: {
       list: () => [],
       get: () => [],
       create: argMaps.payload,
       update: argMaps.id,
-      markAllRead: () => [],
-    },
+      markAllRead: () => []
+    }
   },
   'workspaceProject.presence': {
     service: 'workspaceProject',
     methods: { list: 'presence.online', update: 'presence.heartbeat' },
-    argMap: { list: () => [], update: argMaps.payload },
+    argMap: { list: () => [], update: argMaps.payload }
   },
   'workspaceProject.people': {
     service: 'workspaceProject',
     methods: {
       list: 'people.list',
       get: 'people.get',
-      me: 'people.me',
+      me: 'people.me'
     },
-    argMap: { list: () => [], get: argMaps.id, me: () => [] },
+    argMap: { list: () => [], get: argMaps.id, me: () => [] }
   },
   'workspaceProject.permissions': {
     service: 'workspaceProject',
     methods: { list: 'permissions.me', rpc: 'permissions.check' },
     argMap: {
       list: () => [],
-      rpc: (a) => [a?.action, a?.resource],
-    },
+      rpc: (a) => [a?.action, a?.resource]
+    }
   },
   'workspaceProject.search': {
     service: 'workspaceProject',
     methods: { rpc: 'search' },
-    argMap: { rpc: (a) => [a?.q ?? a?.query, a?.options ?? a] },
+    argMap: { rpc: (a) => [a?.q ?? a?.query, a?.options ?? a] }
   },
   'workspaceProject.activity': {
     service: 'workspaceProject',
@@ -1031,7 +1204,7 @@ const ENTITY_ROUTES = {
       // Returns aggregated counts grouped by occurred_on / activity_type.
       heatmap: 'activity.heatmap',
       // Per-day events list for the heatmap detail drawer.
-      listEvents: 'activity.listEvents',
+      listEvents: 'activity.listEvents'
     },
     argMap: {
       list: () => [],
@@ -1039,8 +1212,8 @@ const ENTITY_ROUTES = {
       scoringConfig: () => [],
       updateScoringConfig: argMaps.payload,
       heatmap: (a) => [a?.filter ?? a?.params ?? a],
-      listEvents: (a) => [a?.filter ?? a?.params ?? a],
-    },
+      listEvents: (a) => [a?.filter ?? a?.params ?? a]
+    }
   },
   // Sibling route so `fetch: { from: 'workspaceProject.activity.scoringConfig' }`
   // resolves cleanly for the admin scoring page (which expects a `list` op).
@@ -1048,12 +1221,12 @@ const ENTITY_ROUTES = {
     service: 'workspaceProject',
     methods: {
       list: 'activity.scoringConfig',
-      update: 'activity.updateScoringConfig',
+      update: 'activity.updateScoringConfig'
     },
     argMap: {
       list: () => [],
-      update: argMaps.payload,
-    },
+      update: argMaps.payload
+    }
   },
 
   // ─── Standups ─────────────────────────────────────────────────────────────
@@ -1068,17 +1241,22 @@ const ENTITY_ROUTES = {
       // upsert is a separate op so callers don't have to thread an
       // onConflict option through `create`. Maps to the dedicated
       // POST /standups/upsert endpoint server-side.
-      upsert: 'standups.upsert',
+      upsert: 'standups.upsert'
     },
     argMap: {
-      list: (a) => [a?.filter ?? a?.params, {
-        order: a?.order, limit: a?.limit, ...(a?.options || {})
-      }],
+      list: (a) => [
+        a?.filter ?? a?.params,
+        {
+          order: a?.order,
+          limit: a?.limit,
+          ...(a?.options || {})
+        }
+      ],
       get: argMaps.id,
       create: argMaps.payload,
       update: argMaps.idPayload,
-      upsert: argMaps.payload,
-    },
+      upsert: argMaps.payload
+    }
   },
 
   // ─── System health / feature flags ────────────────────────────────────────
@@ -1088,7 +1266,7 @@ const ENTITY_ROUTES = {
   'workspaceProject.system': {
     service: 'workspaceProject',
     methods: { status: 'system.status', featureFlags: 'system.featureFlags' },
-    argMap: { status: () => [], featureFlags: () => [] },
+    argMap: { status: () => [], featureFlags: () => [] }
   },
 
   // ─── Audit log ────────────────────────────────────────────────────────────
@@ -1097,7 +1275,7 @@ const ENTITY_ROUTES = {
   'workspaceProject.auditLog': {
     service: 'workspaceProject',
     methods: { list: 'auditLog.list' },
-    argMap: { list: argMaps.filterOptions },
+    argMap: { list: argMaps.filterOptions }
   },
 
   // workspaceProject.rolePermissions entity removed — dead SDK surface with
@@ -1120,28 +1298,28 @@ const ENTITY_ROUTES = {
   'workspaceProject.analyzed': {
     service: 'analyzed',
     methods: { ingest: 'ingest' },
-    argMap: { ingest: (a) => [a] },
+    argMap: { ingest: (a) => [a] }
   },
   'workspaceProject.analyzedSessions': {
     service: 'analyzed',
     methods: {
       list: 'listSessions',
-      get:  'getSession',
+      get: 'getSession'
     },
     argMap: {
       list: (a) => [a?.filter ?? {}, a?.options ?? a ?? {}],
-      get:  argMaps.id,
-    },
+      get: argMaps.id
+    }
   },
   'workspaceProject.analyzedEvents': {
     service: 'analyzed',
     methods: { list: 'listEvents' },
-    argMap: { list: (a) => [a?.filter ?? {}, a?.options ?? a ?? {}] },
+    argMap: { list: (a) => [a?.filter ?? {}, a?.options ?? a ?? {}] }
   },
   'workspaceProject.analyzedUserSummaries': {
     service: 'analyzed',
     methods: { list: 'listUsers' },
-    argMap: { list: (a) => [a?.filter ?? {}, a?.options ?? a ?? {}] },
+    argMap: { list: (a) => [a?.filter ?? {}, a?.options ?? a ?? {}] }
   },
   'workspaceProject.analyzedBugs': {
     service: 'analyzed',
@@ -1154,14 +1332,14 @@ const ENTITY_ROUTES = {
       list: (a) => [
         {
           projectId: a?.appKey ?? a?.filter?.appKey ?? a?.params?.appKey,
-          since:     a?.since  ?? a?.filter?.since  ?? a?.params?.since,
+          since: a?.since ?? a?.filter?.since ?? a?.params?.since
         },
         {
-          limit:  a?.limit  ?? a?.filter?.limit  ?? a?.params?.limit  ?? 200,
-          offset: a?.offset ?? a?.filter?.offset ?? a?.params?.offset ?? 0,
-        },
-      ],
-    },
+          limit: a?.limit ?? a?.filter?.limit ?? a?.params?.limit ?? 200,
+          offset: a?.offset ?? a?.filter?.offset ?? a?.params?.offset ?? 0
+        }
+      ]
+    }
   },
 
   // Announcements — Mongo cutover complete (2026-07).
@@ -1176,12 +1354,12 @@ const ENTITY_ROUTES = {
       create: 'announcements.create',
       update: 'announcements.update',
       remove: 'announcements.remove',
-      react: 'announcements.toggleReaction',
+      react: 'announcements.toggleReaction'
     },
     argMap: {
       ...CRUD_ARG_MAP,
-      react: (a) => [a?.id ?? a?.number, a?.emoji, a?.reactor],
-    },
+      react: (a) => [a?.id ?? a?.number, a?.emoji, a?.reactor]
+    }
   },
   // workspaceProject.birthdays entity removed 2026-07 — table dropped with the
   // workspace-project Supabase org retirement; the shell derives birthdays
@@ -1194,9 +1372,9 @@ const ENTITY_ROUTES = {
       get: 'fileCanvas.get',
       create: 'fileCanvas.create',
       update: 'fileCanvas.update',
-      remove: 'fileCanvas.remove',
+      remove: 'fileCanvas.remove'
     },
-    argMap: CRUD_ARG_MAP,
+    argMap: CRUD_ARG_MAP
   },
   // Generic record store backing AI-generated extensions (migration 0163,
   // table workspace_records). Standard CRUD; the `collection` namespace rides
@@ -1208,9 +1386,15 @@ const ENTITY_ROUTES = {
       get: 'records.get',
       create: 'records.create',
       update: 'records.update',
-      remove: 'records.remove',
+      remove: 'records.remove'
     },
-    argMap: CRUD_ARG_MAP,
+    // WS map, not plain CRUD: records.* shares the uniform `(…, { workspaceId })`
+    // signature, and CRUD_ARG_MAP gave get/remove NO channel to carry the
+    // routing param at all — on a surface without an SDK-active workspace
+    // (org home) every op threw `no workspace scope`. WS_CRUD_ARG_MAP threads
+    // a caller's top-level workspaceId into the options positional and keeps
+    // it out of the request body.
+    argMap: WS_CRUD_ARG_MAP
   },
   // workspaceProject.companyInfo + workspaceProject.companySettings entities
   // removed 2026-07 — tables dropped with the workspace-project Supabase org
@@ -1224,11 +1408,14 @@ const ENTITY_ROUTES = {
   'workspaceProject.userPreferences': {
     service: 'workspaceProject',
     methods: { get: 'userPreferences.get', update: 'userPreferences.upsert' },
-    argMap: { get: () => [], update: argMaps.payload },
+    argMap: { get: () => [], update: argMaps.payload }
   },
   'workspaceProject.homeDashboardPrefs': {
     service: 'workspaceProject',
-    methods: { get: 'homeDashboardPrefs.get', update: 'homeDashboardPrefs.upsert' },
+    methods: {
+      get: 'homeDashboardPrefs.get',
+      update: 'homeDashboardPrefs.upsert'
+    },
     // `workspaceId` forwards as an explicit scope pin (trailing options arg →
     // query/body param, honored by the server's readExplicitWorkspaceId) so a
     // home-dashboard layout snapshot can never land under a different
@@ -1236,20 +1423,21 @@ const ENTITY_ROUTES = {
     // workspace-switch layout-clobber fix; see workspace pages/main.js
     // _savePrefsPatch).
     argMap: {
-      get: (a) => (a?.workspaceId != null ? [{ workspaceId: a.workspaceId }] : []),
+      get: (a) =>
+        a?.workspaceId != null ? [{ workspaceId: a.workspaceId }] : [],
       update: (a) => [
         a?.payload ?? a?.data ?? a,
-        ...(a?.workspaceId != null ? [{ workspaceId: a.workspaceId }] : []),
-      ],
-    },
+        ...(a?.workspaceId != null ? [{ workspaceId: a.workspaceId }] : [])
+      ]
+    }
   },
   'workspaceProject.workspaceDashboardDefaults': {
     service: 'workspaceProject',
     methods: {
       get: 'workspaceDashboardDefaults.get',
-      update: 'workspaceDashboardDefaults.upsert',
+      update: 'workspaceDashboardDefaults.upsert'
     },
-    argMap: { get: () => [], update: argMaps.payload },
+    argMap: { get: () => [], update: argMaps.payload }
   },
   // workspaceProject.workspaceSettings entity removed 2026-07 — table dropped
   // with the workspace-project Supabase org retirement. The canonical
@@ -1263,9 +1451,9 @@ const ENTITY_ROUTES = {
     methods: {
       list: 'userProfiles.list',
       get: 'userProfiles.get',
-      update: 'userProfiles.update',
+      update: 'userProfiles.update'
     },
-    argMap: { list: () => [], get: argMaps.id, update: argMaps.idPayload },
+    argMap: { list: () => [], get: argMaps.id, update: argMaps.idPayload }
   },
   'workspaceProject.meet.rooms': {
     service: 'workspaceProject',
@@ -1277,7 +1465,7 @@ const ENTITY_ROUTES = {
       // endRoom / reopenRoom — explicit ops so callers don't have to thread
       // ended_at through the generic update payload.
       end: 'meet.endRoom',
-      reopen: 'meet.reopenRoom',
+      reopen: 'meet.reopenRoom'
     },
     argMap: {
       list: () => [],
@@ -1285,13 +1473,13 @@ const ENTITY_ROUTES = {
       create: argMaps.payload,
       update: argMaps.idPayload,
       end: argMaps.id,
-      reopen: argMaps.id,
-    },
+      reopen: argMaps.id
+    }
   },
   'workspaceProject.meet.transcripts': {
     service: 'workspaceProject',
     methods: { list: 'meet.listTranscripts' },
-    argMap: { list: (a) => [a?.roomId ?? a?.filter?.room_id ?? a] },
+    argMap: { list: (a) => [a?.roomId ?? a?.filter?.room_id ?? a] }
   },
   // Members of a single meet room. Read = list members; create =
   // sb.from('meet_room_members').insert() — the createRoom flow auto-adds
@@ -1300,25 +1488,27 @@ const ENTITY_ROUTES = {
     service: 'workspaceProject',
     methods: {
       list: 'meet.listMembers',
-      create: 'meet.addMember',
+      create: 'meet.addMember'
     },
     argMap: {
       list: (a) => [a?.roomId ?? a?.filter?.room_id ?? a],
       create: (a) => [
         a?.roomId ?? a?.filter?.room_id,
-        a?.payload ?? a?.data ?? (() => {
-          const { roomId, filter, options, ...rest } = a || {}
-          return rest
-        })(),
-      ],
-    },
+        a?.payload ??
+          a?.data ??
+          (() => {
+            const { roomId, filter, options, ...rest } = a || {}
+            return rest
+          })()
+      ]
+    }
   },
   // Raw transcribed utterance rows — distinct from the higher-level
   // `meet.transcripts` analysis summaries.
   'workspaceProject.meet.utterances': {
     service: 'workspaceProject',
     methods: { list: 'meet.listUtterances' },
-    argMap: { list: (a) => [a?.roomId ?? a?.filter?.room_id ?? a] },
+    argMap: { list: (a) => [a?.roomId ?? a?.filter?.room_id ?? a] }
   },
   // Combined utterances + cached analysis view. Wraps the
   // get_meet_transcript_view(uuid) RPC so MeetTranscriptPage's `fetch:`
@@ -1327,8 +1517,14 @@ const ENTITY_ROUTES = {
     service: 'workspaceProject',
     methods: { rpc: 'meet.getTranscriptView' },
     argMap: {
-      rpc: (a) => [a?.roomId ?? a?.p_room_id ?? a?.params?.p_room_id ?? a?.filter?.room_id ?? a],
-    },
+      rpc: (a) => [
+        a?.roomId ??
+          a?.p_room_id ??
+          a?.params?.p_room_id ??
+          a?.filter?.room_id ??
+          a
+      ]
+    }
   },
   // Patch applied_items on a meet_transcript_analyses row when the
   // user "applies" a suggestion (saves as note, creates ticket, etc).
@@ -1338,9 +1534,9 @@ const ENTITY_ROUTES = {
     argMap: {
       update: (a) => [
         a?.roomId ?? a?.id ?? a?.filter?.room_id,
-        a?.applied_items ?? a?.appliedItems ?? a?.payload ?? a?.data,
-      ],
-    },
+        a?.applied_items ?? a?.appliedItems ?? a?.payload ?? a?.data
+      ]
+    }
   },
   // Pending guest requests across rooms the host owns. Maps to
   // workspaceProject.meet.waitingRoom() — no args (server scopes by
@@ -1351,13 +1547,13 @@ const ENTITY_ROUTES = {
     methods: {
       list: 'meet.waitingRoom',
       admit: 'meet.admitGuest',
-      reject: 'meet.rejectGuest',
+      reject: 'meet.rejectGuest'
     },
     argMap: {
       list: () => [],
       admit: argMaps.id,
-      reject: argMaps.id,
-    },
+      reject: argMaps.id
+    }
   },
   // workspaceProject.aiChat + workspaceProject.aiMeetAnalyze retired
   // 2026-05-20 — ALL AI inference moved off Supabase. Callers use
@@ -1370,14 +1566,14 @@ const ENTITY_ROUTES = {
   'workspaceProject.meet.token': {
     service: 'workspaceProject',
     methods: { rpc: 'meet.issueToken' },
-    argMap: { rpc: argMaps.payload },
+    argMap: { rpc: argMaps.payload }
   },
   // #2226 — owner remote-mute. mute({ roomId, participantIdentity, trackSid,
   // muted }) → worker /meet/mute → meet-mute edge fn → LiveKit.
   'workspaceProject.meet.mute': {
     service: 'workspaceProject',
     methods: { mute: 'meet.mute' },
-    argMap: { mute: argMaps.payload },
+    argMap: { mute: argMaps.payload }
   },
   // ─── Workspace realtime subscriptions ─────────────────────────────────────
   // Each route exposes a single `subscribe` op so callers can use the
@@ -1388,27 +1584,33 @@ const ENTITY_ROUTES = {
   'workspaceProject.realtime.messages': {
     service: 'workspaceProject',
     methods: { subscribe: 'realtime.subscribeMessages' },
-    argMap: { subscribe: (a) => [{ channelId: a?.channelId ?? a?.filter?.channelId }] },
+    argMap: {
+      subscribe: (a) => [{ channelId: a?.channelId ?? a?.filter?.channelId }]
+    }
   },
   'workspaceProject.realtime.channels': {
     service: 'workspaceProject',
     methods: { subscribe: 'realtime.subscribeChannels' },
-    argMap: { subscribe: (a) => [a?.filter ?? a ?? {}] },
+    argMap: { subscribe: (a) => [a?.filter ?? a ?? {}] }
   },
   'workspaceProject.realtime.mentions': {
     service: 'workspaceProject',
     methods: { subscribe: 'realtime.subscribeMentions' },
-    argMap: { subscribe: (a) => [{ userEmail: a?.userEmail ?? a?.filter?.userEmail }] },
+    argMap: {
+      subscribe: (a) => [{ userEmail: a?.userEmail ?? a?.filter?.userEmail }]
+    }
   },
   'workspaceProject.realtime.notifications': {
     service: 'workspaceProject',
     methods: { subscribe: 'realtime.subscribeNotifications' },
-    argMap: { subscribe: (a) => [{ userEmail: a?.userEmail ?? a?.filter?.userEmail }] },
+    argMap: {
+      subscribe: (a) => [{ userEmail: a?.userEmail ?? a?.filter?.userEmail }]
+    }
   },
   'workspaceProject.realtime.presence': {
     service: 'workspaceProject',
     methods: { subscribe: 'realtime.subscribePresence' },
-    argMap: { subscribe: (a) => [{ scope: a?.scope ?? 'workspace' }] },
+    argMap: { subscribe: (a) => [{ scope: a?.scope ?? 'workspace' }] }
   },
   'workspaceProject.realtime.meet': {
     service: 'workspaceProject',
@@ -1419,12 +1621,14 @@ const ENTITY_ROUTES = {
     // `tables`, which is why some pages silently re-defaulted the kind set —
     // spec §4.2 / §1.4.)
     argMap: {
-      subscribe: (a) => [{
-        roomId: a?.roomId ?? a?.filter?.roomId,
-        workspaceId: a?.workspaceId ?? a?.filter?.workspaceId,
-        tables: a?.tables ?? a?.filter?.tables,
-      }],
-    },
+      subscribe: (a) => [
+        {
+          roomId: a?.roomId ?? a?.filter?.roomId,
+          workspaceId: a?.workspaceId ?? a?.filter?.workspaceId,
+          tables: a?.tables ?? a?.filter?.tables
+        }
+      ]
+    }
   },
   // workspaceProject.realtime.agentMessages removed — agent_messages table
   // dropped in migration 0159; the agentMessages SDK surface had zero callers.
@@ -1439,14 +1643,14 @@ const ENTITY_ROUTES = {
       signedUrl: 'storage.createSignedUrl',
       upload: 'storage.upload',
       remove: 'storage.remove',
-      publicUrl: 'storage.publicUrl',
+      publicUrl: 'storage.publicUrl'
     },
     argMap: {
       signedUrl: (a) => [a?.bucket, a?.path, a?.ttl ?? 300],
       upload: (a) => [a?.bucket, a?.formData ?? a?.payload, a?.options ?? {}],
       remove: (a) => [a?.bucket, a?.path],
-      publicUrl: (a) => [a?.bucket, a?.path],
-    },
+      publicUrl: (a) => [a?.bucket, a?.path]
+    }
   },
 
   // workspaceProject.agentMessages + the bare 'agent_messages' back-compat
@@ -1465,7 +1669,7 @@ const ENTITY_ROUTES = {
   'workspaceProject.query': {
     service: 'workspaceProject',
     methods: { rpc: 'query' },
-    argMap: { rpc: argMaps.payload },
+    argMap: { rpc: argMaps.payload }
   },
 
   // ─── Canvas layout (workspace-level, Mongo-backed) ────────────────────────
@@ -1473,65 +1677,80 @@ const ENTITY_ROUTES = {
   // getProjectData catch-up fetches with O(1) workspace-scoped reads/writes.
   // Server contract: GET/PATCH /workspaces/:wsId/canvas-layout.
   // Socket: 'canvas-layout-changed' on the user-socket workspace channel.
-  'canvasLayout': {
+  canvasLayout: {
     service: 'canvasLayout',
     methods: {
       get: 'getCanvasLayout',
       patch: 'patchCanvasLayout',
-      subscribe: 'subscribeWorkspaceCanvasLayout',
+      subscribe: 'subscribeWorkspaceCanvasLayout'
     },
     argMap: {
       get: (a) => [a?.workspaceId ?? a?.id ?? a],
-      patch: (a) => [a?.workspaceId ?? a?.id, a?.payload ?? (() => {
-        const { workspaceId, id, ...rest } = a || {}
-        return rest
-      })()],
-      subscribe: (a) => [a?.workspaceId ?? a?.id ?? a],
-    },
+      patch: (a) => [
+        a?.workspaceId ?? a?.id,
+        a?.payload ??
+          (() => {
+            const { workspaceId, id, ...rest } = a || {}
+            return rest
+          })()
+      ],
+      subscribe: (a) => [a?.workspaceId ?? a?.id ?? a]
+    }
   },
 
   // ─── Project (canvas build unit) ──────────────────────────────────────────
-  'project': {
+  project: {
     service: 'project',
     methods: {
       list: 'listProjects',
       get: 'getProject',
       create: 'createProject',
       update: 'updateProject',
-      remove: 'deleteProject',
-    },
+      remove: 'deleteProject'
+    }
   },
 
   // ─── Branch / PullRequest ─────────────────────────────────────────────────
   'project.branch': {
     service: 'branch',
-    methods: { list: 'listBranches', get: 'getBranch', create: 'createBranch', remove: 'deleteBranch' },
+    methods: {
+      list: 'listBranches',
+      get: 'getBranch',
+      create: 'createBranch',
+      remove: 'deleteBranch'
+    }
   },
   'project.pullRequest': {
     service: 'pullRequest',
-    methods: { list: 'list', get: 'get', create: 'create', update: 'update', remove: 'remove' },
+    methods: {
+      list: 'list',
+      get: 'get',
+      create: 'create',
+      update: 'update',
+      remove: 'remove'
+    }
   },
 
   // ─── Collab (canvas project realtime via socket.io) ──────────────────────
   'project.collab': {
     service: 'collab',
-    methods: { subscribe: 'subscribe' },
+    methods: { subscribe: 'subscribe' }
   },
 
   // ─── Marketplace ──────────────────────────────────────────────────────────
   'marketplace.listings': {
     service: 'marketplace',
-    methods: { list: 'list', get: 'get' },
+    methods: { list: 'list', get: 'get' }
   },
 
   // ─── File / Screenshot / Misc ─────────────────────────────────────────────
-  'file': {
+  file: {
     service: 'file',
-    methods: { list: 'list', get: 'get', create: 'upload', remove: 'remove' },
+    methods: { list: 'list', get: 'get', create: 'upload', remove: 'remove' }
   },
-  'screenshot': {
+  screenshot: {
     service: 'screenshot',
-    methods: { get: 'getScreenshotByKey' },
+    methods: { get: 'getScreenshotByKey' }
   },
 
   // ─── Builds & Deploy (BuildsService — /core/builds/*, workspace-scoped) ──
@@ -1545,13 +1764,13 @@ const ENTITY_ROUTES = {
     methods: { state: 'getBuildsGitHubState', get: 'getBuildsGitHubState' },
     argMap: {
       state: (a) => [buildsWs(a)],
-      get: (a) => [buildsWs(a)],
-    },
+      get: (a) => [buildsWs(a)]
+    }
   },
   'builds.repos': {
     service: 'builds',
     methods: { list: 'listBuildRepos' },
-    argMap: { list: (a) => [buildsWs(a)] },
+    argMap: { list: (a) => [buildsWs(a)] }
   },
   'builds.imports': {
     service: 'builds',
@@ -1559,14 +1778,14 @@ const ENTITY_ROUTES = {
       list: 'listBuildImports',
       create: 'createBuildImport',
       update: 'updateBuildImport',
-      remove: 'deleteBuildImport',
+      remove: 'deleteBuildImport'
     },
     argMap: {
       list: (a) => [buildsWs(a)],
       create: (a) => [buildsWs(a), a?.payload ?? a?.data],
       update: (a) => [buildsWs(a), buildsRepo(a), a?.payload ?? a?.data ?? {}],
-      remove: (a) => [buildsWs(a), buildsRepo(a)],
-    },
+      remove: (a) => [buildsWs(a), buildsRepo(a)]
+    }
   },
   'builds.builds': {
     service: 'builds',
@@ -1578,15 +1797,23 @@ const ENTITY_ROUTES = {
       // Workspace-level build/deploy status stream — the handlers bag
       // ({ onBuildStatus?, onDeploymentStatus?, workspaceId? }) passes
       // through as the single argument.
-      subscribe: 'subscribeWorkspaceBuilds',
+      subscribe: 'subscribeWorkspaceBuilds'
     },
     argMap: {
       list: (a) => [buildsWs(a), { limit: a?.limit }],
       get: (a) => [buildsWs(a), a?.id ?? a?.buildId ?? a?.params?.id],
-      create: (a) => [buildsWs(a), a?.repoId ?? a?.params?.repoId, a?.payload ?? {}],
-      logs: (a) => [buildsWs(a), buildsBuild(a), { tailBytes: a?.tailBytes ?? a?.params?.tailBytes }],
-      subscribe: (a) => [a],
-    },
+      create: (a) => [
+        buildsWs(a),
+        a?.repoId ?? a?.params?.repoId,
+        a?.payload ?? {}
+      ],
+      logs: (a) => [
+        buildsWs(a),
+        buildsBuild(a),
+        { tailBytes: a?.tailBytes ?? a?.params?.tailBytes }
+      ],
+      subscribe: (a) => [a]
+    }
   },
   'builds.deployments': {
     service: 'builds',
@@ -1601,13 +1828,21 @@ const ENTITY_ROUTES = {
       metrics: 'getDeploymentMetrics',
       // Same workspace-level stream as builds.builds — one subscription
       // covers both build and deployment status events.
-      subscribe: 'subscribeWorkspaceBuilds',
+      subscribe: 'subscribeWorkspaceBuilds'
     },
     argMap: {
       list: (a) => [buildsWs(a)],
-      create: (a) => [buildsWs(a), a?.buildId ?? a?.params?.buildId, a?.payload ?? {}],
+      create: (a) => [
+        buildsWs(a),
+        a?.buildId ?? a?.params?.buildId,
+        a?.payload ?? {}
+      ],
       rollback: (a) => [buildsWs(a), buildsDeployment(a)],
-      scale: (a) => [buildsWs(a), buildsDeployment(a), a?.payload ?? a?.data ?? {}],
+      scale: (a) => [
+        buildsWs(a),
+        buildsDeployment(a),
+        a?.payload ?? a?.data ?? {}
+      ],
       metrics: (a) => [
         buildsWs(a),
         buildsDeployment(a),
@@ -1615,11 +1850,11 @@ const ENTITY_ROUTES = {
           interval: a?.interval ?? a?.params?.interval,
           since: a?.since ?? a?.params?.since,
           until: a?.until ?? a?.params?.until,
-          limit: a?.limit ?? a?.params?.limit,
-        },
+          limit: a?.limit ?? a?.params?.limit
+        }
       ],
-      subscribe: (a) => [a],
-    },
+      subscribe: (a) => [a]
+    }
   },
 
   // ─── Project custom domains (DnsService — PR #440 lifecycle) ─────────────
@@ -1627,7 +1862,7 @@ const ENTITY_ROUTES = {
   // `add` PATCHes { customDomains, envKey? } and returns { domains: { map,
   // statuses }, onboarding[], guidance[], operations, warnings }; `status`
   // walks needs_dns → pending_hostname_validation → pending_ssl → active.
-  'projectDomains': {
+  projectDomains: {
     service: 'dns',
     methods: {
       list: 'getProjectDomains',
@@ -1638,35 +1873,31 @@ const ENTITY_ROUTES = {
       remove: 'removeProjectCustomDomain',
       check: 'checkProjectDomain',
       status: 'getProjectCustomDomainStatus',
-      instructions: 'getProjectDomainInstructions',
+      instructions: 'getProjectDomainInstructions'
     },
     argMap: {
       list: (a) => [domainsProject(a)],
       add: (a) => [
         domainsProject(a),
         a?.customDomains ?? a?.domains ?? a?.hostname,
-        a?.options ?? (a?.envKey ? { envKey: a.envKey } : {}),
+        a?.options ?? (a?.envKey ? { envKey: a.envKey } : {})
       ],
       create: (a) => [
         domainsProject(a),
         a?.customDomains ?? a?.domains ?? a?.hostname,
-        a?.options ?? (a?.envKey ? { envKey: a.envKey } : {}),
+        a?.options ?? (a?.envKey ? { envKey: a.envKey } : {})
       ],
       setup: (a) => [
         domainsProject(a),
         domainsHost(a),
-        a?.options ?? (a?.envKey ? { envKey: a.envKey } : {}),
+        a?.options ?? (a?.envKey ? { envKey: a.envKey } : {})
       ],
-      poll: (a) => [
-        domainsProject(a),
-        domainsHost(a),
-        a?.options ?? {},
-      ],
+      poll: (a) => [domainsProject(a), domainsHost(a), a?.options ?? {}],
       remove: (a) => [domainsProject(a), domainsHost(a)],
       check: (a) => [domainsProject(a), domainsHost(a)],
       status: (a) => [domainsProject(a), domainsHost(a)],
-      instructions: (a) => [domainsProject(a), domainsHost(a)],
-    },
+      instructions: (a) => [domainsProject(a), domainsHost(a)]
+    }
   },
 
   // ─── Org integrations — CRUD (connect / grant / scope lifecycle) ─────────
@@ -1681,7 +1912,7 @@ const ENTITY_ROUTES = {
   //   sdk.execute('orgIntegration', 'upsert', { orgId, kind, slug, config, secret })
   //   sdk.execute('orgIntegration', 'kinds')
   //   sdk.execute('orgIntegration', 'call', { orgId, idOrSlug, capability, args, workspaceId })
-  'orgIntegration': {
+  orgIntegration: {
     service: 'integration',
     methods: {
       list: 'listOrgIntegrations',
@@ -1690,7 +1921,7 @@ const ENTITY_ROUTES = {
       assignScope: 'assignOrgIntegrationScope',
       reorder: 'reorderOrgIntegrations',
       kinds: 'listOrgIntegrationKinds',
-      call: 'callOrgIntegrationCapability',
+      call: 'callOrgIntegrationCapability'
     },
     argMap: {
       list: (a) => [orgIntegrationListArgs(a)],
@@ -1699,8 +1930,8 @@ const ENTITY_ROUTES = {
       assignScope: argMaps.payload,
       reorder: argMaps.payload,
       kinds: () => [],
-      call: argMaps.payload,
-    },
+      call: argMaps.payload
+    }
   },
 
   // ─── Marketplace integrations — install/uninstall/entitlement lifecycle ──
@@ -1719,7 +1950,7 @@ const ENTITY_ROUTES = {
       list: 'listMarketplaceEntitlements',
       get: 'checkMarketplaceEntitlement',
       create: 'installMarketplaceIntegration',
-      remove: 'uninstallMarketplaceIntegration',
+      remove: 'uninstallMarketplaceIntegration'
     },
     argMap: {
       list: (a) => {
@@ -1728,10 +1959,9 @@ const ENTITY_ROUTES = {
       },
       get: (a) => [marketplaceIntegrationArgs(a)],
       create: argMaps.payload,
-      remove: argMaps.payload,
-    },
-  },
-
+      remove: argMaps.payload
+    }
+  }
 }
 
 // Arg resolvers for the builds/projectDomains routes — accept both the
@@ -1773,7 +2003,7 @@ const orgIntegrationListArgs = (a) => ({
   scopeType: a?.scopeType ?? a?.params?.scopeType ?? a?.filter?.scopeType,
   scopeId: a?.scopeId ?? a?.params?.scopeId ?? a?.filter?.scopeId,
   includeParents:
-    a?.includeParents ?? a?.params?.includeParents ?? a?.filter?.includeParents,
+    a?.includeParents ?? a?.params?.includeParents ?? a?.filter?.includeParents
 })
 
 // Query-param bag builder for the marketplace.integrations list/get ops —
@@ -1782,9 +2012,10 @@ const orgIntegrationListArgs = (a) => ({
 // (entitlement-check); `status` only matters for `list` (entitlements);
 // each argMap picks the field it needs and drops the rest.
 const marketplaceIntegrationArgs = (a) => ({
-  workspaceId: a?.workspaceId ?? a?.params?.workspaceId ?? a?.filter?.workspaceId,
+  workspaceId:
+    a?.workspaceId ?? a?.params?.workspaceId ?? a?.filter?.workspaceId,
   kind: a?.kind ?? a?.params?.kind ?? a?.filter?.kind,
-  status: a?.status ?? a?.params?.status ?? a?.filter?.status,
+  status: a?.status ?? a?.params?.status ?? a?.filter?.status
 })
 
 const resolveDottedMethod = (target, methodPath) => {
@@ -1796,7 +2027,8 @@ const resolveDottedMethod = (target, methodPath) => {
 // Useful for plugins/services that want to expose new entities via sdk.execute
 // without modifying this file.
 export const registerEntity = (path, route) => {
-  if (typeof path !== 'string') throw new Error('[registerEntity] path must be a string')
+  if (typeof path !== 'string')
+    throw new Error('[registerEntity] path must be a string')
   if (!route?.service || !route?.methods) {
     throw new Error('[registerEntity] route must have { service, methods }')
   }
@@ -1811,23 +2043,35 @@ export const createEntityDispatcher = (sdk) => {
   const execute = (from, op, args, cb) => {
     const route = ENTITY_ROUTES[from]
     if (!route) {
-      throw new Error(`[sdk.execute] Unknown entity: '${from}'. Known: ${Object.keys(ENTITY_ROUTES).join(', ')}`)
+      throw new Error(
+        `[sdk.execute] Unknown entity: '${from}'. Known: ${Object.keys(
+          ENTITY_ROUTES
+        ).join(', ')}`
+      )
     }
     const methodPath = route.methods[op]
     if (!methodPath) {
-      throw new Error(`[sdk.execute] Entity '${from}' does not support op '${op}'. Supported ops: ${Object.keys(route.methods).join(', ')}`)
+      throw new Error(
+        `[sdk.execute] Entity '${from}' does not support op '${op}'. Supported ops: ${Object.keys(
+          route.methods
+        ).join(', ')}`
+      )
     }
 
     let service
     try {
       service = sdk.getService(route.service)
     } catch (err) {
-      throw new Error(`[sdk.execute] Service '${route.service}' for entity '${from}' is not available: ${err.message}`)
+      throw new Error(
+        `[sdk.execute] Service '${route.service}' for entity '${from}' is not available: ${err.message}`
+      )
     }
 
     const fn = resolveDottedMethod(service, methodPath)
     if (typeof fn !== 'function') {
-      throw new Error(`[sdk.execute] Method '${methodPath}' not found on service '${route.service}' (entity '${from}', op '${op}')`)
+      throw new Error(
+        `[sdk.execute] Method '${methodPath}' not found on service '${route.service}' (entity '${from}', op '${op}')`
+      )
     }
 
     // Resolve positional args via the route's argMap if present. Otherwise
