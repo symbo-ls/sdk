@@ -19,6 +19,7 @@ import {
   createOrganizationService,
   createWorkspaceService,
   createBootService,
+  createMcpConnectorService,
   createWorkspaceProjectService,
   createAiChatService,
   createAiService,
@@ -263,6 +264,15 @@ export class SDK {
       this._initService(
         'boot',
         createBootService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      // /core/mcp-connectors/* — workspace MCP registry (see
+      // McpConnectorService.js; replaces shared/mcp's raw _serverFetch).
+      this._initService(
+        'mcpConnector',
+        createMcpConnectorService({
           context: this._context,
           options: this._options
         })
@@ -951,6 +961,7 @@ export {
   createOrganizationService,
   createWorkspaceService,
   createBootService,
+  createMcpConnectorService,
   createWorkspaceProjectService,
   createDocService,
   createResourceLinkService,

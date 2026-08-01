@@ -28,13 +28,19 @@ import { WorkspaceService } from './WorkspaceService.js'
 // listWorkspaces + getWorkspace -> users.members + homeDashboardPrefs) into
 // one call. See BootService.js.
 import { BootService } from './BootService.js'
+// /core/mcp-connectors/* — workspace MCP registry. Replaces shared/mcp's
+// raw _serverFetch (integrations remediation #6). See McpConnectorService.js.
+import { McpConnectorService } from './McpConnectorService.js'
 // WorkspaceProjectService lives here like every other service. It used to be a
 // separate @symbo.ls/workspace-project-supabase package, split out so the SDK
 // core could stay "Mongo-only" while that package carried the PostgREST
 // passthrough machinery. That machinery is deleted, so the split had nothing
 // left to isolate and the name described something that no longer existed.
 // (Re-exported from the block at the bottom, like its peers.)
-import { WorkspaceProjectService, workspaceProjectBaseUrl } from './WorkspaceProjectService.js'
+import {
+  WorkspaceProjectService,
+  workspaceProjectBaseUrl
+} from './WorkspaceProjectService.js'
 import { AllocationRuleService } from './AllocationRuleService.js'
 import { SharedAssetService } from './SharedAssetService.js'
 import { CreditsService } from './CreditsService.js'
@@ -94,76 +100,75 @@ import { StorefrontService } from './StorefrontService.js'
 const createService = (ServiceClass, config) => new ServiceClass(config)
 
 // Export service creators
-export const createAuthService = config => createService(AuthService, config)
+export const createAuthService = (config) => createService(AuthService, config)
 
-export const createCollabService = config =>
+export const createCollabService = (config) =>
   createService(CollabService, config)
 
-export const createProjectService = config =>
+export const createProjectService = (config) =>
   createService(ProjectService, config)
 
-export const createPlanService = config =>
-  createService(PlanService, config)
+export const createPlanService = (config) => createService(PlanService, config)
 
-export const createSubscriptionService = config =>
+export const createSubscriptionService = (config) =>
   createService(SubscriptionService, config)
 
-export const createFileService = config =>
-  createService(FileService, config)
+export const createFileService = (config) => createService(FileService, config)
 
-export const createPaymentService = config =>
+export const createPaymentService = (config) =>
   createService(PaymentService, config)
 
-export const createDnsService = config =>
-  createService(DnsService, config)
+export const createDnsService = (config) => createService(DnsService, config)
 
-export const createBranchService = config =>
+export const createBranchService = (config) =>
   createService(BranchService, config)
 
-export const createPullRequestService = config =>
+export const createPullRequestService = (config) =>
   createService(PullRequestService, config)
 
-export const createAdminService = config =>
+export const createAdminService = (config) =>
   createService(AdminService, config)
 
-export const createScreenshotService = config =>
+export const createScreenshotService = (config) =>
   createService(ScreenshotService, config)
 
-export const createTrackingService = config =>
+export const createTrackingService = (config) =>
   createService(TrackingService, config)
 
-export const createWaitlistService = config =>
+export const createWaitlistService = (config) =>
   createService(WaitlistService, config)
 
-export const createMetricsService = config =>
+export const createMetricsService = (config) =>
   createService(MetricsService, config)
 
-export const createIntegrationService = config =>
+export const createIntegrationService = (config) =>
   createService(IntegrationService, config)
 
-export const createFeatureFlagService = config =>
+export const createFeatureFlagService = (config) =>
   createService(FeatureFlagService, config)
 
-export const createOrganizationService = config =>
+export const createOrganizationService = (config) =>
   createService(OrganizationService, config)
 
 // Workspace service factory. Intranet org switcher + /data/organizations
 // enrichment both depend on listWorkspaces here.
-export const createWorkspaceService = config =>
+export const createWorkspaceService = (config) =>
   createService(WorkspaceService, config)
 
 // Boot service factory — GET /core/boot single-round-trip composite.
-export const createBootService = config =>
-  createService(BootService, config)
+export const createBootService = (config) => createService(BootService, config)
+
+export const createMcpConnectorService = (config) =>
+  createService(McpConnectorService, config)
 
 // Workspace-project service — typed surface against
 // next.api.symbols.app/workspace-project/* (the
 // @symbo-ls/server-workspace-project wrapper). Distinct from
 // WorkspaceService (workspace-org CRUD via /core/workspaces).
-export const createWorkspaceProjectService = config =>
+export const createWorkspaceProjectService = (config) =>
   createService(WorkspaceProjectService, config)
 
-export const createAiChatService = config =>
+export const createAiChatService = (config) =>
   createService(AiChatService, config)
 
 // Unified AI surface — single entry point for every UI consumer
@@ -171,135 +176,131 @@ export const createAiChatService = config =>
 // extension). Routes by provider mode (simone / providers / local),
 // classifies intent (build / answer / action), and respects authMode
 // (ask / auto). See AiService.js for the full contract.
-export const createAiService = config =>
-  createService(AiService, config)
+export const createAiService = (config) => createService(AiService, config)
 
-export const createDocService = config =>
-  createService(DocService, config)
+export const createDocService = (config) => createService(DocService, config)
 
-export const createTicketService = config =>
+export const createTicketService = (config) =>
   createService(TicketService, config)
 
-export const createAnalyzedService = config =>
+export const createAnalyzedService = (config) =>
   createService(AnalyzedService, config)
 
-export const createResourceLinkService = config =>
+export const createResourceLinkService = (config) =>
   createService(ResourceLinkService, config)
 
-export const createAllocationRuleService = config =>
+export const createAllocationRuleService = (config) =>
   createService(AllocationRuleService, config)
 
-export const createSharedAssetService = config =>
+export const createSharedAssetService = (config) =>
   createService(SharedAssetService, config)
 
-export const createCreditsService = config =>
+export const createCreditsService = (config) =>
   createService(CreditsService, config)
 
-export const createCanvasLayoutService = config =>
+export const createCanvasLayoutService = (config) =>
   createService(CanvasLayoutService, config)
 
 // Builds & Deploy — workspace-scoped /core/builds/* pipeline (GitHub App →
 // Cloud Build/buildpacks → Cloud Run). Backs the /infra deployment canvas.
-export const createBuildsService = config =>
+export const createBuildsService = (config) =>
   createService(BuildsService, config)
 
 // Public storefront catalog service — see StorefrontService.js header.
-export const createStorefrontService = config =>
+export const createStorefrontService = (config) =>
   createService(StorefrontService, config)
 
 // Meet service — guest waiting-room flow (anonymous) + host-side remote
 // mute against /core/meet/* on the main server.
-export const createMeetService = config =>
-  createService(MeetService, config)
+export const createMeetService = (config) => createService(MeetService, config)
 
 // Calendar service — workspace-scoped calendar events against
 // /core/calendar/events on the main server. Writes are owner/admin-gated
 // server-side (calendar-agnostic-spec.md §7).
-export const createCalendarService = config =>
+export const createCalendarService = (config) =>
   createService(CalendarService, config)
 
 // Phase-1 spine factories — the polymorphic-spine surfaces every entity
 // (shared + records) hangs on. See WORKSPACE_DATA_MODEL §7.
-export const createProposedActionService = config =>
+export const createProposedActionService = (config) =>
   createService(ProposedActionService, config)
 
-export const createWorkflowService = config =>
+export const createWorkflowService = (config) =>
   createService(WorkflowService, config)
 
-export const createFieldDefService = config =>
+export const createFieldDefService = (config) =>
   createService(FieldDefService, config)
 
-export const createRecordCollectionService = config =>
+export const createRecordCollectionService = (config) =>
   createService(RecordCollectionService, config)
 
 // Phase-2 directory factories — the Party Directory surfaces (parties +
 // their roles/relationships sub-resources, interactions, segments). See
 // WORKSPACE_DATA_MODEL §5.
-export const createPartyService = config =>
+export const createPartyService = (config) =>
   createService(PartyService, config)
 
-export const createInteractionService = config =>
+export const createInteractionService = (config) =>
   createService(InteractionService, config)
 
-export const createSegmentService = config =>
+export const createSegmentService = (config) =>
   createService(SegmentService, config)
 
 // Phase-3 commerce factories — the tenant-finance surfaces: catalog
 // (products + prices), company-profile (workspace singleton), agreements,
 // invoices (+ /issue + void-delete), transactions (+ allocation settlement).
 // See WORKSPACE_DATA_MODEL §6.2/§6.3/§6.4.
-export const createProductService = config =>
+export const createProductService = (config) =>
   createService(ProductService, config)
 
-export const createPriceService = config =>
+export const createPriceService = (config) =>
   createService(PriceService, config)
 
-export const createCompanyProfileService = config =>
+export const createCompanyProfileService = (config) =>
   createService(CompanyProfileService, config)
 
-export const createAgreementService = config =>
+export const createAgreementService = (config) =>
   createService(AgreementService, config)
 
-export const createInvoiceService = config =>
+export const createInvoiceService = (config) =>
   createService(InvoiceService, config)
 
-export const createTransactionService = config =>
+export const createTransactionService = (config) =>
   createService(TransactionService, config)
 
 // §7 spine-capability factories — comments, attachments, watchers,
 // activity-entries (read-only), tags. All keyed on entityRef { type, id };
 // reached via sdk.execute('comments', …) like parties/workflows/invoices.
 // See WORKSPACE_DATA_MODEL §7.3–§7.6/§6.9.
-export const createCommentService = config =>
+export const createCommentService = (config) =>
   createService(CommentService, config)
 
-export const createAttachmentService = config =>
+export const createAttachmentService = (config) =>
   createService(AttachmentService, config)
 
-export const createWatcherService = config =>
+export const createWatcherService = (config) =>
   createService(WatcherService, config)
 
-export const createActivityEntryService = config =>
+export const createActivityEntryService = (config) =>
   createService(ActivityEntryService, config)
 
-export const createTagService = config =>
-  createService(TagService, config)
+export const createTagService = (config) => createService(TagService, config)
 
 // Phase-4 scheduling factories — bookings (+ /confirm + cancel-delete),
 // availability-rules (per-user freebusy), conversations (+ /messages sub-
 // resource), recurrences (generic rrule scheduler). All Mongo-native; reached
 // via sdk.execute('bookings', …) like parties/invoices/comments. See
 // WORKSPACE_DATA_MODEL §6.5/§6.7/§6.8.
-export const createBookingService = config =>
+export const createBookingService = (config) =>
   createService(BookingService, config)
 
-export const createAvailabilityRuleService = config =>
+export const createAvailabilityRuleService = (config) =>
   createService(AvailabilityRuleService, config)
 
-export const createConversationService = config =>
+export const createConversationService = (config) =>
   createService(ConversationService, config)
 
-export const createRecurrenceService = config =>
+export const createRecurrenceService = (config) =>
   createService(RecurrenceService, config)
 
 export {
@@ -323,6 +324,7 @@ export {
   OrganizationService,
   WorkspaceService,
   BootService,
+  McpConnectorService,
   WorkspaceProjectService,
   workspaceProjectBaseUrl,
   AiChatService,

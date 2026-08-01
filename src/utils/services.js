@@ -448,6 +448,17 @@ export const SERVICE_METHODS = {
   // into one call. See services/BootService.js.
   boot: 'boot',
 
+  // Workspace MCP registry — /core/mcp-connectors/*. Flat methods are
+  // namespaced (`mcpConnector*`) because `list`/`create`/`get` are far too
+  // generic for the flat SDK surface. See services/McpConnectorService.js.
+  mcpConnectorList: 'mcpConnector',
+  mcpConnectorGet: 'mcpConnector',
+  mcpConnectorCreate: 'mcpConnector',
+  mcpConnectorUpdate: 'mcpConnector',
+  mcpConnectorDiscover: 'mcpConnector',
+  mcpConnectorSetStatus: 'mcpConnector',
+  mcpConnectorRemove: 'mcpConnector',
+
   createWorkspace: 'workspace',
   listWorkspaces: 'workspace',
   getWorkspace: 'workspace',
