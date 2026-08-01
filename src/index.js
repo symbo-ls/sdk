@@ -20,6 +20,7 @@ import {
   createWorkspaceService,
   createBootService,
   createMcpConnectorService,
+  createVoiceService,
   createWorkspaceProjectService,
   createAiChatService,
   createAiService,
@@ -273,6 +274,14 @@ export class SDK {
       this._initService(
         'mcpConnector',
         createMcpConnectorService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      // /core/ai/voice/* — voice v2 STT/TTS (see VoiceService.js).
+      this._initService(
+        'voice',
+        createVoiceService({
           context: this._context,
           options: this._options
         })
@@ -962,6 +971,7 @@ export {
   createWorkspaceService,
   createBootService,
   createMcpConnectorService,
+  createVoiceService,
   createWorkspaceProjectService,
   createDocService,
   createResourceLinkService,

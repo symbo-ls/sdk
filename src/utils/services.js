@@ -459,6 +459,12 @@ export const SERVICE_METHODS = {
   mcpConnectorSetStatus: 'mcpConnector',
   mcpConnectorRemove: 'mcpConnector',
 
+  // Voice v2 — /core/ai/voice/*. `voiceTts` resolves to a STREAMING Response
+  // (not JSON) so the caller can start playback before the clip finishes;
+  // see services/VoiceService.js.
+  voiceTranscribe: 'voice',
+  voiceTts: 'voice',
+
   createWorkspace: 'workspace',
   listWorkspaces: 'workspace',
   getWorkspace: 'workspace',

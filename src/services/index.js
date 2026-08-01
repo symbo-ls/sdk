@@ -31,6 +31,9 @@ import { BootService } from './BootService.js'
 // /core/mcp-connectors/* — workspace MCP registry. Replaces shared/mcp's
 // raw _serverFetch (integrations remediation #6). See McpConnectorService.js.
 import { McpConnectorService } from './McpConnectorService.js'
+// /core/ai/voice/* — voice v2 STT (Groq whisper) + TTS (ElevenLabs) for the
+// workspace voice overlay. See VoiceService.js + architecture/VOICE_COMMANDS.md.
+import { VoiceService } from './VoiceService.js'
 // WorkspaceProjectService lives here like every other service. It used to be a
 // separate @symbo.ls/workspace-project-supabase package, split out so the SDK
 // core could stay "Mongo-only" while that package carried the PostgREST
@@ -160,6 +163,9 @@ export const createBootService = (config) => createService(BootService, config)
 
 export const createMcpConnectorService = (config) =>
   createService(McpConnectorService, config)
+
+export const createVoiceService = (config) =>
+  createService(VoiceService, config)
 
 // Workspace-project service — typed surface against
 // next.api.symbols.app/workspace-project/* (the
@@ -325,6 +331,7 @@ export {
   WorkspaceService,
   BootService,
   McpConnectorService,
+  VoiceService,
   WorkspaceProjectService,
   workspaceProjectBaseUrl,
   AiChatService,
