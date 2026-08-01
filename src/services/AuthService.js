@@ -63,8 +63,11 @@ export class AuthService extends BaseService {
         // Register username.symbo.ls DNS records
         const username = response.data?.user?.username
         if (username) {
-          this._createSubdomainRecords(username).catch(err => {
-            logger.warn('Failed to create DNS records for user:', err?.message || err)
+          this._createSubdomainRecords(username).catch((err) => {
+            logger.warn(
+              'Failed to create DNS records for user:',
+              err?.message || err
+            )
           })
         }
 
@@ -124,7 +127,7 @@ export class AuthService extends BaseService {
     }
   }
 
-  async startDemo ({ email } = {}) {
+  async startDemo({ email } = {}) {
     try {
       const response = await this._request('/demo/start', {
         method: 'POST',
@@ -149,7 +152,7 @@ export class AuthService extends BaseService {
     }
   }
 
-  async enterDemo () {
+  async enterDemo() {
     try {
       const response = await this._request('/demo/enter', {
         method: 'POST',
@@ -174,14 +177,14 @@ export class AuthService extends BaseService {
     }
   }
 
-  async claimDemoAccount ({ email, password, name } = {}) {
+  async claimDemoAccount({ email, password, name } = {}) {
     return this._call('claimDemoAccount', '/demo/claim', {
       method: 'POST',
       body: { email, password, name }
     })
   }
 
-  async cloneDemoWorkspace ({ demoOrgId } = {}) {
+  async cloneDemoWorkspace({ demoOrgId } = {}) {
     return this._call('cloneDemoWorkspace', '/demo/clone', {
       method: 'POST',
       body: { demoOrgId }
@@ -227,13 +230,18 @@ export class AuthService extends BaseService {
       }
       throw new Error(response.message)
     } catch (error) {
-      throw new Error(`Token refresh failed: ${error.message}`, { cause: error })
+      throw new Error(`Token refresh failed: ${error.message}`, {
+        cause: error
+      })
     }
   }
 
   async googleAuth(idToken, inviteToken = null, options = {}) {
     try {
-      const { payload, session } = this._preparePluginPayload({ idToken }, options.session)
+      const { payload, session } = this._preparePluginPayload(
+        { idToken },
+        options.session
+      )
       if (inviteToken) {
         payload.inviteToken = inviteToken
       }
@@ -274,7 +282,10 @@ export class AuthService extends BaseService {
 
   async githubAuth(code, inviteToken = null, options = {}) {
     try {
-      const { payload, session } = this._preparePluginPayload({ code }, options.session)
+      const { payload, session } = this._preparePluginPayload(
+        { code },
+        options.session
+      )
       if (inviteToken) {
         payload.inviteToken = inviteToken
       }
@@ -313,7 +324,12 @@ export class AuthService extends BaseService {
     }
   }
 
-  async googleAuthCallback (code, redirectUri, inviteToken = null, options = {}) {
+  async googleAuthCallback(
+    code,
+    redirectUri,
+    inviteToken = null,
+    options = {}
+  ) {
     try {
       const { payload: body, session } = this._preparePluginPayload(
         { code, redirectUri },
@@ -353,7 +369,9 @@ export class AuthService extends BaseService {
       }
       throw new Error(response.message)
     } catch (error) {
-      throw new Error(`Google auth callback failed: ${error.message}`, { cause: error })
+      throw new Error(`Google auth callback failed: ${error.message}`, {
+        cause: error
+      })
     }
   }
 
@@ -422,7 +440,9 @@ export class AuthService extends BaseService {
       }
       throw new Error(response.message)
     } catch (error) {
-      throw new Error(`Password reset request failed: ${error.message}`, { cause: error })
+      throw new Error(`Password reset request failed: ${error.message}`, {
+        cause: error
+      })
     }
   }
 
@@ -438,7 +458,9 @@ export class AuthService extends BaseService {
       }
       throw new Error(response.message)
     } catch (error) {
-      throw new Error(`Password reset confirmation failed: ${error.message}`, { cause: error })
+      throw new Error(`Password reset confirmation failed: ${error.message}`, {
+        cause: error
+      })
     }
   }
 
@@ -454,7 +476,9 @@ export class AuthService extends BaseService {
       }
       throw new Error(response.message)
     } catch (error) {
-      throw new Error(`Registration confirmation failed: ${error.message}`, { cause: error })
+      throw new Error(`Registration confirmation failed: ${error.message}`, {
+        cause: error
+      })
     }
   }
 
@@ -470,7 +494,9 @@ export class AuthService extends BaseService {
       }
       throw new Error(response.message)
     } catch (error) {
-      throw new Error(`Password change request failed: ${error.message}`, { cause: error })
+      throw new Error(`Password change request failed: ${error.message}`, {
+        cause: error
+      })
     }
   }
 
@@ -487,7 +513,9 @@ export class AuthService extends BaseService {
       }
       throw new Error(response.message)
     } catch (error) {
-      throw new Error(`Password change confirmation failed: ${error.message}`, { cause: error })
+      throw new Error(`Password change confirmation failed: ${error.message}`, {
+        cause: error
+      })
     }
   }
 
@@ -516,14 +544,17 @@ export class AuthService extends BaseService {
   async _fetchMe(session, inflightKey) {
     try {
       const response = session
-        ? await this._request(`/auth/me?session=${encodeURIComponent(session)}`, {
-          method: 'GET',
-          methodName: 'getMe'
-        })
+        ? await this._request(
+            `/auth/me?session=${encodeURIComponent(session)}`,
+            {
+              method: 'GET',
+              methodName: 'getMe'
+            }
+          )
         : await this._request('/auth/me', {
-          method: 'GET',
-          methodName: 'getMe'
-        })
+            method: 'GET',
+            methodName: 'getMe'
+          })
       if (response.success) {
         this._currentUser = response.data?.user || response.data || null
         this._emitAuth?.('USER_UPDATED')
@@ -541,7 +572,9 @@ export class AuthService extends BaseService {
       // On error, clear immediately so callers can retry without waiting
       // out the TTL. Don't swallow — propagate with the original wrap.
       this._getMeInflight?.delete(inflightKey)
-      throw new Error(`Failed to get user profile: ${error.message}`, { cause: error })
+      throw new Error(`Failed to get user profile: ${error.message}`, {
+        cause: error
+      })
     }
   }
 
@@ -560,13 +593,16 @@ export class AuthService extends BaseService {
         methodName: 'updateMe'
       })
       if (response.success) {
-        this._currentUser = response.data?.user || response.data || this._currentUser
+        this._currentUser =
+          response.data?.user || response.data || this._currentUser
         this._emitAuth?.('USER_UPDATED')
         return response.data
       }
       throw new Error(response.message)
     } catch (error) {
-      throw new Error(`Failed to update user profile: ${error.message}`, { cause: error })
+      throw new Error(`Failed to update user profile: ${error.message}`, {
+        cause: error
+      })
     }
   }
 
@@ -581,11 +617,16 @@ export class AuthService extends BaseService {
       const url = orgId
         ? `/auth/permissions?org=${encodeURIComponent(orgId)}`
         : '/auth/permissions'
-      const response = await this._request(url, { method: 'GET', methodName: 'getPermissions' })
+      const response = await this._request(url, {
+        method: 'GET',
+        methodName: 'getPermissions'
+      })
       if (response.success) return response.data
       throw new Error(response.message)
     } catch (error) {
-      throw new Error(`Failed to fetch permissions: ${error.message}`, { cause: error })
+      throw new Error(`Failed to fetch permissions: ${error.message}`, {
+        cause: error
+      })
     }
   }
 
@@ -619,10 +660,58 @@ export class AuthService extends BaseService {
       refresh_token,
       expires_at: tm.tokens?.expiresAt || null,
       token_type: 'bearer',
-      // _currentUser is hydrated by getMe()/login()/refresh paths; leave
-      // null if the consumer hasn't asked for the profile yet — they can
-      // call sdk.getMe() to populate it.
-      user: this._currentUser || null,
+      // _currentUser is hydrated by getMe()/login()/boot()/refresh paths.
+      // When none of those has resolved yet, synthesize the user from the
+      // access token's own claims — the session contract PROMISES `user`
+      // whenever a session exists, and consumers (workspace auth handler,
+      // calendar email filters) treat a user-less session as signed-out
+      // and tear down seeded identity (the recurring empty-chrome boot).
+      user: this._currentUser || this._userFromTokenClaims() || null
+    }
+  }
+
+  /**
+   * Adopt an externally-fetched user object as the session user — the exact
+   * hydration getMe() performs, minus the round-trip. The composite
+   * /core/boot's `me` section replays /auth/me verbatim, so boot-only
+   * clients hydrate through here. Emits USER_UPDATED so auth-state
+   * subscribers that registered BEFORE the boot resolved (and therefore
+   * received a user-less INITIAL_SESSION) get a corrective tick with the
+   * user attached.
+   */
+  adoptSessionUser(user) {
+    if (!user || typeof user !== 'object') return
+    this._currentUser = user
+    this._emitAuth?.('USER_UPDATED')
+  }
+
+  // Last-resort session user decoded from the access token's payload.
+  // Claims-only — no network, no fabrication: absent claim fields stay
+  // absent. `app_metadata` carries the full claim set so claim-derived
+  // enrichment (orgs, workspaces, active_workspace_id) reads identically
+  // to a server-fetched user's app_metadata.
+  _userFromTokenClaims() {
+    try {
+      const raw = this._tokenManager?.getAccessToken?.()
+      if (!raw) return null
+      const seg = String(raw).split('.')[1]
+      if (!seg) return null
+      const b64 = seg.replace(/-/g, '+').replace(/_/g, '/')
+      const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4)
+      const json =
+        typeof atob === 'function'
+          ? atob(padded)
+          : Buffer.from(padded, 'base64').toString('utf8')
+      const payload = JSON.parse(json)
+      const id =
+        payload.sub || payload.user_id || payload.id || payload._id || null
+      if (!id) return null
+      const user = { id, _id: payload._id || id, app_metadata: payload }
+      if (payload.email) user.email = payload.email
+      if (payload.username) user.username = payload.username
+      return user
+    } catch (_) {
+      return null
     }
   }
 
@@ -637,15 +726,20 @@ export class AuthService extends BaseService {
    *   'SIGNED_IN'        — login / register success
    *   'SIGNED_OUT'       — logout / token clear
    *   'TOKEN_REFRESHED'  — refresh path completed
-   *   'USER_UPDATED'     — getMe / updateMe refreshed _currentUser
+   *   'USER_UPDATED'     — getMe / updateMe / adoptSessionUser (composite
+   *                        boot) refreshed _currentUser
    */
   onAuthStateChange(callback) {
     if (typeof callback !== 'function') return () => {}
     this._authListeners.add(callback)
     // Fire INITIAL_SESSION immediately so callers can hydrate without
     // waiting for the next state transition.
-    try { callback('INITIAL_SESSION', this.getSession()) } catch (_) {}
-    return () => { this._authListeners.delete(callback) }
+    try {
+      callback('INITIAL_SESSION', this.getSession())
+    } catch (_) {}
+    return () => {
+      this._authListeners.delete(callback)
+    }
   }
 
   // Internal: emit an auth event to all subscribers. Login/logout/refresh
@@ -653,7 +747,11 @@ export class AuthService extends BaseService {
   _emitAuth(event) {
     const session = this.getSession()
     for (const listener of this._authListeners) {
-      try { listener(event, session) } catch (_) { /* listener errors don't propagate */ }
+      try {
+        listener(event, session)
+      } catch (_) {
+        /* listener errors don't propagate */
+      }
     }
   }
 
@@ -778,7 +876,9 @@ export class AuthService extends BaseService {
       }
       throw new Error(response.message)
     } catch (error) {
-      throw new Error(`Failed to get user profile: ${error.message}`, { cause: error })
+      throw new Error(`Failed to get user profile: ${error.message}`, {
+        cause: error
+      })
     }
   }
 
@@ -795,7 +895,9 @@ export class AuthService extends BaseService {
       }
       throw new Error(response.message)
     } catch (error) {
-      throw new Error(`Failed to update user profile: ${error.message}`, { cause: error })
+      throw new Error(`Failed to update user profile: ${error.message}`, {
+        cause: error
+      })
     }
   }
 
@@ -843,7 +945,9 @@ export class AuthService extends BaseService {
       }
       throw new Error(response.message)
     } catch (error) {
-      throw new Error(`Failed to update user HR profile: ${error.message}`, { cause: error })
+      throw new Error(`Failed to update user HR profile: ${error.message}`, {
+        cause: error
+      })
     }
   }
 
@@ -867,7 +971,9 @@ export class AuthService extends BaseService {
       }
       throw new Error(response.message)
     } catch (error) {
-      throw new Error(`Failed to get user projects: ${error.message}`, { cause: error })
+      throw new Error(`Failed to get user projects: ${error.message}`, {
+        cause: error
+      })
     }
   }
 
@@ -910,7 +1016,8 @@ export class AuthService extends BaseService {
   async listMembers(scope) {
     this._requireReady('listMembers')
     try {
-      const opts = typeof scope === 'string' ? { workspaceId: scope } : scope || {}
+      const opts =
+        typeof scope === 'string' ? { workspaceId: scope } : scope || {}
       const params = new URLSearchParams()
       if (opts.workspaceId) params.set('workspaceId', opts.workspaceId)
       else if (opts.orgSlug) params.set('orgSlug', opts.orgSlug)
@@ -922,7 +1029,9 @@ export class AuthService extends BaseService {
       if (response?.success) return response.data
       return response?.data || response
     } catch (error) {
-      throw new Error(`Failed to list people: ${error.message}`, { cause: error })
+      throw new Error(`Failed to list people: ${error.message}`, {
+        cause: error
+      })
     }
   }
 
@@ -946,7 +1055,9 @@ export class AuthService extends BaseService {
       if (response?.success) return response.data
       return response?.data || response
     } catch (error) {
-      throw new Error(`Failed to list agents: ${error.message}`, { cause: error })
+      throw new Error(`Failed to list agents: ${error.message}`, {
+        cause: error
+      })
     }
   }
 
@@ -961,7 +1072,9 @@ export class AuthService extends BaseService {
       if (response?.success) return response.data
       return response?.data || response
     } catch (error) {
-      throw new Error(`Failed to create agent: ${error.message}`, { cause: error })
+      throw new Error(`Failed to create agent: ${error.message}`, {
+        cause: error
+      })
     }
   }
 
@@ -972,10 +1085,13 @@ export class AuthService extends BaseService {
     this._requireReady('getAgent')
     if (!agentId) throw new Error('agentId is required')
     try {
-      const response = await this._request(`/users/agents/${encodeURIComponent(agentId)}`, {
-        method: 'GET',
-        methodName: 'getAgent'
-      })
+      const response = await this._request(
+        `/users/agents/${encodeURIComponent(agentId)}`,
+        {
+          method: 'GET',
+          methodName: 'getAgent'
+        }
+      )
       if (response?.success) return response.data
       return response?.data || response
     } catch (error) {
@@ -991,15 +1107,20 @@ export class AuthService extends BaseService {
     this._requireReady('updateAgent')
     if (!agentId) throw new Error('agentId is required')
     try {
-      const response = await this._request(`/users/agents/${encodeURIComponent(agentId)}`, {
-        method: 'PATCH',
-        body: JSON.stringify(updates),
-        methodName: 'updateAgent'
-      })
+      const response = await this._request(
+        `/users/agents/${encodeURIComponent(agentId)}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify(updates),
+          methodName: 'updateAgent'
+        }
+      )
       if (response?.success) return response.data
       return response?.data || response
     } catch (error) {
-      throw new Error(`Failed to update agent: ${error.message}`, { cause: error })
+      throw new Error(`Failed to update agent: ${error.message}`, {
+        cause: error
+      })
     }
   }
 
@@ -1016,7 +1137,9 @@ export class AuthService extends BaseService {
       if (response?.success) return response.data
       return response?.data || response
     } catch (error) {
-      throw new Error(`Failed to get agent tool catalog: ${error.message}`, { cause: error })
+      throw new Error(`Failed to get agent tool catalog: ${error.message}`, {
+        cause: error
+      })
     }
   }
 
@@ -1035,7 +1158,9 @@ export class AuthService extends BaseService {
       }
       throw new Error(response.message)
     } catch (error) {
-      throw new Error(`Failed to get user by email: ${error.message}`, { cause: error })
+      throw new Error(`Failed to get user by email: ${error.message}`, {
+        cause: error
+      })
     }
   }
 
@@ -1086,7 +1211,9 @@ export class AuthService extends BaseService {
       if (/401|403|unauthorized|no token|invalid token/iu.test(message)) {
         return 'guest'
       }
-      throw new Error(`Failed to get project role: ${message}`, { cause: error })
+      throw new Error(`Failed to get project role: ${message}`, {
+        cause: error
+      })
     }
   }
 
@@ -1119,7 +1246,9 @@ export class AuthService extends BaseService {
 
     // Cache is scoped by (owner, key) so bare-key collisions across owners
     // don't share a cached role entry.
-    const cacheKey = owner ? `role_key_${owner}/${projectKey}` : `role_key_${projectKey}`
+    const cacheKey = owner
+      ? `role_key_${owner}/${projectKey}`
+      : `role_key_${projectKey}`
     const cached = this._projectRoleCache.get(cacheKey)
 
     if (cached && Date.now() - cached.timestamp < this._roleCacheExpiry) {
@@ -1151,7 +1280,9 @@ export class AuthService extends BaseService {
         return 'guest'
       }
       const message = error?.message || ''
-      throw new Error(`Failed to get project role by key: ${message}`, { cause: error })
+      throw new Error(`Failed to get project role by key: ${message}`, {
+        cause: error
+      })
     }
   }
 
@@ -1187,7 +1318,7 @@ export class AuthService extends BaseService {
 
     // First try to find in user projects if provided
     if (userProjects && Array.isArray(userProjects)) {
-      const userProject = userProjects.find(p => p.id === projectId)
+      const userProject = userProjects.find((p) => p.id === projectId)
       if (userProject && userProject.role) {
         return userProject.role
       }
@@ -1210,7 +1341,7 @@ export class AuthService extends BaseService {
 
     // First try to find in user projects if provided
     if (userProjects && Array.isArray(userProjects)) {
-      const userProject = userProjects.find(p => p.key === projectKey)
+      const userProject = userProjects.find((p) => p.key === projectKey)
       if (userProject && userProject.role) {
         return userProject.role
       }
@@ -1279,7 +1410,9 @@ export class AuthService extends BaseService {
     try {
       return await this.getMe()
     } catch (error) {
-      throw new Error(`Failed to get current user: ${error.message}`, { cause: error })
+      throw new Error(`Failed to get current user: ${error.message}`, {
+        cause: error
+      })
     }
   }
 
@@ -1483,10 +1616,7 @@ export class AuthService extends BaseService {
   }
 
   _preparePluginPayload(payload, sessionOverride = null) {
-    const target =
-      payload && typeof payload === 'object'
-        ? { ...payload }
-        : {}
+    const target = payload && typeof payload === 'object' ? { ...payload } : {}
 
     const session = this._resolvePluginSession(sessionOverride)
 
@@ -1519,7 +1649,9 @@ export class AuthService extends BaseService {
 
     if (typeof window !== 'undefined') {
       try {
-        const sessionFromUrl = new URL(window.location.href).searchParams.get('session')
+        const sessionFromUrl = new URL(window.location.href).searchParams.get(
+          'session'
+        )
         if (sessionFromUrl) {
           return this._cachePluginSession(sessionFromUrl)
         }
@@ -1590,7 +1722,7 @@ export class AuthService extends BaseService {
    *
    * @returns {Promise<{counts: Record<string, {mentions?: number, ticketsAssigned?: number, meetingInvites?: number}>}>}
    */
-  async getMyOrgNotifications () {
+  async getMyOrgNotifications() {
     this._requireReady('getMyOrgNotifications')
     const response = await this._request('/auth/me/org-notifications', {
       method: 'GET',
@@ -1626,7 +1758,7 @@ export class AuthService extends BaseService {
    * @param {string} orgId - Mongo ObjectId of the target org.
    * @returns {Promise<{activeOrganization: string}>}
    */
-  async setActiveOrganization (orgId) {
+  async setActiveOrganization(orgId) {
     this._requireReady('setActiveOrganization')
     if (!orgId) throw new Error('[sdk.setActiveOrganization] orgId is required')
     const response = await this._request('/auth/me/active-org', {
@@ -1652,9 +1784,10 @@ export class AuthService extends BaseService {
   // reads it). This is the sole authoritative write — the old Supabase
   // federation re-mint that used to also fire on workspace switch is
   // retired.
-  async setActiveWorkspace (workspaceId) {
+  async setActiveWorkspace(workspaceId) {
     this._requireReady('setActiveWorkspace')
-    if (!workspaceId) throw new Error('[sdk.setActiveWorkspace] workspaceId is required')
+    if (!workspaceId)
+      throw new Error('[sdk.setActiveWorkspace] workspaceId is required')
     const response = await this._request('/auth/me/active-workspace', {
       method: 'PATCH',
       body: JSON.stringify({ workspaceId: String(workspaceId) }),
@@ -1698,7 +1831,7 @@ export class AuthService extends BaseService {
    * @param {Record<string, (payload: any) => void>} handlers
    * @returns {() => void} unsubscribe — closes the socket and removes listeners.
    */
-  subscribeUserEvents (handlers = {}) {
+  subscribeUserEvents(handlers = {}) {
     if (!this._tokenManager) return () => {}
     const token = this._tokenManager.getAccessToken?.()
     if (!token) return () => {}
@@ -1717,7 +1850,10 @@ export class AuthService extends BaseService {
         reconnectionDelayMax: 10_000
       })
     } catch (err) {
-      logger.warn('[sdk.subscribeUserEvents] socket init failed:', err?.message || err)
+      logger.warn(
+        '[sdk.subscribeUserEvents] socket init failed:',
+        err?.message || err
+      )
       return () => {}
     }
 
@@ -1737,8 +1873,12 @@ export class AuthService extends BaseService {
     }
 
     return () => {
-      try { socket.removeAllListeners() } catch (_) {}
-      try { socket.disconnect() } catch (_) {}
+      try {
+        socket.removeAllListeners()
+      } catch (_) {}
+      try {
+        socket.disconnect()
+      } catch (_) {}
     }
   }
 
@@ -1758,8 +1898,9 @@ export class AuthService extends BaseService {
    * @param {(state: Record<string, Array<object>>) => void} onSync
    * @returns {() => void} unsubscribe
    */
-  subscribePresence ({ scope, userKey, meta, onCursor } = {}, onSync) {
-    if (!this._tokenManager || typeof onSync !== 'function' || !scope) return () => {}
+  subscribePresence({ scope, userKey, meta, onCursor } = {}, onSync) {
+    if (!this._tokenManager || typeof onSync !== 'function' || !scope)
+      return () => {}
     const token = this._tokenManager.getAccessToken?.()
     if (!token) return () => {}
     const baseUrl = this._apiUrl
@@ -1777,18 +1918,27 @@ export class AuthService extends BaseService {
         reconnectionDelayMax: 10_000
       })
     } catch (err) {
-      logger.warn('[sdk.subscribePresence] socket init failed:', err?.message || err)
+      logger.warn(
+        '[sdk.subscribePresence] socket init failed:',
+        err?.message || err
+      )
       return () => {}
     }
 
     // (Re)announce presence on every connect so a reconnect re-joins the scope.
     const join = () => {
-      try { socket.emit('presence:join', { scope, userKey, meta: meta || {} }) } catch (_) {}
+      try {
+        socket.emit('presence:join', { scope, userKey, meta: meta || {} })
+      } catch (_) {}
     }
     socket.on('connect', join)
     socket.on('presence:sync', (payload) => {
       if (!payload || payload.scope !== scope) return
-      try { onSync(payload.state || {}) } catch (_) { /* listener errors don't propagate */ }
+      try {
+        onSync(payload.state || {})
+      } catch (_) {
+        /* listener errors don't propagate */
+      }
     })
     // Live-cursor relay riding the same presence socket: the server
     // rebroadcasts `presence:cursor` to every OTHER member of the scope room,
@@ -1797,7 +1947,11 @@ export class AuthService extends BaseService {
     if (typeof onCursor === 'function') {
       socket.on('presence:cursor', (payload) => {
         if (!payload || payload.scope !== scope) return
-        try { onCursor(payload) } catch (_) { /* listener errors don't propagate */ }
+        try {
+          onCursor(payload)
+        } catch (_) {
+          /* listener errors don't propagate */
+        }
       })
     }
     let _loggedAuthFail = false
@@ -1809,15 +1963,21 @@ export class AuthService extends BaseService {
     })
 
     const unsubscribe = () => {
-      try { socket.removeAllListeners() } catch (_) {}
-      try { socket.disconnect() } catch (_) {}
+      try {
+        socket.removeAllListeners()
+      } catch (_) {}
+      try {
+        socket.disconnect()
+      } catch (_) {}
     }
     // Throttle-friendly cursor emitter for the scope this subscription joined.
     // Fire-and-forget; the server relays volatile (dropped frames are fine).
     unsubscribe.sendCursor = (data = {}) => {
       try {
         socket.emit('presence:cursor', { ...data, scope, userKey })
-      } catch (_) { /* socket mid-reconnect — next move resends */ }
+      } catch (_) {
+        /* socket mid-reconnect — next move resends */
+      }
     }
     return unsubscribe
   }
@@ -1829,7 +1989,7 @@ export class AuthService extends BaseService {
    * @param {{from: string, to: string}} window - ISO 8601 timestamps
    * @returns {Promise<{slots: Array<{workspaceId: string, orgId: string, start_at: string, end_at: string, title?: string}>}>}
    */
-  async getMyFreebusy ({ from, to }) {
+  async getMyFreebusy({ from, to }) {
     this._requireReady('getMyFreebusy')
     if (!from || !to) throw new Error('from + to (ISO 8601) required')
     const qs = new URLSearchParams({ from, to }).toString()
@@ -1848,7 +2008,7 @@ export class AuthService extends BaseService {
    *
    * @returns {Promise<{projects: Array<object>, total?: number}>}
    */
-  async getMyProjects () {
+  async getMyProjects() {
     this._requireReady('getMyProjects')
     const response = await this._request('/auth/me/projects', {
       method: 'GET',
@@ -1865,7 +2025,7 @@ export class AuthService extends BaseService {
    *
    * @returns {Promise<{teams: Array<{id: string, name: string, organization: string, type: string, role: string}>}>}
    */
-  async getMyTeams () {
+  async getMyTeams() {
     this._requireReady('getMyTeams')
     const response = await this._request('/auth/me/teams', {
       method: 'GET',
@@ -1881,7 +2041,7 @@ export class AuthService extends BaseService {
    *
    * @returns {Promise<{memberships: Array<{orgId: string, role: string, isOwner: boolean, workspaces?: Array<object>}>}>}
    */
-  async getMyOrgMemberships () {
+  async getMyOrgMemberships() {
     this._requireReady('getMyOrgMemberships')
     const response = await this._request('/auth/me/org-memberships', {
       method: 'GET',
@@ -1896,8 +2056,10 @@ export class AuthService extends BaseService {
    * Requires auth (the server takes `req.user` as the resend target).
    * No-op idempotent on the client — server rate-limits resends.
    */
-  async resendVerification () {
-    return this._call('resendVerification', '/auth/resend-verification', { method: 'POST' })
+  async resendVerification() {
+    return this._call('resendVerification', '/auth/resend-verification', {
+      method: 'POST'
+    })
   }
 
   /**
@@ -1906,9 +2068,12 @@ export class AuthService extends BaseService {
    * sign-up flow for the user the token identifies.
    * @param {string} token
    */
-  async verifyEmail (token) {
+  async verifyEmail(token) {
     if (!token) throw new Error('token is required')
-    return this._call('verifyEmail', `/auth/verify-email/${encodeURIComponent(token)}`)
+    return this._call(
+      'verifyEmail',
+      `/auth/verify-email/${encodeURIComponent(token)}`
+    )
   }
 
   /**
@@ -1923,13 +2088,16 @@ export class AuthService extends BaseService {
    * @param {string} orgId
    * @returns {Promise<{members: Array<{email: string, role: string}>}>}
    */
-  async getOrgMemberRoles (orgId) {
+  async getOrgMemberRoles(orgId) {
     this._requireReady('getOrgMemberRoles')
     if (!orgId) throw new Error('orgId is required')
-    const response = await this._request(`/auth/org/${encodeURIComponent(orgId)}/member-roles`, {
-      method: 'GET',
-      methodName: 'getOrgMemberRoles'
-    })
+    const response = await this._request(
+      `/auth/org/${encodeURIComponent(orgId)}/member-roles`,
+      {
+        method: 'GET',
+        methodName: 'getOrgMemberRoles'
+      }
+    )
     if (response?.success) return response.data
     return { members: [] }
   }

@@ -859,6 +859,28 @@ export class SDK {
     }
   }
 
+  // Composite boot — explicit method so it takes precedence over the
+  // SERVICE_METHODS proxy (the generation loop skips names already on the
+  // SDK). boot IS the getMe of the one-round-trip path: its `me` section
+  // replays /auth/me verbatim, so hydrate the auth session user exactly
+  // like getMe() would. Without this, a boot-only client keeps
+  // getSession().user null and every auth-state tick reads as signed-out —
+  // consumers that seeded identity from the boot payload then watched the
+  // first tick wipe it (the empty-chrome boot). adoptSessionUser also
+  // re-emits USER_UPDATED so subscribers registered before boot resolved
+  // receive a corrective session-with-user tick.
+  async boot(opts) {
+    const res = await this.getService('boot').boot(opts)
+    try {
+      const user = res?.data?.me?.user || null
+      if (user) this.getService('auth')?.adoptSessionUser?.(user)
+    } catch (_) {
+      // Hydration is best-effort — the boot payload itself is the caller's
+      // source of truth; getSession()'s claims fallback covers the rest.
+    }
+    return res
+  }
+
   // Create proxy methods for direct service access
   _createServiceProxies() {
     for (const [methodName, serviceName] of Object.entries(SERVICE_METHODS)) {
