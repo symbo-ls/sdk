@@ -1,11 +1,28 @@
 import { BaseService } from './BaseService.js'
-import { CollabClient } from '../utils/CollabClient.js'
 import { RootStateManager } from '../state/RootStateManager.js'
 import { rootBus } from '../state/rootEventBus.js'
-import { validateParams } from '../utils/validation.js'
+import { validateParams, primeCodeValidation } from '../utils/validation.js'
 import { deepStringifyFunctions } from '@symbo.ls/utils'
 import { preprocessChanges } from '../utils/changePreprocessor.js'
 import { logger } from '../utils/logger.js'
+
+// CollabClient drags yjs + lib0 (+ the buffer polyfill, ~360 KB dev) with it,
+// so it is loaded on demand at the first connect() instead of eagerly —
+// keeps collab out of consumers' initial bundles (workspace bundle-split T2).
+// The import promise is cached; repeated connects reuse the same module.
+let collabClientModulePromise = null
+const loadCollabClientModule = () => {
+  if (!collabClientModulePromise) {
+    collabClientModulePromise = import('../utils/CollabClient.js').catch(
+      err => {
+        // Allow a later retry instead of caching the failure forever
+        collabClientModulePromise = null
+        throw err
+      }
+    )
+  }
+  return collabClientModulePromise
+}
 
 // Helper: clone a value while converting all functions to strings. This is
 // tailored for collab payloads (tuples / granularChanges) and is more robust
@@ -158,6 +175,16 @@ export class CollabService extends BaseService {
       this._connecting = true
       this._connected = false
 
+      // Kick off the lazy CollabClient chunk in parallel with the token /
+      // params work below; also prime the code-validation parser so the
+      // addItem/updateItem reserved-keyword check is armed for the connected
+      // session (it degrades to pass-through until the parser arrives — see
+      // utils/validation.js).
+      const collabClientReady = loadCollabClientModule()
+      // Prevent an unhandled rejection if connect fails before the await
+      collabClientReady.catch(() => {})
+      primeCodeValidation().catch(() => {})
+
       // Make sure we have the state manager ready now that the context should
       // contain the root state (after updateSDKContext()).
       this._ensureStateManager()
@@ -213,6 +240,8 @@ export class CollabService extends BaseService {
         await this.disconnect()
       }
 
+      const { CollabClient } = await collabClientReady
+
       this._client = new CollabClient({
         jwt,
         projectId,
@@ -245,7 +274,7 @@ export class CollabService extends BaseService {
             return
           }
 
-          /* eslint-disable no-use-before-define */
+           
           const cleanup = () => {
             socket.off('connect', handleConnect)
             socket.off('connect_error', handleError)
@@ -288,7 +317,7 @@ export class CollabService extends BaseService {
           socket.once('connect_error', handleError)
           socket.once('error', handleError)
           socket.once('disconnect', handleDisconnect)
-          /* eslint-enable no-use-before-define */
+           
         })
       } catch (error) {
         this._detachSocketLifecycleListeners()

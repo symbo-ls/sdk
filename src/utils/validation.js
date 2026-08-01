@@ -1,5 +1,30 @@
-import * as acorn from 'acorn'
-import * as walk from 'acorn-walk'
+// acorn (+ acorn-walk) are heavyweight parse-time vendors (~220 KB) used only
+// by the reserved-keyword deep check below, yet this module is imported
+// eagerly by CollabService — so they are loaded on demand instead of at the
+// top level (workspace bundle-split T2). `validateParams` must stay
+// synchronous (addItem/updateItem/… return their envelopes synchronously),
+// therefore before the modules arrive the deep check degrades to
+// pass-through — matching its existing best-effort contract, which already
+// passes any code it cannot parse. CollabService.connect() primes the load
+// so the guard is armed for the whole connected session.
+let acornMods = null
+let acornModsPromise = null
+
+export function primeCodeValidation () {
+  if (!acornModsPromise) {
+    acornModsPromise = Promise.all([import('acorn'), import('acorn-walk')])
+      .then(([acorn, walk]) => {
+        acornMods = { acorn, walk }
+        return acornMods
+      })
+      .catch(err => {
+        // Allow a later retry instead of caching the failure forever
+        acornModsPromise = null
+        throw err
+      })
+  }
+  return acornModsPromise
+}
 
 // JavaScript reserved keywords
 const RESERVED_KEYWORDS = [
@@ -73,6 +98,14 @@ const CODE_TYPES = ['snippets', 'functions']
 
 // Helper function to check for reserved keywords in code string
 const checkCodeForReservedKeywords = code => {
+  if (!acornMods) {
+    // Parser chunk not loaded yet — kick the load for subsequent calls and
+    // pass this one through (same outcome as the catch-all below for code
+    // acorn cannot parse).
+    primeCodeValidation().catch(() => {})
+    return true
+  }
+  const { acorn, walk } = acornMods
   try {
     // Clean up the code string - replace encoded newlines
     const cleanCode = code.replace(/\/\/\/\/\/n/gu, '\n')

@@ -5,10 +5,12 @@ import environment from '../config/environment.js'
 import { logger } from './logger.js'
 // import gzip from 'gzip-js' // reserved for future compression features
 
-// diff / patch helpers
-import { diffJson, applyOpsToJson } from './jsonDiff.js'
+// diff / patch helpers (applyOpsToJson carries the yjs dependency — kept in
+// its own module so the eagerly-imported jsonDiff stays yjs-free)
+import { diffJson } from './jsonDiff.js'
+import { applyOpsToJson } from './yjsOps.js'
 
-/* eslint-disable no-use-before-define, no-new, no-promise-executor-return */
+ 
 
 // Dexie and IndexeddbPersistence will be conditionally imported in browser environments
 
