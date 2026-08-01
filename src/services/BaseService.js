@@ -419,6 +419,9 @@ export class BaseService {
       'googleAuth',
       'googleAuthCallback',
       'githubAuth',
+      // Native-shell OAuth redemption — runs pre-auth on /login (the deep
+      // link delivers the xt BEFORE any session exists), so no bearer token.
+      'exchangeNativeAuthToken',
       'requestPasswordReset',
       'confirmPasswordReset',
       'confirmRegistration',

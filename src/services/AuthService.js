@@ -357,6 +357,59 @@ export class AuthService extends BaseService {
     }
   }
 
+  /**
+   * Native-shell OAuth (Tauri iOS — tickets/ipad.md): redeem the one-time
+   * exchange token (`xt`) delivered by the `symbols://auth-callback` deep
+   * link for a normal session. `state` MUST be the same nonce the shell
+   * generated for the authorize request — the server bound the token to it
+   * at mint time. Single-use, ≤60s TTL: replay / expiry / nonce mismatch
+   * answer 401. Rethrows with `error.status` preserved so the shell UI can
+   * feature-detect route availability (404 = server predates the flow).
+   */
+  async exchangeNativeAuthToken (xt, state, inviteToken = null) {
+    if (!xt) {
+      throw new Error('[sdk.exchangeNativeAuthToken] xt is required')
+    }
+    try {
+      const body = { xt }
+      if (state) body.state = state
+      if (inviteToken) body.inviteToken = inviteToken
+
+      const response = await this._request('/auth/native/exchange', {
+        method: 'POST',
+        body: JSON.stringify(body),
+        methodName: 'exchangeNativeAuthToken'
+      })
+
+      // Same session wiring as googleAuth: response.data.tokens
+      if (response.success && response.data && response.data.tokens) {
+        const { tokens } = response.data
+        const tokenData = {
+          access_token: tokens.accessToken,
+          refresh_token: tokens.refreshToken,
+          expires_in: tokens.accessTokenExp?.expiresIn,
+          token_type: 'Bearer'
+        }
+
+        // Set tokens in TokenManager
+        if (this._tokenManager) {
+          this._tokenManager.setTokens(tokenData)
+        }
+        this._currentUser = response.data.user || this._currentUser
+        this._emitAuth?.('SIGNED_IN')
+      }
+
+      if (response.success) {
+        return response.data
+      }
+      throw new Error(response.message)
+    } catch (error) {
+      const wrapped = new Error(`Native auth exchange failed: ${error.message}`, { cause: error })
+      if (error?.status !== undefined) wrapped.status = error.status
+      throw wrapped
+    }
+  }
+
   async requestPasswordReset(email) {
     try {
       const response = await this._request('/auth/request-password-reset', {

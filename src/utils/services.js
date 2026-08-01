@@ -35,6 +35,8 @@ export const SERVICE_METHODS = {
   googleAuth: 'auth',
   googleAuthCallback: 'auth',
   githubAuth: 'auth',
+  // Native-shell OAuth deep-link redemption (tickets/ipad.md)
+  exchangeNativeAuthToken: 'auth',
   requestPasswordReset: 'auth',
   confirmPasswordReset: 'auth',
   confirmRegistration: 'auth',
