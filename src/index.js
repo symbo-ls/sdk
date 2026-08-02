@@ -610,7 +610,6 @@ export class SDK {
       apiUrl: environment.apiUrl,
       socketUrl: environment.socketUrl,
       timeout: 30000,
-      retryAttempts: 3,
       debug: false,
       tracking: {
         // Off by default. TrackingService is now backed by @symbo.ls/analyzing

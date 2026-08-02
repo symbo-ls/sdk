@@ -28,7 +28,6 @@ const sdk = new SDK({
   apiUrl: 'https://api.symbols.app',
   socketUrl: 'https://api.symbols.app',
   timeout: 30000,
-  retryAttempts: 3,
   debug: false
 })
 
