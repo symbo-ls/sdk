@@ -1,0 +1,2 @@
+{"schema":"frank-audit/1.0","opId":"audit-ms8bbtex-iqd271bw","timestamp":"2026-07-31T02:17:52.042Z","kind":"audit.start","ruleIds":null}
+{"schema":"frank-audit/1.0","opId":"audit-ms8bbtex-iqd271bw","timestamp":"2026-07-31T02:17:59.248Z","kind":"audit.complete","scannedFiles":301,"findingCount":543,"bySeverity":{"critical":464,"structural":2,"systemic":77}}
