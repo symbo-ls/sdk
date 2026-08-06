@@ -782,17 +782,20 @@ export class ProjectService extends BaseService {
 
     const { name, callbackUrl, headers } = options
 
-    // Default callbackUrl if not provided
-    const defaultCallbackUrl =
-      typeof window === 'undefined'
-        ? 'https://app.symbols.com/accept-invite'
-        : `${window.location.origin}/accept-invite`
-
     try {
       const requestBody = {
         email,
-        role,
-        callbackUrl: callbackUrl || defaultCallbackUrl
+        role
+      }
+
+      // The server builds the accept URL itself (buildInviteUrl →
+      // channel-resolved shellUrl()/accept-invite) and ignores any
+      // client-supplied callbackUrl — the old default here
+      // ('https://app.symbols.com/accept-invite', wrong TLD) was dead
+      // weight. Kept as an explicit pass-through only for callers that
+      // still send one.
+      if (callbackUrl) {
+        requestBody.callbackUrl = callbackUrl
       }
 
       // Add optional name if provided
