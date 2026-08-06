@@ -16,13 +16,13 @@ const trackingRecords = {
 }
 
 class IntegrationTestTransport extends BaseTransport {
-  constructor (records) {
+  constructor(records) {
     super()
     this.name = 'integration-test-transport'
     this._records = records
   }
 
-  send (item) {
+  send(item) {
     const items = Array.isArray(item) ? item : [item]
 
     items.forEach(currentItem => {
@@ -49,7 +49,7 @@ class IntegrationTestTransport extends BaseTransport {
   }
 }
 
-function resetTrackingRecords () {
+function resetTrackingRecords() {
   Object.values(trackingRecords).forEach(collection => {
     collection.length = 0
   })
@@ -58,7 +58,7 @@ function resetTrackingRecords () {
 global.__faroTestRecords = trackingRecords
 global.__resetFaroTestRecords = resetTrackingRecords
 
-async function initializeSdk (tempLocalInstance = false) {
+async function initializeSdk(tempLocalInstance = false) {
   // Initialize sdk
   console.log('Initializing sdk...')
   const sdk = new SDK()
@@ -82,7 +82,7 @@ async function initializeSdk (tempLocalInstance = false) {
 }
 
 // Reusable function to create the default project.  Object is read only.
-async function createDefaultProject () {
+async function createDefaultProject() {
   console.log('Creating default project...')
 
   if (!global.globalUser?.tokens?.accessToken) {
@@ -110,7 +110,7 @@ async function createDefaultProject () {
   }
 }
 
-async function guestLogin () {
+async function guestLogin() {
   console.log('Logging in as default user...')
   const auth = global.globalSdk.getService('auth')
 
@@ -126,7 +126,7 @@ async function guestLogin () {
    */
   try {
     global.globalUser = await auth.login(
-      'allen+testaccount@symbols.app',
+      process.env.GUEST_USER,
       process.env.GUEST_PASSWORD
     )
     // Set global object key values
