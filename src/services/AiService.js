@@ -855,6 +855,19 @@ export class AiService extends BaseService {
     return { text: (data && data.text) || '', usage: (data && data.usage) || null, raw: data }
   }
 
+  // Monthly AI usage for the active (or given) workspace — powers admin
+  // AI-settings panels (B1/B7): GET /core/agents/workspaces/:id/ai-usage →
+  // { month, calls, inputTokens, outputTokens, capTokens|null }.
+  async usage (opts = {}) {
+    const wsId = this._activeWorkspaceId(opts?.workspaceId)
+    if (!wsId) throw new Error('[sdk.ai] no active workspace selected')
+    const res = await this._requestExternal(
+      `${this._apiUrl}/core/agents/workspaces/${encodeURIComponent(wsId)}/ai-usage`,
+      { method: 'GET', methodName: 'ai.usage' }
+    )
+    return this._unwrap(res)
+  }
+
     async createConversation (opts = {}) {
     const targetAgentId = (opts && (opts.targetAgentId || (opts.context && opts.context.targetAgentId))) || null
     const res = await this._requestExternal(this._conversationBase(opts), {
