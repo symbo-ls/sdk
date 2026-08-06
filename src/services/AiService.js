@@ -836,6 +836,12 @@ export class AiService extends BaseService {
         ? { messages: payload.messages }
         : { content: String(payload.content || payload.text || '') }),
       ...(payload.system ? { system: payload.system } : {}),
+      // Server-stored system prompt key (AgentSystemPrompt, B1) — resolved
+      // server-side and prepended ahead of `system`; dropping it here would
+      // silently strip the caller's charter (Bellforge B3 regression).
+      ...(payload.systemRef ? { systemRef: String(payload.systemRef) } : {}),
+      // Opt out of the ephemeral read-tool loop (prose-only turns).
+      ...(payload.allowTools === false ? { allowTools: false } : {}),
       modelMode: payload.modelMode || this.getModelMode() || 'auto'
     }
     const res = await this._requestExternal(url, {
