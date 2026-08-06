@@ -69,6 +69,79 @@ const _wrapRequestError = (error, url) => {
   return wrapped
 }
 
+// ── In-flight GET dedupe (workspace boot F6) ────────────────────────────────
+//
+// App boot fans out MANY byte-identical reads at the same instant — measured
+// on one workspace landing: 13× the same workspace-records read, 6×
+// notifications, 6× agent-presence, 3× tickets list — and every duplicate
+// occupies one of the browser's 6 HTTP/1.1 connections per origin, queueing
+// real work behind it (1.7–3.3s per call against remote dev Mongo).
+//
+// Concurrent IDENTICAL GETs — same URL AND same headers, which includes the
+// Authorization header, so two auth scopes never share — now share ONE network
+// round-trip: the first caller runs the fetch (with its usual retry policy),
+// followers await the same in-flight promise, and the entry is dropped the
+// moment it settles. This is NOT a response cache: once settled, the next
+// identical call is a fresh request. Failures propagate to every sharer —
+// they'd each have received the same failure from their own copy.
+//
+// GET-only, always. Mutations are NEVER deduped (two deliberate POSTs must
+// stay two POSTs). Requests carrying a body or an AbortSignal opt out
+// automatically (a sharer's abort must not cancel everyone else's request),
+// and a caller can force a private round-trip with `dedupe: false`.
+//
+// Followers receive a structuredClone of the settled payload so no two
+// callers share (and can cross-mutate) one object graph; the leader keeps the
+// original. The map key embeds the auth header — it lives ONLY in this
+// in-memory map and must never be logged.
+const _inflightGets = new Map()
+
+const _canDedupeRequest = (method, options) =>
+  method === 'GET' &&
+  options.dedupe !== false &&
+  options.signal === undefined &&
+  options.body === undefined
+
+const _dedupeGetKey = (url, headers) => {
+  const h = headers || {}
+  let key = url
+  for (const name of Object.keys(h).sort()) {
+    key += `\n${name.toLowerCase()}:${h[name]}`
+  }
+  return key
+}
+
+const _cloneSettledPayload = (value) => {
+  if (!value || typeof value !== 'object') return value
+  try {
+    // Payloads are JSON.parse output, so both paths clone faithfully.
+    if (typeof structuredClone === 'function') return structuredClone(value)
+    return JSON.parse(JSON.stringify(value))
+  } catch (_) {
+    return value
+  }
+}
+
+const _dedupeInflightGet = (key, run) => {
+  const existing = _inflightGets.get(key)
+  if (existing) return existing.then(_cloneSettledPayload)
+  const flight = run()
+  _inflightGets.set(key, flight)
+  const drop = () => {
+    if (_inflightGets.get(key) === flight) _inflightGets.delete(key)
+  }
+  flight.then(drop, drop)
+  return flight
+}
+
+// Test-only seam: inspect/clear the in-flight table between cases so one
+// test's pending flight can never leak into the next. Never used in
+// production code.
+export const __inflightGetsForTests = {
+  size: () => _inflightGets.size,
+  clear: () => _inflightGets.clear()
+}
+
 export class BaseService {
   constructor ({ context, options } = {}) {
     this._context = context || {}
@@ -273,51 +346,63 @@ export class BaseService {
 
     const method = String(options.method || 'GET').toUpperCase()
     const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES
-    for (let attempt = 0; ; attempt++) {
-      try {
-        const response = await fetch(url, {
-          ...options,
-          headers: {
-            ...defaultHeaders,
-            ...options.headers
-          }
-        })
-
-        if (!response.ok) {
-          let error = {
-            message: `HTTP ${response.status}: ${response.statusText}`
-          }
-          try {
-            error = await response.json()
-          } catch {
-            // Use default error message
-          }
-          // Track HTTP error before throwing
-          this._trackServiceError(
-            new Error(error.message || error.error || `HTTP ${response.status}: ${response.statusText}`),
-            {
-              endpoint,
-              methodName: options.methodName,
-              status: response.status,
-              statusText: response.statusText
+    const runFetch = async () => {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const response = await fetch(url, {
+            ...options,
+            headers: {
+              ...defaultHeaders,
+              ...options.headers
             }
-          )
-          const httpErr = new Error(error.message || error.error || 'Request failed', { cause: error })
-          httpErr.status = response.status
-          throw httpErr
-        }
+          })
 
-        return response.status === 204 ? null : response.json()
-      } catch (error) {
-        const wrapped = error?.status !== undefined ? error : _wrapRequestError(error, url)
-        if (_shouldRetryRequest(wrapped, method, options.methodName, attempt, maxRetries)) {
-          await _sleep(_retryDelay(attempt))
-          continue
+          if (!response.ok) {
+            let error = {
+              message: `HTTP ${response.status}: ${response.statusText}`
+            }
+            try {
+              error = await response.json()
+            } catch {
+              // Use default error message
+            }
+            // Track HTTP error before throwing
+            this._trackServiceError(
+              new Error(error.message || error.error || `HTTP ${response.status}: ${response.statusText}`),
+              {
+                endpoint,
+                methodName: options.methodName,
+                status: response.status,
+                statusText: response.statusText
+              }
+            )
+            const httpErr = new Error(error.message || error.error || 'Request failed', { cause: error })
+            httpErr.status = response.status
+            throw httpErr
+          }
+
+          return response.status === 204 ? null : response.json()
+        } catch (error) {
+          const wrapped = error?.status !== undefined ? error : _wrapRequestError(error, url)
+          if (_shouldRetryRequest(wrapped, method, options.methodName, attempt, maxRetries)) {
+            await _sleep(_retryDelay(attempt))
+            continue
+          }
+          this._trackServiceError(wrapped, { endpoint, methodName: options.methodName })
+          throw wrapped
         }
-        this._trackServiceError(wrapped, { endpoint, methodName: options.methodName })
-        throw wrapped
       }
     }
+
+    // Identical concurrent GETs share one round-trip (workspace boot F6 —
+    // see _dedupeInflightGet above). Key = URL + final headers (auth scope
+    // included). Mutations, aborted-able and body-carrying requests never
+    // enter the table.
+    if (_canDedupeRequest(method, options)) {
+      const key = _dedupeGetKey(url, { ...defaultHeaders, ...options.headers })
+      return _dedupeInflightGet(key, runFetch)
+    }
+    return runFetch()
   }
 
   // Telemetry-aware request against a fully-qualified URL (i.e. not the
@@ -357,39 +442,49 @@ export class BaseService {
 
     const method = String(init.method || 'GET').toUpperCase()
     const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES
-    for (let attempt = 0; ; attempt++) {
-      try {
-        const response = await fetch(url, {
-          ...init,
-          headers: { ...defaultHeaders, ...init.headers }
-        })
+    const runFetch = async () => {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const response = await fetch(url, {
+            ...init,
+            headers: { ...defaultHeaders, ...init.headers }
+          })
 
-        if (!response.ok) {
-          let error = { message: `HTTP ${response.status}: ${response.statusText}` }
-          try { error = await response.json() } catch {}
-          this._trackServiceError(
-            new Error(error.message || error.error || `HTTP ${response.status}: ${response.statusText}`),
-            { endpoint: url, methodName, status: response.status, statusText: response.statusText }
-          )
-          const httpErr = new Error(error.message || error.error || 'Request failed', { cause: error })
-          httpErr.status = response.status
-          throw httpErr
-        }
+          if (!response.ok) {
+            let error = { message: `HTTP ${response.status}: ${response.statusText}` }
+            try { error = await response.json() } catch {}
+            this._trackServiceError(
+              new Error(error.message || error.error || `HTTP ${response.status}: ${response.statusText}`),
+              { endpoint: url, methodName, status: response.status, statusText: response.statusText }
+            )
+            const httpErr = new Error(error.message || error.error || 'Request failed', { cause: error })
+            httpErr.status = response.status
+            throw httpErr
+          }
 
-        if (response.status === 204) return null
-        const text = await response.text()
-        if (!text) return null
-        try { return JSON.parse(text) } catch { return text }
-      } catch (error) {
-        const wrapped = error?.status !== undefined ? error : _wrapRequestError(error, url)
-        if (_shouldRetryRequest(wrapped, method, methodName, attempt, maxRetries)) {
-          await _sleep(_retryDelay(attempt))
-          continue
+          if (response.status === 204) return null
+          const text = await response.text()
+          if (!text) return null
+          try { return JSON.parse(text) } catch { return text }
+        } catch (error) {
+          const wrapped = error?.status !== undefined ? error : _wrapRequestError(error, url)
+          if (_shouldRetryRequest(wrapped, method, methodName, attempt, maxRetries)) {
+            await _sleep(_retryDelay(attempt))
+            continue
+          }
+          this._trackServiceError(wrapped, { endpoint: url, methodName })
+          throw wrapped
         }
-        this._trackServiceError(wrapped, { endpoint: url, methodName })
-        throw wrapped
       }
     }
+
+    // Same identical-GET dedupe as _request (workspace boot F6) — off-core
+    // wrappers (workspace-project, KV worker) stampede at boot too.
+    if (_canDedupeRequest(method, init)) {
+      const key = _dedupeGetKey(url, { ...defaultHeaders, ...init.headers })
+      return _dedupeInflightGet(key, runFetch)
+    }
+    return runFetch()
   }
 
   // Envelope-aware request: expects the server to respond with
