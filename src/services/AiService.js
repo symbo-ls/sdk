@@ -850,7 +850,9 @@ export class AiService extends BaseService {
       methodName: 'ai.turn'
     })
     const data = this._unwrap(res)
-    return { text: (data && data.text) || '', raw: data }
+    // usage {inputTokens, outputTokens} surfaces top-level so bridge callers
+    // (moduleAiBridge) read r.usage without knowing the raw envelope (B1/B2).
+    return { text: (data && data.text) || '', usage: (data && data.usage) || null, raw: data }
   }
 
     async createConversation (opts = {}) {
