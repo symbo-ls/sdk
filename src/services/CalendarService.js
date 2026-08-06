@@ -42,7 +42,9 @@ export class CalendarService extends BaseService {
     // the requireOrgRole member gate; `start_at` rides as JSON.
     const q = new URLSearchParams()
     if (workspaceId) q.set('workspaceId', workspaceId)
-    if (organization) q.set('organization', organization)
+    // NB the GET gate reads `orgId` (orgAuth middleware), while the POST
+    // body uses `organization` — two names, one concept, server contract.
+    if (organization) q.set('orgId', organization)
     if (window && (window.gte || window.lte)) q.set('start_at', JSON.stringify(window))
     if (includeDeleted) q.set('includeDeleted', 'true')
     if (limit != null) q.set('limit', String(limit))
