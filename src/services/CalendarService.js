@@ -35,18 +35,20 @@ export class CalendarService extends BaseService {
    * @returns {Promise<object[]>} wire-shaped calendar_events rows
    */
   calendarListEvents({ workspaceId, organization, window, includeDeleted, limit } = {}) {
-    const body = {}
-    if (workspaceId) body.workspaceId = workspaceId
-    // The list route resolves the caller's org for its member gate from the
-    // body — without it, workspace-only callers (module bridges) got
-    // "Organization ID required" even for reads.
-    if (organization) body.organization = organization
-    if (window && (window.gte || window.lte)) body.start_at = window
-    if (includeDeleted) body.includeDeleted = true
-    if (limit != null) body.limit = limit
-    return this._call('calendarListEvents', '/calendar/events', {
-      method: 'POST',
-      body
+    // GET with query params — the route pair is GET /events = list,
+    // POST /events = create. This method used to POST its filters, which the
+    // server dispatched to CREATE ("title required" on every list; caught
+    // live 2026-08-06 via the module calendar bridge). `organization` feeds
+    // the requireOrgRole member gate; `start_at` rides as JSON.
+    const q = new URLSearchParams()
+    if (workspaceId) q.set('workspaceId', workspaceId)
+    if (organization) q.set('organization', organization)
+    if (window && (window.gte || window.lte)) q.set('start_at', JSON.stringify(window))
+    if (includeDeleted) q.set('includeDeleted', 'true')
+    if (limit != null) q.set('limit', String(limit))
+    const qs = q.toString()
+    return this._call('calendarListEvents', `/calendar/events${qs ? `?${qs}` : ''}`, {
+      method: 'GET'
     })
   }
 
