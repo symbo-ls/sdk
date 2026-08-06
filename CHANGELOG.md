@@ -1,5 +1,13 @@
 # @symbo.ls/sdk
 
+## 3.14.675
+
+### Patch Changes
+
+- Auto-generated cross-repo patch release.
+- Updated dependencies
+  - @symbo.ls/channels@3.14.675
+
 ## 3.14.664
 
 ### Patch Changes

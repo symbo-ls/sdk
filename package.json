@@ -1,6 +1,6 @@
 {
   "name": "@symbo.ls/sdk",
-  "version": "3.14.664",
+  "version": "3.14.675",
   "type": "module",
   "source": "./src/index.js",
   "module": "./dist/esm/src/index.js",
@@ -75,7 +75,7 @@
     "test:unit-all": "tape src/services/tests/**/*.test.js | tap-spec"
   },
   "dependencies": {
-    "@symbo.ls/channels": "^3.14.599",
+    "@symbo.ls/channels": "^3.14.675",
     "@symbo.ls/utils": "^3.14.663",
     "@symbo.ls/analyzing": "^3.14.599",
     "acorn": "^8.14.0",
