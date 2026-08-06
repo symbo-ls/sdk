@@ -34,9 +34,13 @@ export class CalendarService extends BaseService {
    * @param {number} [args.limit]            - max rows (default 5000)
    * @returns {Promise<object[]>} wire-shaped calendar_events rows
    */
-  calendarListEvents({ workspaceId, window, includeDeleted, limit } = {}) {
+  calendarListEvents({ workspaceId, organization, window, includeDeleted, limit } = {}) {
     const body = {}
     if (workspaceId) body.workspaceId = workspaceId
+    // The list route resolves the caller's org for its member gate from the
+    // body — without it, workspace-only callers (module bridges) got
+    // "Organization ID required" even for reads.
+    if (organization) body.organization = organization
     if (window && (window.gte || window.lte)) body.start_at = window
     if (includeDeleted) body.includeDeleted = true
     if (limit != null) body.limit = limit
