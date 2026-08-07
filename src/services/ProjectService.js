@@ -234,13 +234,19 @@ export class ProjectService extends BaseService {
       branch = 'main',
       version = 'latest',
       includeHistory = false,
+      // Workspace-module read grant (GA onboarding): when the caller is a
+      // member of a workspace that has INSTALLED this project (module or
+      // workspace app), sending its id authorizes the read even without a
+      // project-level role. Ignored by older servers.
+      workspaceId,
       headers
     } = options
 
     const queryParams = new URLSearchParams({
       branch,
       version,
-      includeHistory: includeHistory.toString()
+      includeHistory: includeHistory.toString(),
+      ...(workspaceId ? { workspaceId: String(workspaceId) } : {})
     }).toString()
 
     try {
