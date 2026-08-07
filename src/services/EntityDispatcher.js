@@ -1284,10 +1284,12 @@ const ENTITY_ROUTES = {
   // (2026-06); the Mongo successor is Team.permissions[].
 
   // ─── Analyzed (observability) ──────────────────────────────────────────────
-  // Replaces Grafana Faro. Browser → workspace-project worker →
-  // analyzed_* tables. Writes use the curated POST /analyzed/ingest route
-  // (server-stamps workspace_id from the JWT); reads use the PostgREST
-  // passthrough with RLS gating by app_metadata.workspace_id.
+  // Replaces Grafana Faro. Browser → main API server's Mongo-backed
+  // POST /core/analyzed/ingest route (server-stamps workspace_id from the
+  // JWT / envelope). The old workspace-project-worker → PostgREST →
+  // analyzed_* Postgres tables path (RLS gated by app_metadata.workspace_id)
+  // was deleted with the Supabase plane (2026-07-27) — every entry below is
+  // now a pure alias, not a live worker route.
   // SERVER-LOGS-MONGO-MIGRATION Phase 5 — legacy `workspaceProject.analyzed*`
   // entities are deprecated aliases that delegate to the new top-level
   // `sdk.analyzed.*` service (main API server, Mongo-backed). Same pattern
