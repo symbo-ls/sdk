@@ -354,6 +354,110 @@ export class WorkspaceService extends BaseService {
     )
   }
 
+  // ==================== APP INTERDEPENDENCIES (Manifest v2.1) ====================
+  // spec-app-dependencies.md §6 — distinct from the whole-array
+  // `updateWorkspaceSettings({workspaceApps})` writer above: this is the
+  // atomic, dependency-aware install/uninstall surface — transitive
+  // resolution, all-or-nothing multi-install, and an uninstall guard that
+  // blocks removing an app a `required` dependent still needs.
+
+  /**
+   * Resolve one app's full transitive dependency tree against this
+   * workspace's currently-installed apps. Any workspace member may read —
+   * informational, needed before a non-admin member even proposes an
+   * install.
+   *
+   * @param {string} workspaceId
+   * @param {string} appId - `owner/key` (or `owner--key`)
+   * @returns {Promise<{ resolved: Array<{ id, requirement:'required'|'optional', kind:string[], provides:string[], reason:string, status:'installed'|'missing', transitive:boolean }>, cycles: Array<{ path: string[] }> }>}
+   */
+  async getWorkspaceAppDependencies (workspaceId, appId) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!appId) throw new Error('appId is required')
+    this._requireReady('getWorkspaceAppDependencies')
+    // NOT `_call` — this controller returns `{success, resolved, cycles}`
+    // flat (no `data` envelope), unlike most workspace routes, so `_call`'s
+    // `response.data` unwrap would silently resolve to `undefined`.
+    const response = await this._request(
+      `/workspaces/${workspaceId}/apps/${encodeURIComponent(appId)}/dependencies`,
+      { method: 'GET', methodName: 'getWorkspaceAppDependencies' },
+    )
+    if (!response || response.success === false) {
+      throw new Error(response?.message || 'getWorkspaceAppDependencies failed')
+    }
+    return { resolved: response.resolved || [], cycles: response.cycles || [] }
+  }
+
+  /**
+   * Install an app plus an explicitly-approved set of sibling dependencies
+   * in ONE atomic write — every requested app installs, or none do. The
+   * server refuses the whole request (400 `missing_required_dependencies`)
+   * if a `required` dependency is neither already installed nor included in
+   * `alsoInstall`. A concurrent install of the same app(s) by another caller
+   * returns 409 `apps_install_conflict`.
+   *
+   * @param {string} workspaceId
+   * @param {{ appId: string, alsoInstall?: string[] }} args
+   * @returns {Promise<{ installed: string[], alreadyInstalled: string[], workspaceApps: object[] }>}
+   */
+  async installWorkspaceApps (workspaceId, { appId, alsoInstall } = {}) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!appId) throw new Error('appId is required')
+    this._requireReady('installWorkspaceApps')
+    // Same flat-envelope note as getWorkspaceAppDependencies above — this
+    // controller replies `{success, installed, alreadyInstalled,
+    // workspaceApps}`, not `{success, data}`.
+    const response = await this._request(`/workspaces/${workspaceId}/apps`, {
+      method: 'POST',
+      body: JSON.stringify({ appId, ...(alsoInstall ? { alsoInstall } : {}) }),
+      methodName: 'installWorkspaceApps',
+    })
+    if (!response || response.success === false) {
+      throw new Error(response?.message || 'installWorkspaceApps failed')
+    }
+    return {
+      installed: response.installed || [],
+      alreadyInstalled: response.alreadyInstalled || [],
+      workspaceApps: response.workspaceApps || [],
+    }
+  }
+
+  /**
+   * Uninstall an app from a workspace. Returns 409 with a `dependents` list
+   * (`{id, requirement}[]`) when an installed `required` dependent still
+   * needs it — pass `force: true` to override (the UI must surface that
+   * choice explicitly, never default to it).
+   *
+   * @param {string} workspaceId
+   * @param {string} appId - `owner/key` (or `owner--key`)
+   * @param {{ force?: boolean }} [options]
+   * @returns {Promise<{ uninstalled: string, dependents: Array<{id,requirement}>, forced: boolean }>}
+   */
+  // A 409 `app_has_dependents` response is a THROWN Error here (`_request`
+  // throws on any non-2xx status) — never a resolved `{ok:false}` value.
+  // `err.status === 409` and `err.cause` carries the parsed body
+  // (`{error, dependents, message}`), so a caller does:
+  //   try { await sdk.removeWorkspaceApp(wsId, appId) }
+  //   catch (err) { if (err.status === 409) showDependentsDialog(err.cause.dependents) }
+  async removeWorkspaceApp (workspaceId, appId, { force } = {}) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!appId) throw new Error('appId is required')
+    this._requireReady('removeWorkspaceApp')
+    const qs = force ? '?force=true' : ''
+    const response = await this._request(
+      `/workspaces/${workspaceId}/apps/${encodeURIComponent(appId)}${qs}`,
+      { method: 'DELETE', methodName: 'removeWorkspaceApp' },
+    )
+    if (!response || response.success === false) {
+      throw new Error(response?.message || 'removeWorkspaceApp failed')
+    }
+    return {
+      uninstalled: response.uninstalled,
+      dependents: response.dependents || [],
+      forced: !!response.forced,
+    }
+  }
+
   // ==================== PERMISSIONS ====================
 
   /**

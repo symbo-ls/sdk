@@ -488,6 +488,13 @@ export const SERVICE_METHODS = {
   getSpendControls: 'workspace',
   updateSpendControls: 'workspace',
 
+  // App interdependencies (Manifest v2.1 — spec-app-dependencies.md §6).
+  // Atomic, dependency-aware install/uninstall — distinct from the
+  // whole-array `updateWorkspaceSettings({workspaceApps})` writer above.
+  getWorkspaceAppDependencies: 'workspace',
+  installWorkspaceApps: 'workspace',
+  removeWorkspaceApp: 'workspace',
+
   // Workspace public config + write-only private-secret management.
   // Trusted runtime secret resolution is intentionally not browser-exposed.
   getWorkspacePublicConfig: 'workspace',
