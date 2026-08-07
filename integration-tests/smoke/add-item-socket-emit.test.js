@@ -41,12 +41,23 @@ test('includePending=true, changes should commit after socket.emit via manual ch
     async () => {
       await sdkInstance.checkpoint()
       const r = await sdkInstance.getProjectData(project.id, { includePending: true })
-      return r?.__pending?.count === 0 && !r.__pending.uncommitted ? r : null
+      // Wait for the REAL post-condition, not just a proxy for it: pending
+      // settling does not imply the op is readable yet, so returning here on
+      // pending alone let the assertions below dereference
+      // schema.test_type.test_key while it was still undefined — surfacing as
+      // a bare TypeError instead of a diagnosable timeout. Same shape the
+      // sibling add-item-live-false.test.js already uses.
+      return r?.__pending?.count === 0 &&
+        !r.__pending.uncommitted &&
+        r?.schema?.test_type?.test_key
+        ? r
+        : null
     },
     {
       timeout: COMMIT_TIMEOUT_MS,
       interval: 1000,
-      message: 'pending state never settled after manual checkpoint'
+      message:
+        'pending never settled AND/OR addItem op never appeared at schema.test_type.test_key after manual checkpoint'
     }
   )
 
