@@ -1097,12 +1097,13 @@ export class ProjectService extends BaseService {
       throw new Error('Project ID is required')
     }
 
-    const { branch = 'main', page = 1, limit = 50, headers } = options
+    const { branch = 'main', page = 1, limit = 50, fields, headers } = options
 
     const queryParams = new URLSearchParams({
       branch,
       page: page.toString(),
-      limit: limit.toString()
+      limit: limit.toString(),
+      ...(fields ? { fields: Array.isArray(fields) ? fields.join(',') : fields } : {})
     }).toString()
 
     try {
@@ -1120,6 +1121,103 @@ export class ProjectService extends BaseService {
       throw new Error(response.message)
     } catch (error) {
       throw new Error(`Failed to get project versions: ${error.message}`, { cause: error })
+    }
+  }
+
+  /**
+   * Get a single version document (metadata + diff payload) by id
+   */
+  async getProjectVersion (projectId, versionId, options = {}) {
+    this._requireReady('getProjectVersion')
+    if (!projectId) {
+      throw new Error('Project ID is required')
+    }
+    if (!versionId) {
+      throw new Error('Version ID is required')
+    }
+
+    const { headers } = options
+
+    try {
+      const response = await this._request(
+        `/projects/${projectId}/versions/${encodeURIComponent(versionId)}`,
+        {
+          method: 'GET',
+          methodName: 'getProjectVersion',
+          ...(headers ? { headers } : {})
+        }
+      )
+      if (response.success) {
+        return response.data
+      }
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Failed to get project version: ${error.message}`, { cause: error })
+    }
+  }
+
+  /**
+   * Get the latest version document for a branch
+   */
+  async getLatestProjectVersion (projectId, options = {}) {
+    this._requireReady('getLatestProjectVersion')
+    if (!projectId) {
+      throw new Error('Project ID is required')
+    }
+
+    const { branch = 'main', headers } = options
+
+    const queryParams = new URLSearchParams({ branch }).toString()
+
+    try {
+      const response = await this._request(
+        `/projects/${projectId}/versions/latest?${queryParams}`,
+        {
+          method: 'GET',
+          methodName: 'getLatestProjectVersion',
+          ...(headers ? { headers } : {})
+        }
+      )
+      if (response.success) {
+        return response.data
+      }
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Failed to get latest project version: ${error.message}`, { cause: error })
+    }
+  }
+
+  /**
+   * Get the fully reconstructed project state for a version, addressed by
+   * version id (unambiguous — `value` strings are not unique per project).
+   * Powers version preview in the history UI.
+   */
+  async getProjectVersionData (projectId, versionId, options = {}) {
+    this._requireReady('getProjectVersionData')
+    if (!projectId) {
+      throw new Error('Project ID is required')
+    }
+    if (!versionId) {
+      throw new Error('Version ID is required')
+    }
+
+    const { headers } = options
+
+    try {
+      const response = await this._request(
+        `/projects/${projectId}/versions/${encodeURIComponent(versionId)}/data`,
+        {
+          method: 'GET',
+          methodName: 'getProjectVersionData',
+          ...(headers ? { headers } : {})
+        }
+      )
+      if (response.success) {
+        return response.data
+      }
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Failed to get project version data: ${error.message}`, { cause: error })
     }
   }
 

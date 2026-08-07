@@ -1706,7 +1706,41 @@ const ENTITY_ROUTES = {
       get: 'getProject',
       create: 'createProject',
       update: 'updateProject',
-      remove: 'deleteProject'
+      remove: 'removeProject'
+    }
+  },
+
+  // ─── Project version history ──────────────────────────────────────────────
+  'project.versions': {
+    service: 'project',
+    methods: {
+      list: 'getProjectVersions',
+      get: 'getProjectVersion',
+      rpc: 'restoreProjectVersion'
+    },
+    argMap: {
+      list: (a) => [
+        a?.projectId ?? a?.params?.projectId ?? a?.filter?.projectId,
+        {
+          branch: a?.branch ?? a?.params?.branch,
+          page: a?.page ?? a?.params?.page,
+          limit: a?.limit ?? a?.params?.limit,
+          fields: a?.fields ?? a?.params?.fields
+        }
+      ],
+      get: (a) => [
+        a?.projectId ?? a?.params?.projectId,
+        a?.versionId ?? a?.id ?? a?.params?.versionId
+      ],
+      rpc: (a) => [
+        a?.projectId ?? a?.params?.projectId,
+        a?.version ?? a?.versionId ?? a?.params?.version,
+        {
+          message: a?.message ?? a?.params?.message,
+          branch: a?.branch ?? a?.params?.branch,
+          type: a?.type ?? a?.params?.type
+        }
+      ]
     }
   },
 
