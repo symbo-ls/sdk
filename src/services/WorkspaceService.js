@@ -410,9 +410,16 @@ export class WorkspaceService extends BaseService {
   /**
    * Send a workspace invitation by email.
    * @param {string} workspaceId
-   * @param {{email: string, role?: string, recipientName?: string}} args - role defaults to 'editor'
+   * @param {{email: string, role?: string, recipientName?: string, teams?: string[]}} args
+   *   role defaults to 'editor'; `teams` (GA-W2.1) is an optional list of
+   *   platform Team slugs or ids — resolved server-side against the
+   *   workspace's OWN org and attached on accept; unknown entries reject
+   *   the invite with `invalid_teams`.
    */
-  async createWorkspaceInvitation (workspaceId, { email, role = 'editor', recipientName } = {}) {
+  async createWorkspaceInvitation (
+    workspaceId,
+    { email, role = 'editor', recipientName, teams } = {}
+  ) {
     if (!workspaceId) throw new Error('workspaceId is required')
     if (!email) throw new Error('email is required')
     return this._call(
@@ -420,7 +427,12 @@ export class WorkspaceService extends BaseService {
       `/workspaces/${workspaceId}/invitations`,
       {
         method: 'POST',
-        body: { email, role, ...(recipientName ? { recipientName } : {}) },
+        body: {
+          email,
+          role,
+          ...(recipientName ? { recipientName } : {}),
+          ...(Array.isArray(teams) && teams.length ? { teams } : {})
+        },
       }
     )
   }
