@@ -382,12 +382,14 @@ const ENTITY_ROUTES = {
       update: 'update',
       remove: 'remove',
       assign: 'assign',
-      epicCounts: 'epicCounts'
+      epicCounts: 'epicCounts',
+      columnCounts: 'columnCounts'
     },
     argMap: {
       ...CRUD_ARG_MAP,
       assign: (a) => [a?.id ?? a?.number, a?.assignee ?? a?.email],
-      epicCounts: () => []
+      epicCounts: () => [],
+      columnCounts: (a) => [a?.filter ?? a ?? {}]
     }
   },
   'tickets.columns': {
@@ -940,7 +942,15 @@ const ENTITY_ROUTES = {
       getSession: 'getSession',
       listEvents: 'listEvents',
       listUsers: 'listUsers',
-      listBugs: 'listBugs'
+      listBugs: 'listBugs',
+      // Rollup + presence reads — the dashboard chain. Registered so
+      // `sdk.execute('analyzed', 'now'|…)` works like every other op
+      // (previously only reachable via getService('analyzed')).
+      now: 'now',
+      weekly: 'weekly',
+      demographics: 'demographics',
+      changes: 'changes',
+      activeUsers: 'activeUsers'
     },
     argMap: {
       ingest: (a) => [a],
@@ -949,7 +959,12 @@ const ENTITY_ROUTES = {
       getSession: argMaps.id,
       listEvents: (a) => [a?.filter ?? {}, a?.options ?? {}],
       listUsers: (a) => [a?.filter ?? {}, a?.options ?? {}],
-      listBugs: (a) => [a?.filter ?? {}, a?.options ?? {}]
+      listBugs: (a) => [a?.filter ?? {}, a?.options ?? {}],
+      now: (a) => [a?.filter ?? a ?? {}],
+      weekly: (a) => [a?.filter ?? a ?? {}],
+      demographics: (a) => [a?.filter ?? a ?? {}],
+      changes: (a) => [a?.filter ?? a ?? {}],
+      activeUsers: (a) => [a?.filter ?? {}, a?.options ?? {}]
     }
   },
   'docs.documents': {

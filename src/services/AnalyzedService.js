@@ -30,12 +30,13 @@ export class AnalyzedService extends BaseService {
     })
   }
 
-  // GET /core/analyzed/sessions?userId=&projectId=&since=&limit=&offset=
+  // GET /core/analyzed/sessions?userId=&projectId=&since=&country=&limit=&offset=
   listSessions (filter = {}, options = {}) {
     const params = new URLSearchParams()
     if (filter.userId) params.set('userId', filter.userId)
     if (filter.projectId) params.set('projectId', filter.projectId)
     if (filter.since) params.set('since', filter.since)
+    if (filter.country) params.set('country', filter.country)
     if (options.limit != null) params.set('limit', String(options.limit))
     if (options.offset != null) params.set('offset', String(options.offset))
     const qs = params.toString()
@@ -79,42 +80,56 @@ export class AnalyzedService extends BaseService {
     return this._call('analyzed.listUsers', `/analyzed/users${qs ? `?${qs}` : ''}`)
   }
 
-  // GET /core/analyzed/active-users?limit=&offset=
+  // GET /core/analyzed/active-users?projectId=&limit=&offset=
   // Org-scoped active users — returns [{userId, userName, userEmail, lastSeenAt}].
   activeUsers (filter = {}, options = {}) {
     const params = new URLSearchParams()
+    if (filter.projectId) params.set('projectId', filter.projectId)
     if (options.limit != null) params.set('limit', String(options.limit))
     if (options.offset != null) params.set('offset', String(options.offset))
     const qs = params.toString()
     return this._call('analyzed.activeUsers', `/analyzed/active-users${qs ? `?${qs}` : ''}`)
   }
 
-  // GET /core/analyzed/changes?range=<filter.range>
+  // GET /core/analyzed/changes?range=<filter.range>&projectId=
   // Monthly signups/activity over a range (defaults to last 12 months).
   // Returns { monthly: [{label, count}] }.
   changes (filter = {}) {
-    const qs = filter.range ? `?range=${encodeURIComponent(filter.range)}` : ''
-    return this._call('analyzed.changes', `/analyzed/changes${qs}`)
+    const params = new URLSearchParams()
+    if (filter.range) params.set('range', filter.range)
+    if (filter.projectId) params.set('projectId', filter.projectId)
+    const qs = params.toString()
+    return this._call('analyzed.changes', `/analyzed/changes${qs ? `?${qs}` : ''}`)
   }
 
-  // GET /core/analyzed/demographics
+  // GET /core/analyzed/demographics?projectId=&since=
   // Country-level visitor breakdown. Returns { countries: [{country, count, code}] }.
-  demographics () {
-    return this._call('analyzed.demographics', '/analyzed/demographics')
+  demographics (filter = {}) {
+    const params = new URLSearchParams()
+    if (filter.projectId) params.set('projectId', filter.projectId)
+    if (filter.since) params.set('since', filter.since)
+    const qs = params.toString()
+    return this._call('analyzed.demographics', `/analyzed/demographics${qs ? `?${qs}` : ''}`)
   }
 
-  // GET /core/analyzed/now
+  // GET /core/analyzed/now?projectId=
   // Real-time dashboard snapshot. Returns { usersNow, usersToday, hourly: [{hour, count}],
   // activeSessions: [{id, name, email, awake, browser, os, resolution, location,
   // duration, sessionCount, path, updates, ip, referrer}] }.
-  now () {
-    return this._call('analyzed.now', '/analyzed/now')
+  now (filter = {}) {
+    const params = new URLSearchParams()
+    if (filter.projectId) params.set('projectId', filter.projectId)
+    const qs = params.toString()
+    return this._call('analyzed.now', `/analyzed/now${qs ? `?${qs}` : ''}`)
   }
 
-  // GET /core/analyzed/weekly
+  // GET /core/analyzed/weekly?projectId=
   // Week-over-week comparison. Returns { pastWeek: [{label, count}], thisWeek: [{label, count}] }.
-  weekly () {
-    return this._call('analyzed.weekly', '/analyzed/weekly')
+  weekly (filter = {}) {
+    const params = new URLSearchParams()
+    if (filter.projectId) params.set('projectId', filter.projectId)
+    const qs = params.toString()
+    return this._call('analyzed.weekly', `/analyzed/weekly${qs ? `?${qs}` : ''}`)
   }
 
   // GET /core/analyzed/bugs?projectId=&since=&limit=&offset=
