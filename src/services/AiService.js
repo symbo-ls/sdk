@@ -1,4 +1,5 @@
 import { BaseService } from './BaseService.js'
+import { logger } from '../utils/logger.js'
 
 // AiService — single entry point for every UI surface that talks to an
 // LLM (AppAssistant, CanvasPromptTextarea, ticket standup/detail editor,
@@ -40,8 +41,22 @@ const DEFAULT_AUTH_MODE = 'ask'
 
 // Model-mode catalog — the upstream provider routing the workspace agent
 // should use for a turn. Persisted in localStorage and sent as `modelMode`
-// on every appended message.
-const MODEL_MODES = ['auto', 'openai', 'openrouter', 'anthropic', 'gemini', 'research', 'cheap']
+// on every appended message. Mirrors the server's AgentModelModes enum
+// (packages/agent-core/agentRuntime.js) — 'simone' was missing here until
+// 2026-08-08 (tickets/server.md "restore simone as the default AI mode"),
+// which meant setModelMode('simone') THREW even though the server has
+// always accepted it as an explicit mode: this list, not the server, was
+// the reason the picker could never offer it.
+const MODEL_MODES = [
+  'auto',
+  'simone',
+  'openai',
+  'openrouter',
+  'anthropic',
+  'gemini',
+  'research',
+  'cheap'
+]
 
 // How long to wait after the message POST resolves before falling back to
 // a one-shot getConversation() read — the server publishes message.created
@@ -112,6 +127,26 @@ export class AiService extends BaseService {
       label: key === 'auto' ? 'Auto' : key.charAt(0).toUpperCase() + key.slice(1),
       active: key === current
     }))
+  }
+
+  // Real per-provider diagnostics for the model picker — GET
+  // /core/ai/providers (AiProviderController, backed by
+  // ModelRouterService.describeConfiguredProviders()/listDemotedProviders()).
+  // Returns { defaultMode, providers:[{provider,usable,enabled,available,
+  // hasCredentials,demoted,model,reason,demotedUntil}], demotedProviders }
+  // so a picker can show EVERY mode and, for the unusable ones, WHY — never
+  // configured, disabled, missing credentials, or temporarily demoted (self-
+  // heals; see ProviderHealthTracker). Never throws: callers render the
+  // picker with plain mode labels (no reason badges) on failure rather than
+  // losing the picker entirely — this is a diagnostics enhancement, not a
+  // hard dependency of picking a mode.
+  async describeProviders () {
+    try {
+      return await this._request('/ai/providers', { method: 'GET', methodName: 'ai.describeProviders' })
+    } catch (error) {
+      logger.warn('[sdk.ai] describeProviders failed:', error)
+      return { defaultMode: DEFAULT_MODEL_MODE, providers: [], demotedProviders: [] }
+    }
   }
 
   // ==================== MODE (deprecated shims) ====================
