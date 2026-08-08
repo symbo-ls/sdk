@@ -3,7 +3,7 @@ import { BaseService } from './BaseService.js'
 export class FileService extends BaseService {
   // ==================== FILE METHODS ====================
 
-  async uploadFile (file, options = {}) {
+  async uploadFile(file, options = {}) {
     this._requireReady('uploadFile')
     if (!file) {
       throw new Error('File is required for upload')
@@ -14,7 +14,9 @@ export class FileService extends BaseService {
 
     // Add optional parameters only if they exist
     const hasProjectIdOption = Object.hasOwn(options, 'projectId')
-    const projectId = hasProjectIdOption ? options.projectId : this._context.project?.id
+    const projectId = hasProjectIdOption
+      ? options.projectId
+      : this._context.project?.id
     if (projectId != null && projectId !== '') {
       formData.append('projectId', projectId)
     }
@@ -46,7 +48,7 @@ export class FileService extends BaseService {
     }
   }
 
-  async updateProjectIcon (projectId, iconFile) {
+  async updateProjectIcon(projectId, iconFile) {
     this._requireReady('updateProjectIcon')
     if (!projectId || !iconFile) {
       throw new Error('Project ID and icon file are required')
@@ -68,7 +70,9 @@ export class FileService extends BaseService {
       }
       throw new Error(response.message)
     } catch (error) {
-      throw new Error(`Failed to update project icon: ${error.message}`, { cause: error })
+      throw new Error(`Failed to update project icon: ${error.message}`, {
+        cause: error
+      })
     }
   }
 
@@ -77,7 +81,7 @@ export class FileService extends BaseService {
   /**
    * Helper method to upload file with validation
    */
-  async uploadFileWithValidation (file, options = {}) {
+  async uploadFileWithValidation(file, options = {}) {
     if (!file) {
       throw new Error('File is required')
     }
@@ -85,13 +89,19 @@ export class FileService extends BaseService {
     // Validate file size (optional)
     const maxSize = options.maxSize || 10 * 1024 * 1024 // 10MB default
     if (file.size > maxSize) {
-      throw new Error(`File size exceeds maximum allowed size of ${maxSize / (1024 * 1024)}MB`)
+      throw new Error(
+        `File size exceeds maximum allowed size of ${maxSize / (1024 * 1024)}MB`
+      )
     }
 
     // Validate file type (optional)
-    const allowedTypes = options.allowedTypes || ['image/*', 'application/pdf', 'text/*']
+    const allowedTypes = options.allowedTypes || [
+      'image/*',
+      'application/pdf',
+      'text/*'
+    ]
     if (allowedTypes.length > 0) {
-      const isValidType = allowedTypes.some(type => {
+      const isValidType = allowedTypes.some((type) => {
         if (type.endsWith('/*')) {
           return file.type.startsWith(type.replace('/*', ''))
         }
@@ -99,7 +109,9 @@ export class FileService extends BaseService {
       })
 
       if (!isValidType) {
-        throw new Error(`File type '${file.type}' is not allowed. Allowed types: ${allowedTypes.join(', ')}`)
+        throw new Error(
+          `File type '${file.type}' is not allowed. Allowed types: ${allowedTypes.join(', ')}`
+        )
       }
     }
 
@@ -109,7 +121,7 @@ export class FileService extends BaseService {
   /**
    * Helper method to upload image file specifically
    */
-  async uploadImage (imageFile, options = {}) {
+  async uploadImage(imageFile, options = {}) {
     const imageOptions = {
       ...options,
       allowedTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
@@ -122,10 +134,15 @@ export class FileService extends BaseService {
   /**
    * Helper method to upload document file
    */
-  async uploadDocument (documentFile, options = {}) {
+  async uploadDocument(documentFile, options = {}) {
     const documentOptions = {
       ...options,
-      allowedTypes: ['application/pdf', 'text/plain', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+      allowedTypes: [
+        'application/pdf',
+        'text/plain',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      ],
       maxSize: options.maxSize || 20 * 1024 * 1024 // 20MB for documents
     }
 
@@ -135,7 +152,7 @@ export class FileService extends BaseService {
   /**
    * Helper method to get file URL by ID
    */
-  getFileUrl (fileId) {
+  getFileUrl(fileId) {
     if (!fileId) {
       throw new Error('File ID is required')
     }
@@ -145,7 +162,7 @@ export class FileService extends BaseService {
   /**
    * Helper method to validate file before upload
    */
-  validateFile (file, options = {}) {
+  validateFile(file, options = {}) {
     const errors = []
 
     if (!file) {
@@ -156,13 +173,15 @@ export class FileService extends BaseService {
     // Check file size
     const maxSize = options.maxSize || 10 * 1024 * 1024
     if (file.size > maxSize) {
-      errors.push(`File size (${(file.size / (1024 * 1024)).toFixed(2)}MB) exceeds maximum allowed size of ${maxSize / (1024 * 1024)}MB`)
+      errors.push(
+        `File size (${(file.size / (1024 * 1024)).toFixed(2)}MB) exceeds maximum allowed size of ${maxSize / (1024 * 1024)}MB`
+      )
     }
 
     // Check file type
     const allowedTypes = options.allowedTypes || []
     if (allowedTypes.length > 0) {
-      const isValidType = allowedTypes.some(type => {
+      const isValidType = allowedTypes.some((type) => {
         if (type.endsWith('/*')) {
           return file.type.startsWith(type.replace('/*', ''))
         }
@@ -170,7 +189,9 @@ export class FileService extends BaseService {
       })
 
       if (!isValidType) {
-        errors.push(`File type '${file.type}' is not allowed. Allowed types: ${allowedTypes.join(', ')}`)
+        errors.push(
+          `File type '${file.type}' is not allowed. Allowed types: ${allowedTypes.join(', ')}`
+        )
       }
     }
 
@@ -180,7 +201,7 @@ export class FileService extends BaseService {
   /**
    * Helper method to create FormData with file and metadata
    */
-  createFileFormData (file, metadata = {}) {
+  createFileFormData(file, metadata = {}) {
     const formData = new FormData()
     formData.append('file', file)
 
@@ -195,12 +216,12 @@ export class FileService extends BaseService {
   /**
    * Helper method to upload multiple files
    */
-  async uploadMultipleFiles (files, options = {}) {
+  async uploadMultipleFiles(files, options = {}) {
     if (!Array.isArray(files) || files.length === 0) {
       throw new Error('Files array is required and must not be empty')
     }
 
-    const uploadPromises = files.map(file => this.uploadFile(file, options))
+    const uploadPromises = files.map((file) => this.uploadFile(file, options))
     const results = await Promise.allSettled(uploadPromises)
 
     return results.map((result, index) => ({
@@ -232,7 +253,7 @@ export class FileService extends BaseService {
    * @param {string} options.branch - Project branch (default: 'main')
    * @returns {Object} The file metadata entry that was added to the project
    */
-  async uploadProjectFile (file, options = {}) {
+  async uploadProjectFile(file, options = {}) {
     this._requireReady('uploadProjectFile')
     if (!file) {
       throw new Error('File is required for upload')
@@ -240,7 +261,9 @@ export class FileService extends BaseService {
 
     const fileKey = options.key || file.name
     if (!fileKey) {
-      throw new Error('File key is required (provide options.key or a file with a name)')
+      throw new Error(
+        'File key is required (provide options.key or a file with a name)'
+      )
     }
 
     // Upload the file to the server
@@ -283,7 +306,7 @@ export class FileService extends BaseService {
    * @param {Object} options - Same options as uploadProjectFile (key is derived from each file name)
    * @returns {Array<Object>} Results with success/error status and metadata entries
    */
-  async uploadMultipleProjectFiles (files, options = {}) {
+  async uploadMultipleProjectFiles(files, options = {}) {
     if (!Array.isArray(files) || files.length === 0) {
       throw new Error('Files array is required and must not be empty')
     }
@@ -312,9 +335,40 @@ export class FileService extends BaseService {
    * @param {string} fileId
    * @returns {Promise<object>}
    */
-  async getFile (fileId) {
+  async getFile(fileId) {
     if (!fileId) throw new Error('fileId is required')
     return this._call('getFile', `/files/${fileId}`)
+  }
+
+  /**
+   * Download a file's CONTENT as text, authenticated.
+   *
+   * `getFileUrl()` builds the PUBLIC route (`/core/files/public/:id/download`),
+   * which by design only serves files uploaded as `visibility: 'public'`. A
+   * private file returns 404 there, and its raw GCS object URL returns 403
+   * because that bucket is not world-readable — so a caller holding a private
+   * file had no way to read its own upload back at all. This is the
+   * authenticated companion (`GET /core/files/:id/download`, requireAuth),
+   * which is the correct route for anything not deliberately published.
+   *
+   * Returns text — callers parse (these are documents: JSON, markdown, csv).
+   *
+   * @param {string} fileId
+   * @returns {Promise<string>}
+   */
+  async downloadFileContent(fileId) {
+    if (!fileId) throw new Error('fileId is required')
+    const res = await this._call(
+      'downloadFileContent',
+      `/files/${fileId}/download`,
+      {
+        raw: true
+      }
+    )
+    if (typeof res === 'string') return res
+    if (res && typeof res.text === 'function') return await res.text()
+    // An enveloped/parsed body still round-trips to the document text.
+    return typeof res === 'object' ? JSON.stringify(res) : String(res)
   }
 
   /**
@@ -323,7 +377,7 @@ export class FileService extends BaseService {
    * @param {string} fileId
    * @param {{tags?: Array<string>, visibility?: string, metadata?: object}} updates
    */
-  async updateFile (fileId, updates = {}) {
+  async updateFile(fileId, updates = {}) {
     if (!fileId) throw new Error('fileId is required')
     return this._call('updateFile', `/files/${fileId}`, {
       method: 'PUT',
@@ -335,7 +389,7 @@ export class FileService extends BaseService {
    * Delete a file. Owner-only on the server. Also removes from R2.
    * @param {string} fileId
    */
-  async deleteFile (fileId) {
+  async deleteFile(fileId) {
     if (!fileId) throw new Error('fileId is required')
     return this._call('deleteFile', `/files/${fileId}`, { method: 'DELETE' })
   }
@@ -344,7 +398,7 @@ export class FileService extends BaseService {
    * List the authenticated user's own uploads. Paginated.
    * @param {{page?: number, limit?: number, sortBy?: string, sortOrder?: 'asc' | 'desc'}} [options]
    */
-  async listMyUploads ({ page = 1, limit = 20, sortBy, sortOrder } = {}) {
+  async listMyUploads({ page = 1, limit = 20, sortBy, sortOrder } = {}) {
     const qs = new URLSearchParams({ page: String(page), limit: String(limit) })
     if (sortBy) qs.append('sortBy', sortBy)
     if (sortOrder) qs.append('sortOrder', sortOrder)
@@ -364,7 +418,7 @@ export class FileService extends BaseService {
    *   KIND_WHITELIST (e.g. 'template', 'component', 'page').
    * @returns {Promise<object>} - server response {thumbnailUrl, …}
    */
-  async uploadMarketplaceThumbnail (thumbnailFile, { itemId, kind } = {}) {
+  async uploadMarketplaceThumbnail(thumbnailFile, { itemId, kind } = {}) {
     this._requireReady('uploadMarketplaceThumbnail')
     if (!thumbnailFile) throw new Error('thumbnailFile is required')
     if (!itemId) throw new Error('itemId is required')
@@ -380,11 +434,13 @@ export class FileService extends BaseService {
       methodName: 'uploadMarketplaceThumbnail'
     })
     if (response?.success) return response.data
-    throw new Error(response?.message || 'Failed to upload marketplace thumbnail')
+    throw new Error(
+      response?.message || 'Failed to upload marketplace thumbnail'
+    )
   }
 }
 
-function _extractFormat (fileKey, uploadData) {
+function _extractFormat(fileKey, uploadData) {
   if (uploadData.extension) return uploadData.extension.toLowerCase()
   const dotIdx = fileKey.lastIndexOf('.')
   if (dotIdx !== -1) return fileKey.slice(dotIdx + 1).toLowerCase()
