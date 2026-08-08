@@ -154,6 +154,37 @@ const WS_CRUD_ARG_MAP = {
   remove: wsArgMaps.id
 }
 
+// RECORDS ARG MAP — the generic maps above cannot serve this entity.
+//
+// `wsArgMaps.payload` resolves the request body as
+// `a?.payload ?? a?.data ?? rest`. That `a?.data` branch exists because most
+// entities let a caller pack the body as `{ data: {...} }`. The records plane
+// is the one entity where `data` is a FIRST-CLASS FIELD of the body itself —
+// the wire shape is `{ collection, name, data }` — so on a flat write the
+// heuristic fires on the record's own payload and returns just that, silently
+// dropping `collection` and `name` before the request is built. The server
+// then rejects it with "A `collection` namespace is required", which reads as
+// a caller mistake and is really an unpacking bug three layers up. Symptom
+// when it bit: workspace-module board autosave failing on every create, and
+// row create/update on the workspace `/data` surface (`externalData.js`)
+// failing the same way — both pass the documented flat shape.
+//
+// The packed form (`{ payload: {...} }`) is still honoured; only the `data`
+// shortcut is dropped, and only here.
+const recordsBody = (a, extraKeys) => a?.payload ?? _stripWs(a, extraKeys)
+
+const RECORDS_ARG_MAP = {
+  list: argMaps.filterOptions,
+  get: wsArgMaps.id,
+  create: (a) => [recordsBody(a), ..._wsOpts(a)],
+  update: (a) => [
+    a?.id ?? a?.number,
+    recordsBody(a, ['id', 'number']),
+    ..._wsOpts(a)
+  ],
+  remove: wsArgMaps.id
+}
+
 // Party sub-resource body adapter (roles / relationships). Pulls the POST
 // body out of the well-known shapes, stripping the parent-id keys so both a
 // packed caller (`{ partyId, payload: { role } }`) and a flat caller
@@ -1396,7 +1427,12 @@ const ENTITY_ROUTES = {
     // (org home) every op threw `no workspace scope`. WS_CRUD_ARG_MAP threads
     // a caller's top-level workspaceId into the options positional and keeps
     // it out of the request body.
-    argMap: WS_CRUD_ARG_MAP
+    //
+    // RECORDS_ARG_MAP, not WS_CRUD_ARG_MAP: `data` is a real field of this
+    // entity's body, so the generic map's `?? a?.data` shortcut unpacked flat
+    // writes down to the record payload and lost `collection`. See its
+    // definition for the full note.
+    argMap: RECORDS_ARG_MAP
   },
   // workspaceProject.companyInfo + workspaceProject.companySettings entities
   // removed 2026-07 — tables dropped with the workspace-project Supabase org
