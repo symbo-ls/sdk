@@ -22,17 +22,91 @@ const _qs = (workspaceId, extra) => {
   return s ? `?${s}` : ''
 }
 
+const _availabilityToIntervals = (availability) => {
+  let interval = {}
+  interval.timeBlocks = []
+  interval.tz = availability[0].tz
+  for (const timeSpan of availability[0].weekly) {
+    const from = timeSpan.from
+    const to = timeSpan.to
+    const dow = timeSpan.dow
+    let dateFrom = new Date(2000, 0, dow, from.split(":")[0], from.split(":")[1])
+    let dateTo = new Date(2000, 0, dow, to.split(":")[0], to.split(":")[1])
+
+    // get a timezone offset to convert to UTC
+    const tzOffset = new Date(dateFrom.toLocaleString('en-US', { timeZone: 'UTC' })) - new Date(dateFrom.toLocaleString('en-US', { timeZone: interval.tz }))
+    dateFrom = new Date(dateFrom.getTime() + tzOffset)
+    dateTo = new Date(dateTo.getTime() + tzOffset)
+
+    interval.timeBlocks.push({
+      from: dateFrom,
+      to: dateTo
+    })
+  }
+  return interval
+}
+
+const _intersectTwoIntervals = (interval1, interval2) => {
+  let returnInterval = {}
+  returnInterval.timeBlocks = []
+  for (const timeBlock1 of interval1.timeBlocks) {
+    for (const timeBlock2 of interval2.timeBlocks) {
+      //check if the two timeblocks overlap
+      if (timeBlock1.from < timeBlock2.to && timeBlock1.to > timeBlock2.from) {
+        //add the overlapping time to the return interval
+        returnInterval.timeBlocks.push({
+          from: Math.max(timeBlock1.from, timeBlock2.from),
+          to: Math.min(timeBlock1.to, timeBlock2.to)
+        })
+      }
+    }
+  }
+}
+
+const _intervalsToAvailability = (interval) => {
+
+}
+
 export class AvailabilityRuleService extends BaseService {
   // GET /core/availability-rules?user=
-  list (filter = {}, options = {}) {
+  list(filter = {}, options = {}) {
     const extra = {}
     if (filter.user) extra.user = filter.user
     const ws = filter.workspaceId || options.workspaceId
     return this._call('availabilityRules.list', `/availability-rules${_qs(ws, extra)}`)
   }
 
+  // GET /core/availability-rules/intersect
+  // when scheduling a meeting this will return all the times that each userID is available. The first userID is assumed to be the person scheduling the meeting and will be in their time zone
+  async intersect(userIDs, workspaceId) {
+    let intervals = []
+    for (const userID of userIDs) {
+      const availability = await this.list({
+        user: userID,
+        workspaceId: workspaceId
+      })
+
+      //return empty if no availability is found
+      if (!availability || availability.length === 0) {
+        return {}
+      }
+
+      //convert the weekly object to an array of intervals and a timezone.
+      intervals.push(_availabilityToIntervals(availability))
+    }
+
+    //create a return availability off of the first interval that we'll trim based on all the other intervals.
+    let finalInterval = intervals[0]
+    for (const interval of intervals.slice(1)) {
+      finalInterval = _intersectTwoIntervals(finalInterval, interval)
+    }
+
+    //convert the final interval back to a weekly object the UI can consume
+    return _intervalsToAvailability(finalInterval)
+  }
+
   // GET /core/availability-rules/:id
-  get (id, { workspaceId } = {}) {
+  get(id, { workspaceId } = {}) {
     return this._call(
       'availabilityRules.get',
       `/availability-rules/${encodeURIComponent(id)}${_qs(workspaceId)}`
@@ -42,7 +116,7 @@ export class AvailabilityRuleService extends BaseService {
   // POST /core/availability-rules (editor; `user` defaults to the caller, A2).
   // payload: { user?, weekly?: [{ dow, from, to }], tz?, overrides?, source?,
   //            custom?, ... }
-  create (payload = {}, { workspaceId } = {}) {
+  create(payload = {}, { workspaceId } = {}) {
     return this._call('availabilityRules.create', `/availability-rules${_qs(workspaceId)}`, {
       method: 'POST',
       body: payload
@@ -50,7 +124,7 @@ export class AvailabilityRuleService extends BaseService {
   }
 
   // PATCH /core/availability-rules/:id (editor; `user` immutable, A2).
-  update (id, payload = {}, { workspaceId } = {}) {
+  update(id, payload = {}, { workspaceId } = {}) {
     return this._call(
       'availabilityRules.update',
       `/availability-rules/${encodeURIComponent(id)}${_qs(workspaceId)}`,
@@ -59,7 +133,7 @@ export class AvailabilityRuleService extends BaseService {
   }
 
   // DELETE /core/availability-rules/:id (editor; tombstone, never hard, A3).
-  remove (id, { workspaceId } = {}) {
+  remove(id, { workspaceId } = {}) {
     return this._call(
       'availabilityRules.remove',
       `/availability-rules/${encodeURIComponent(id)}${_qs(workspaceId)}`,
