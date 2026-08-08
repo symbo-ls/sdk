@@ -1,6 +1,6 @@
 {
   "name": "@symbo.ls/sdk",
-  "version": "3.14.698",
+  "version": "3.14.707",
   "type": "module",
   "source": "./src/index.js",
   "module": "./dist/esm/src/index.js",
@@ -76,7 +76,7 @@
   },
   "dependencies": {
     "@symbo.ls/channels": "^3.14.675",
-    "@symbo.ls/utils": "^3.14.663",
+    "@symbo.ls/utils": "^3.14.707",
     "@symbo.ls/analyzing": "^3.14.599",
     "acorn": "^8.14.0",
     "acorn-walk": "^8.3.4",
