@@ -491,13 +491,28 @@ export class BaseService {
   // { success, data, message } and unwraps to `data` on success or throws
   // `new Error(message)` otherwise. Collapses the ~5 lines of boilerplate
   // that every service method repeats.
-  async _call (methodName, endpoint, { method = 'GET', body, headers } = {}) {
+  //
+  // `raw: true` opts out of the `.data` unwrap for controllers that reply
+  // flat (`{success, ...fields}` with no `data` envelope) — throw-on-
+  // `!success` behavior is preserved, but the full response is returned so
+  // the caller can pick its own fields. Use this instead of hand-rolling
+  // `_requireReady` → `_request` → `if (!response || response.success ===
+  // false) throw` at the call site.
+  async _call (methodName, endpoint, { method = 'GET', body, headers, raw = false } = {}) {
     this._requireReady(methodName)
     const init = { method, methodName }
     if (headers) init.headers = headers
     if (body !== undefined) init.body = body instanceof FormData ? body : JSON.stringify(body)
 
     const response = await this._request(endpoint, init)
+
+    if (raw) {
+      if (!response || response.success === false) {
+        throw new Error(response?.message || `${methodName} failed`)
+      }
+      return response
+    }
+
     // Tolerate both enveloped {success, data, message} and bare payloads.
     if (response && typeof response === 'object' && 'success' in response) {
       if (response.success) return response.data

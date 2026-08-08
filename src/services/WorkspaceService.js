@@ -374,17 +374,14 @@ export class WorkspaceService extends BaseService {
   async getWorkspaceAppDependencies (workspaceId, appId) {
     if (!workspaceId) throw new Error('workspaceId is required')
     if (!appId) throw new Error('appId is required')
-    this._requireReady('getWorkspaceAppDependencies')
-    // NOT `_call` — this controller returns `{success, resolved, cycles}`
-    // flat (no `data` envelope), unlike most workspace routes, so `_call`'s
-    // `response.data` unwrap would silently resolve to `undefined`.
-    const response = await this._request(
+    // `raw: true` — this controller returns `{success, resolved, cycles}`
+    // flat (no `data` envelope), unlike most workspace routes, so the plain
+    // `_call` `.data` unwrap would silently resolve to `undefined`.
+    const response = await this._call(
+      'getWorkspaceAppDependencies',
       `/workspaces/${workspaceId}/apps/${encodeURIComponent(appId)}/dependencies`,
-      { method: 'GET', methodName: 'getWorkspaceAppDependencies' },
+      { method: 'GET', raw: true },
     )
-    if (!response || response.success === false) {
-      throw new Error(response?.message || 'getWorkspaceAppDependencies failed')
-    }
     return { resolved: response.resolved || [], cycles: response.cycles || [] }
   }
 
@@ -403,18 +400,14 @@ export class WorkspaceService extends BaseService {
   async installWorkspaceApps (workspaceId, { appId, alsoInstall } = {}) {
     if (!workspaceId) throw new Error('workspaceId is required')
     if (!appId) throw new Error('appId is required')
-    this._requireReady('installWorkspaceApps')
     // Same flat-envelope note as getWorkspaceAppDependencies above — this
     // controller replies `{success, installed, alreadyInstalled,
     // workspaceApps}`, not `{success, data}`.
-    const response = await this._request(`/workspaces/${workspaceId}/apps`, {
+    const response = await this._call('installWorkspaceApps', `/workspaces/${workspaceId}/apps`, {
       method: 'POST',
-      body: JSON.stringify({ appId, ...(alsoInstall ? { alsoInstall } : {}) }),
-      methodName: 'installWorkspaceApps',
+      body: { appId, ...(alsoInstall ? { alsoInstall } : {}) },
+      raw: true,
     })
-    if (!response || response.success === false) {
-      throw new Error(response?.message || 'installWorkspaceApps failed')
-    }
     return {
       installed: response.installed || [],
       alreadyInstalled: response.alreadyInstalled || [],
@@ -442,15 +435,12 @@ export class WorkspaceService extends BaseService {
   async removeWorkspaceApp (workspaceId, appId, { force } = {}) {
     if (!workspaceId) throw new Error('workspaceId is required')
     if (!appId) throw new Error('appId is required')
-    this._requireReady('removeWorkspaceApp')
     const qs = force ? '?force=true' : ''
-    const response = await this._request(
+    const response = await this._call(
+      'removeWorkspaceApp',
       `/workspaces/${workspaceId}/apps/${encodeURIComponent(appId)}${qs}`,
-      { method: 'DELETE', methodName: 'removeWorkspaceApp' },
+      { method: 'DELETE', raw: true },
     )
-    if (!response || response.success === false) {
-      throw new Error(response?.message || 'removeWorkspaceApp failed')
-    }
     return {
       uninstalled: response.uninstalled,
       dependents: response.dependents || [],
