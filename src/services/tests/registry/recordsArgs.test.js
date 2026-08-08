@@ -120,3 +120,32 @@ test('records writes forward workspaceId as options, never as body', async (t) =
   )
   t.end()
 })
+
+test('records.subscribe routes with the callback appended', async (t) => {
+  const calls = []
+  const execute = createEntityDispatcher({
+    getService: () => ({
+      records: {
+        subscribe: (...args) => (
+          calls.push({ method: 'subscribe', args }),
+          () => {}
+        )
+      }
+    })
+  })
+  const cb = () => {}
+  await execute(
+    'workspaceProject.records',
+    'subscribe',
+    { collection: 'excalidraw_boards' },
+    cb
+  )
+  const [filter, callback] = calls[0].args
+  t.deepEqual(
+    filter,
+    { collection: 'excalidraw_boards' },
+    'filter is the first positional'
+  )
+  t.equal(callback, cb, 'the callback rides as the trailing positional')
+  t.end()
+})

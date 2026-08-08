@@ -182,7 +182,9 @@ const RECORDS_ARG_MAP = {
     recordsBody(a, ['id', 'number']),
     ..._wsOpts(a)
   ],
-  remove: wsArgMaps.id
+  remove: wsArgMaps.id,
+  // (filter, cb) — the dispatcher appends the callback for subscribe ops.
+  subscribe: (a) => [a || {}]
 }
 
 // Party sub-resource body adapter (roles / relationships). Pulls the POST
@@ -1419,7 +1421,8 @@ const ENTITY_ROUTES = {
       get: 'records.get',
       create: 'records.create',
       update: 'records.update',
-      remove: 'records.remove'
+      remove: 'records.remove',
+      subscribe: 'records.subscribe'
     },
     // WS map, not plain CRUD: records.* shares the uniform `(…, { workspaceId })`
     // signature, and CRUD_ARG_MAP gave get/remove NO channel to carry the

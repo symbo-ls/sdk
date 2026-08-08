@@ -682,7 +682,9 @@ export class WorkspaceProjectService extends BaseService {
     heartbeat: (workspaceId) => {
       const wsId = this._chatWorkspaceId(workspaceId)
       const qs = wsId ? `?workspaceId=${encodeURIComponent(wsId)}` : ''
-      return this._ws('presence.heartbeat', `/presence/heartbeat${qs}`, { method: 'POST' })
+      return this._ws('presence.heartbeat', `/presence/heartbeat${qs}`, {
+        method: 'POST'
+      })
     }
   }
 
@@ -727,10 +729,14 @@ export class WorkspaceProjectService extends BaseService {
 
   // --- Search -----------------------------------------------------------------
   search = (q, opts) => {
-    const { workspaceId, ...rest } = opts && typeof opts === 'object' ? opts : {}
+    const { workspaceId, ...rest } =
+      opts && typeof opts === 'object' ? opts : {}
     const wsId = this._chatWorkspaceId(workspaceId)
     const qs = wsId ? `?workspaceId=${encodeURIComponent(wsId)}` : ''
-    return this._ws('search', `/search${qs}`, { method: 'POST', body: { q, ...rest } })
+    return this._ws('search', `/search${qs}`, {
+      method: 'POST',
+      body: { q, ...rest }
+    })
   }
 
   // --- Permissions ------------------------------------------------------------
@@ -866,7 +872,7 @@ export class WorkspaceProjectService extends BaseService {
   // normal here rather than a caller error. Returns the RAW id — every call
   // site escapes it (URLSearchParams.set does so itself; a pre-encoded value
   // would be escaped a second time and no longer match the workspace).
-  _fileCanvasWorkspaceId (source, options) {
+  _fileCanvasWorkspaceId(source, options) {
     const ws =
       (options && options.workspaceId) ||
       (source && typeof source === 'object' && source.workspaceId) ||
@@ -898,7 +904,10 @@ export class WorkspaceProjectService extends BaseService {
     list: (filter, options) => {
       const params = new URLSearchParams()
       if (filter && typeof filter === 'object' && 'parent_id' in filter) {
-        params.set('parentId', filter.parent_id == null ? 'root' : String(filter.parent_id))
+        params.set(
+          'parentId',
+          filter.parent_id == null ? 'root' : String(filter.parent_id)
+        )
       }
       const ws = this._fileCanvasWorkspaceId(filter, options)
       if (ws) params.set('workspaceId', ws)
@@ -917,17 +926,24 @@ export class WorkspaceProjectService extends BaseService {
     },
     create: (payload, options) => {
       const ws = this._fileCanvasWorkspaceId(payload, options)
-      return this._request(`/file-canvas${ws ? `?workspaceId=${encodeURIComponent(ws)}` : ''}`, {
-        method: 'POST',
-        body: JSON.stringify(payload || {}),
-        methodName: 'fileCanvas.create'
-      }).then((r) => r?.data ?? r)
+      return this._request(
+        `/file-canvas${ws ? `?workspaceId=${encodeURIComponent(ws)}` : ''}`,
+        {
+          method: 'POST',
+          body: JSON.stringify(payload || {}),
+          methodName: 'fileCanvas.create'
+        }
+      ).then((r) => r?.data ?? r)
     },
     update: (id, payload, options) => {
       const ws = this._fileCanvasWorkspaceId(payload, options)
       return this._request(
         `/file-canvas/${encodeURIComponent(id)}${ws ? `?workspaceId=${encodeURIComponent(ws)}` : ''}`,
-        { method: 'PATCH', body: JSON.stringify(payload || {}), methodName: 'fileCanvas.update' }
+        {
+          method: 'PATCH',
+          body: JSON.stringify(payload || {}),
+          methodName: 'fileCanvas.update'
+        }
       ).then((r) => r?.data ?? r)
     },
     remove: (id, options) => {
@@ -949,7 +965,7 @@ export class WorkspaceProjectService extends BaseService {
   //   { id, collection, name, data, created_at, updated_at }
   // Workspace scope: explicit `workspaceId` (filter/options) wins, else the
   // live _context.activeWorkspaceId — the /core route path REQUIRES one.
-  _recordsWorkspaceId (filter, options) {
+  _recordsWorkspaceId(filter, options) {
     const ws =
       (options && options.workspaceId) ||
       (filter && typeof filter === 'object' && filter.workspaceId) ||
@@ -988,7 +1004,9 @@ export class WorkspaceProjectService extends BaseService {
       const ws = this._recordsWorkspaceId(filter, options)
       const params = new URLSearchParams()
       const collection =
-        filter && typeof filter === 'object' && filter.collection ? filter.collection : null
+        filter && typeof filter === 'object' && filter.collection
+          ? filter.collection
+          : null
       if (collection) params.set('collection', String(collection))
       if (options?.limit != null) params.set('limit', String(options.limit))
       // `page` (1-indexed, the canonical /core convention) wins server-side
@@ -997,20 +1015,26 @@ export class WorkspaceProjectService extends BaseService {
       if (options?.offset != null) params.set('offset', String(options.offset))
       if (options?.order) params.set('order', String(options.order))
       const qs = params.toString()
-      const r = await this._request(`/workspaces/${ws}/records${qs ? `?${qs}` : ''}`, {
-        method: 'GET',
-        methodName: 'records.list'
-      })
+      const r = await this._request(
+        `/workspaces/${ws}/records${qs ? `?${qs}` : ''}`,
+        {
+          method: 'GET',
+          methodName: 'records.list'
+        }
+      )
       const rows = r?.data ?? []
       if (r?.pagination) rows.pagination = r.pagination
       return rows
     },
     get: async (id, options) => {
       const ws = this._recordsWorkspaceId(null, options)
-      const r = await this._request(`/workspaces/${ws}/records/${encodeURIComponent(id)}`, {
-        method: 'GET',
-        methodName: 'records.get'
-      })
+      const r = await this._request(
+        `/workspaces/${ws}/records/${encodeURIComponent(id)}`,
+        {
+          method: 'GET',
+          methodName: 'records.get'
+        }
+      )
       return r?.data ?? null
     },
     create: async (payload, options) => {
@@ -1024,19 +1048,55 @@ export class WorkspaceProjectService extends BaseService {
     },
     update: async (id, payload, options) => {
       const ws = this._recordsWorkspaceId(payload, options)
-      const r = await this._request(`/workspaces/${ws}/records/${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        body: JSON.stringify(payload || {}),
-        methodName: 'records.update'
-      })
+      const r = await this._request(
+        `/workspaces/${ws}/records/${encodeURIComponent(id)}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify(payload || {}),
+          methodName: 'records.update'
+        }
+      )
       return r?.data ?? r
+    },
+    // Live change stream — the member-facing relay of the server's
+    // workspaceRecordEvents bus (GET /workspaces/:id/records/stream, SSE).
+    // Thin envelopes ({ collection, action, at }, never row data): on an event
+    // the caller re-reads through list/get above, which is where the grant
+    // lives. Same transport + reconnect machinery as tickets.subscribe — this
+    // is what makes a record surface realtime the way the tasks board is.
+    // Returns unsubscribe().
+    subscribe: (filter, onEvent) => {
+      const f = filter || {}
+      const ws = this._recordsWorkspaceId(f, null)
+      const collection = f.collection || f.collectionKey || ''
+      return this._sseSubscribe(
+        `/workspaces/${ws}/records/stream`,
+        { collection },
+        onEvent,
+        {
+          flatParams: true,
+          events: [
+            {
+              name: 'records.open',
+              frame: (data) => ({ type: 'records.open', ...data })
+            },
+            {
+              name: 'records.change',
+              frame: (data) => ({ type: 'records.change', ...data })
+            }
+          ]
+        }
+      )
     },
     remove: async (id, options) => {
       const ws = this._recordsWorkspaceId(null, options)
-      const r = await this._request(`/workspaces/${ws}/records/${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-        methodName: 'records.remove'
-      })
+      const r = await this._request(
+        `/workspaces/${ws}/records/${encodeURIComponent(id)}`,
+        {
+          method: 'DELETE',
+          methodName: 'records.remove'
+        }
+      )
       return r?.data ?? r
     }
   }
@@ -1176,7 +1236,7 @@ export class WorkspaceProjectService extends BaseService {
   // The activity routes are path-scoped (/workspaces/:workspaceId/...), so a
   // workspace is REQUIRED — throw like records rather than returning null, so a
   // scopeless call fails at the SDK instead of 404-ing on a malformed path.
-  _activityWorkspaceId (source, options) {
+  _activityWorkspaceId(source, options) {
     const ws =
       (options && options.workspaceId) ||
       (source && typeof source === 'object' && source.workspaceId) ||
@@ -1208,7 +1268,10 @@ export class WorkspaceProjectService extends BaseService {
       const ws = this._activityWorkspaceId(filter, options)
       const params = new URLSearchParams()
       const author =
-        (filter && typeof filter === 'object' && (filter.author ?? filter.author_email)) || null
+        (filter &&
+          typeof filter === 'object' &&
+          (filter.author ?? filter.author_email)) ||
+        null
       if (author) params.set('author', String(author))
       if (filter && typeof filter === 'object' && filter.date) {
         params.set('date', String(filter.date))
@@ -1222,10 +1285,13 @@ export class WorkspaceProjectService extends BaseService {
     },
     get: (id, options) => {
       const ws = this._activityWorkspaceId(null, options)
-      return this._request(`/workspaces/${ws}/standups/${encodeURIComponent(id)}`, {
-        method: 'GET',
-        methodName: 'standups.get'
-      }).then((r) => r?.data ?? null)
+      return this._request(
+        `/workspaces/${ws}/standups/${encodeURIComponent(id)}`,
+        {
+          method: 'GET',
+          methodName: 'standups.get'
+        }
+      ).then((r) => r?.data ?? null)
     },
     create: (payload, options) => {
       const ws = this._activityWorkspaceId(payload, options)
@@ -1237,11 +1303,14 @@ export class WorkspaceProjectService extends BaseService {
     },
     update: (id, payload, options) => {
       const ws = this._activityWorkspaceId(payload, options)
-      return this._request(`/workspaces/${ws}/standups/${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        body: JSON.stringify(payload || {}),
-        methodName: 'standups.update'
-      }).then((r) => r?.data ?? r)
+      return this._request(
+        `/workspaces/${ws}/standups/${encodeURIComponent(id)}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify(payload || {}),
+          methodName: 'standups.update'
+        }
+      ).then((r) => r?.data ?? r)
     },
     upsert: (payload, options) => {
       const ws = this._activityWorkspaceId(payload, options)
@@ -1265,8 +1334,11 @@ export class WorkspaceProjectService extends BaseService {
   auditLog = {
     list: (filter, options) => {
       const ws = this._activityWorkspaceId(filter, options)
-      const limit = options?.limit ?? (filter && typeof filter === 'object' ? filter.limit : null)
-      const qs = limit != null ? `?limit=${encodeURIComponent(String(limit))}` : ''
+      const limit =
+        options?.limit ??
+        (filter && typeof filter === 'object' ? filter.limit : null)
+      const qs =
+        limit != null ? `?limit=${encodeURIComponent(String(limit))}` : ''
       return this._request(`/workspaces/${ws}/activity-log${qs}`, {
         method: 'GET',
         methodName: 'auditLog.list'
