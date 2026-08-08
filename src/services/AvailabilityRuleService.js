@@ -22,6 +22,7 @@ const _qs = (workspaceId, extra) => {
   return s ? `?${s}` : ''
 }
 
+// convert the weekly object to an array of intervals and a timezone.
 const _availabilityToIntervals = (availability) => {
   let interval = {}
   interval.timeBlocks = []
@@ -46,6 +47,7 @@ const _availabilityToIntervals = (availability) => {
   return interval
 }
 
+// return overlapping time of two intervals
 const _intersectTwoIntervals = (interval1, interval2) => {
   let returnInterval = {}
   returnInterval.timeBlocks = []
@@ -55,16 +57,42 @@ const _intersectTwoIntervals = (interval1, interval2) => {
       if (timeBlock1.from < timeBlock2.to && timeBlock1.to > timeBlock2.from) {
         //add the overlapping time to the return interval
         returnInterval.timeBlocks.push({
-          from: Math.max(timeBlock1.from, timeBlock2.from),
-          to: Math.min(timeBlock1.to, timeBlock2.to)
+          from: (timeBlock1.from > timeBlock2.from ? timeBlock1.from : timeBlock2.from),
+          to: (timeBlock1.to < timeBlock2.to ? timeBlock1.to : timeBlock2.to)
         })
       }
     }
   }
+  return returnInterval
 }
 
+// convert the interval back to the weekly object.
 const _intervalsToAvailability = (interval) => {
+  // get a timezone offset to convert from UTC to local time
+  const tzOffset = new Date(interval.timeBlocks[0].from.toLocaleString('en-US', { timeZone: 'UTC' })) - new Date(interval.timeBlocks[0].from.toLocaleString('en-US', { timeZone: interval.tz }))
 
+  let weekly = []
+  for (const timeBlock of interval.timeBlocks) {
+    //convert the time block from UTC to local time
+    const dateFrom = new Date(timeBlock.from.getTime() - tzOffset)
+    const dateTo = new Date(timeBlock.to.getTime() - tzOffset)
+
+    //handle timezone wrap around
+    let adjustedDow = dateFrom.getDay()
+    if (adjustedDow < 0) {
+      adjustedDow = adjustedDow + 7
+    } else if (adjustedDow > 6) {
+      adjustedDow = adjustedDow - 7
+    }
+
+    //fill in the weekly object in the same format as the availability list call
+    weekly.push({
+      dow: adjustedDow,
+      from: dateFrom.getHours() + ':' + (dateFrom.getMinutes() + '00').slice(0, 2),
+      to: dateTo.getHours() + ':' + (dateTo.getMinutes() + '00').slice(0, 2)
+    })
+  }
+  return weekly
 }
 
 export class AvailabilityRuleService extends BaseService {
@@ -81,7 +109,7 @@ export class AvailabilityRuleService extends BaseService {
   async intersect(userIDs, workspaceId) {
     let intervals = []
     for (const userID of userIDs) {
-      const availability = await this.list({
+      let availability = await this.list({
         user: userID,
         workspaceId: workspaceId
       })
@@ -100,6 +128,9 @@ export class AvailabilityRuleService extends BaseService {
     for (const interval of intervals.slice(1)) {
       finalInterval = _intersectTwoIntervals(finalInterval, interval)
     }
+
+    // pass the first interval's timezone to the helper function
+    finalInterval.tz = intervals[0].tz
 
     //convert the final interval back to a weekly object the UI can consume
     return _intervalsToAvailability(finalInterval)
