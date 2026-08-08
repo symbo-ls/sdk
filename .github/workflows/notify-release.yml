@@ -41,3 +41,21 @@ jobs:
               "actor": "${{ github.event.workflow_run.actor.login }}",
               "message": ${{ toJSON(github.event.workflow_run.head_commit.message) }}
             }
+
+      # A failed dispatch is almost always a dead credential, and the bare
+      # "Bad credentials" the action prints gives an operator nothing to act
+      # on — the 2026-08-07 org-wide publish outage stayed unresolved for a
+      # day partly because the printed guidance pointed at the wrong place.
+      # Spell out the complete fix here, at the moment it fails.
+      - name: Explain a failed dispatch
+        if: failure()
+        run: |
+          echo "::error::Dispatch to symbo-ls/release-manager FAILED — auto-publish did NOT fire for ${GITHUB_SHA}."
+          echo "::error::'Bad credentials' (HTTP 401) means RELEASE_MANAGER_DISPATCH_TOKEN is revoked/expired. It is NOT a permissions or SSO problem — those return 403/404."
+          echo "::error::This secret is REPO-level on EVERY consumer, so fixing one repo is not enough — set the new PAT on all five: smbls, server, company, workspace, sdk."
+          echo "::error::  this repo: https://github.com/${{ github.repository }}/settings/secrets/actions"
+          echo "::error::release-manager's own RELEASE_MANAGER_PAT is normally the SAME PAT and dies with it. Rotate it at the REPO level too — a repo-level secret SHADOWS the org-level one, so updating only the org copy changes nothing:"
+          echo "::error::  https://github.com/symbo-ls/release-manager/settings/secrets/actions"
+          echo "::error::PAT requirements: classic, 'repo' scope, SSO-authorized for symbo-ls."
+          echo "::error::Fallback that needs no dispatch token (one run publishes all pending submodule work):"
+          echo "::error::  gh workflow run Release --repo symbo-ls/release-manager"
