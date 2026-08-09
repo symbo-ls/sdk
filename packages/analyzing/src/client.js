@@ -106,6 +106,22 @@ export const createAnalyzing = (opts = {}) => {
   // SDK-ANALYZING-PUBLIC-TOLERATE-MISSING-WORKSPACE-ID and
   // architecture/MODEL.md §"Per-org visitor telemetry" → "No client-side scope".
   let resolvedTransport = transport
+  // Unload-safe terminal delivery (SDK mode). The async transport below is
+  // killed by an unloading page, so the pagehide/beforeunload terminal
+  // envelope — the one that stamps session.endedAt — never reached the
+  // server from a real close (measured: zero organically-ended sessions
+  // across hours of tab churn). The sink's sync flushes route through
+  // resolvedSyncTransport (defined after the async transport below) —
+  // sendBeacon with a preflight-free text/plain body. The ingest URL is
+  // refreshed on every successful async delivery, so it is synchronously
+  // available at unload with no awaits to lose.
+  let resolvedSyncTransport = null
+  const _syncCache = { url: null, token: null }
+  const _syncCacheRefresh = (live, token) => {
+    const apiBase = live?._context?.apiUrl
+    if (apiBase) _syncCache.url = `${apiBase}/core/analyzed/ingest`
+    if (token) _syncCache.token = token
+  }
   if (!resolvedTransport && mode === 'public') {
     // Same-origin default so mermaid's HTMLRewriter can inject the tracker
     // stub without having to know an absolute ingest URL. Mermaid's /v1/
@@ -241,6 +257,7 @@ export const createAnalyzing = (opts = {}) => {
       if (!live) return { ok: false, reason: 'no-sdk' }
       const _token = await _resolveIngestToken(live)
       if (!_token) return { ok: false, reason: 'no-auth' }
+      _syncCacheRefresh(live, _token)
       if (typeof live.execute === 'function') {
         try {
           const res = await live.execute('analyzed', 'ingest', envelope)
@@ -295,6 +312,7 @@ export const createAnalyzing = (opts = {}) => {
       // breaking the page-load logs.
       const _token = await _resolveIngestToken(live)
       if (!_token) return { ok: false, reason: 'no-auth' }
+      _syncCacheRefresh(live, _token)
       // Prefer the typed dispatcher when services are wired — that path
       // benefits from the SDK's retry/backoff + token refresh hooks.
       if (typeof live.execute === 'function') {
@@ -314,6 +332,46 @@ export const createAnalyzing = (opts = {}) => {
         _bufferPush(envelope)
       }
       return result
+    }
+
+    // The terminal request MUST be CORS-"simple" (no preflight). A fetch
+    // with an Authorization header (or a JSON content-type) is preflighted,
+    // and Chrome drops the follow-up POST when the initiating page unloads
+    // between OPTIONS and POST — measured live: the preflight got its 200,
+    // the terminal POST never hit the wire, endedAt never landed. So:
+    // sendBeacon with a text/plain Blob (safelisted → zero preflight,
+    // unload-proof by contract), NO auth header — the server's ingest is
+    // optionalAuth and scopes the anonymous path by envelope.workspace_id,
+    // and isVisitor is insert-only there so an anonymous terminal envelope
+    // can only stamp endedAt on the session it belongs to, never reclassify
+    // it. fetch-keepalive (still simple: text/plain, no auth) is the
+    // fallback where sendBeacon is unavailable.
+    resolvedSyncTransport = (envelope) => {
+      if (!_syncCache.url) return false
+      const body = (() => {
+        try { return JSON.stringify(envelope) } catch (_) { return null }
+      })()
+      if (!body) return false
+      try {
+        if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+          const blob = typeof Blob !== 'undefined' ? new Blob([body], { type: 'text/plain' }) : body
+          if (navigator.sendBeacon(_syncCache.url, blob)) return true
+        }
+      } catch (_) { /* fall through to keepalive */ }
+      if (typeof fetch !== 'function') return false
+      try {
+        fetch(_syncCache.url, {
+          method: 'POST',
+          keepalive: true,
+          credentials: 'omit',
+          mode: 'cors',
+          headers: { 'Content-Type': 'text/plain' },
+          body
+        }).catch(() => {})
+        return true
+      } catch (_) {
+        return false
+      }
     }
   }
   if (!endpoint && !resolvedTransport) {
@@ -345,6 +403,7 @@ export const createAnalyzing = (opts = {}) => {
     type: 'remote',
     url: endpoint,
     transport: resolvedTransport,
+    syncTransport: resolvedSyncTransport,
     apiKey,
     appKey,
     tenantKey,
