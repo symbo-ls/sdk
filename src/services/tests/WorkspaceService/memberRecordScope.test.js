@@ -241,6 +241,47 @@ test('sdk.execute("workspace.members.recordScope", "get", ...) threads workspace
   })
 })
 
+// The fetch plugin's declarative adapter never emits a bare 'get' op — only
+// list/rpc/insert/update/upsert/delete/subscribe (smbls/plugins/fetch
+// ADAPTER_METHODS) — so `list` must ALSO resolve the same read, or a
+// `fetch: [{ from: 'workspace.members.recordScope', method: 'select' }]`
+// declaration 404s on "does not support op 'list'".
+test('sdk.execute("workspace.members.recordScope", "list", ...) resolves the SAME read as "get" (declarative fetch: reachability)', async t => {
+  t.plan(1)
+  const calls = []
+  const execute = createEntityDispatcher(makeDispatcherSdk(calls))
+  await execute('workspace.members.recordScope', 'list', { workspaceId: 'ws1', userId: 'u1' })
+  t.deepEqual(calls[0], {
+    service: 'workspace',
+    method: 'getWorkspaceMemberRecordScope',
+    args: ['ws1', 'u1']
+  })
+})
+
+// End-to-end shape check: exactly what workspace/packages/shared/functions/
+// sdkAdapter.js's buildSdkAdapter().select() packs for a
+// `fetch: [{ from: 'workspace.members.recordScope', params: { workspaceId, userId } }]`
+// declaration (method defaults to 'select' → sdkAdapter maps it to op
+// 'list' — see resolveFetchConfig in smbls/plugins/fetch/index.js).
+test('sdk.execute("workspace.members.recordScope", "list", <sdkAdapter _packSelect shape>) round-trips', async t => {
+  t.plan(1)
+  const calls = []
+  const execute = createEntityDispatcher(makeDispatcherSdk(calls))
+  const packedSelectArgs = {
+    filter: { workspaceId: 'ws1', userId: 'u1' },
+    params: { workspaceId: 'ws1', userId: 'u1' },
+    single: undefined,
+    limit: undefined,
+    offset: undefined,
+    order: undefined,
+    options: undefined,
+    workspaceId: 'ws1',
+    userId: 'u1'
+  }
+  await execute('workspace.members.recordScope', 'list', packedSelectArgs)
+  t.deepEqual(calls[0].args, ['ws1', 'u1'])
+})
+
 test('sdk.execute("workspace.members.recordScope", "update", ...) threads a flat recordScope bag as the 3rd positional', async t => {
   t.plan(1)
   const calls = []

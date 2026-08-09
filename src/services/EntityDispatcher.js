@@ -348,18 +348,31 @@ const ENTITY_ROUTES = {
   // entity from 'workspace.members' (same parent/child relationship as
   // 'workspace' → 'workspace.settings' below) so a role PATCH and a
   // recordScope PATCH can never collide on one `update` op. Singleton-
-  // per-member shape — get/update only, no list/create/remove — mirrors
-  // the `companyProfile` entity's { get, update } singleton pair.
+  // per-member shape — get/update (+list, see below), no create/remove —
+  // mirrors the `companyProfile` entity's { get, update } singleton pair.
   //   sdk.execute('workspace.members.recordScope', 'get', { workspaceId, userId })
   //   sdk.execute('workspace.members.recordScope', 'update', { workspaceId, userId, recordScope })
+  //
+  // `list` is ALSO mapped to the same read (not just `get`): the fetch
+  // plugin's declarative adapter (@symbo.ls/fetch) only ever emits
+  // list/rpc/insert/update/upsert/delete/subscribe — never bare `get` — so
+  // a `fetch: [{ from: 'workspace.members.recordScope', method: 'select',
+  // params: { workspaceId, userId } }]` declaration would 404 on "does not
+  // support op 'list'" without this alias. sdkAdapter's `select` handler
+  // passes non-array data through untouched, so returning a single object
+  // under `list` is safe — this is the one place this entity intentionally
+  // diverges from companyProfile's precedent, so the LOCATION-axis role UI
+  // can read a member's own scope on mount purely declaratively.
   'workspace.members.recordScope': {
     service: 'workspace',
     methods: {
       get: 'getWorkspaceMemberRecordScope',
+      list: 'getWorkspaceMemberRecordScope',
       update: 'updateWorkspaceMemberRecordScope'
     },
     argMap: {
       get: (a) => [a?.workspaceId, a?.userId],
+      list: (a) => [a?.workspaceId, a?.userId],
       // recordScope may be legitimately `null` (clears the assignment) —
       // rest-strip (not `??`-chained) so an explicit null survives and a
       // truly-omitted key still throws service-side, same as
