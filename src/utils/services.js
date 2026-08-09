@@ -478,6 +478,10 @@ export const SERVICE_METHODS = {
   addWorkspaceMember: 'workspace',
   updateWorkspaceMemberRole: 'workspace',
   removeWorkspaceMember: 'workspace',
+  // Records-plane LOCATION axis — read/assign WorkspaceMember.recordScope
+  // (server a95cda9f). See WorkspaceService.js for the full contract.
+  getWorkspaceMemberRecordScope: 'workspace',
+  updateWorkspaceMemberRecordScope: 'workspace',
   grantWorkspaceTeamAccess: 'workspace',
   revokeWorkspaceTeamAccess: 'workspace',
   getBilling: 'workspace',

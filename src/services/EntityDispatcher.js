@@ -342,6 +342,40 @@ const ENTITY_ROUTES = {
     service: 'workspace',
     methods: { list: 'listWorkspaceMembers', create: 'addWorkspaceMember' }
   },
+  // Member record-scope sub-resource — the records-plane LOCATION axis
+  // (server a95cda9f "records: a real HTTP path to read/assign
+  // WorkspaceMember.recordScope"; tickets/natali.md "NAT-V1-02"). Distinct
+  // entity from 'workspace.members' (same parent/child relationship as
+  // 'workspace' → 'workspace.settings' below) so a role PATCH and a
+  // recordScope PATCH can never collide on one `update` op. Singleton-
+  // per-member shape — get/update only, no list/create/remove — mirrors
+  // the `companyProfile` entity's { get, update } singleton pair.
+  //   sdk.execute('workspace.members.recordScope', 'get', { workspaceId, userId })
+  //   sdk.execute('workspace.members.recordScope', 'update', { workspaceId, userId, recordScope })
+  'workspace.members.recordScope': {
+    service: 'workspace',
+    methods: {
+      get: 'getWorkspaceMemberRecordScope',
+      update: 'updateWorkspaceMemberRecordScope'
+    },
+    argMap: {
+      get: (a) => [a?.workspaceId, a?.userId],
+      // recordScope may be legitimately `null` (clears the assignment) —
+      // rest-strip (not `??`-chained) so an explicit null survives and a
+      // truly-omitted key still throws service-side, same as
+      // partySubPayload's convention below.
+      update: (a) => [
+        a?.workspaceId,
+        a?.userId,
+        a?.payload ??
+          a?.data ??
+          (() => {
+            const { workspaceId, userId, ...rest } = a || {}
+            return rest
+          })()
+      ]
+    }
+  },
   // Merge-safe partial settings write — PATCH /workspaces/:id/settings. The
   // single writer for settings.{workspaceModule,navbar,apps,
   // home_default_panels,designSystem,language,layoutDirection,modules} that

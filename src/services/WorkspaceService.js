@@ -122,6 +122,71 @@ export class WorkspaceService extends BaseService {
     })
   }
 
+  // ==================== MEMBER RECORD SCOPE (LOCATION axis) ====================
+  //
+  // The caller side of the records-plane scope-field mechanism (server
+  // f94da4cd/b8e05de5; HTTP path server a95cda9f "records: a real HTTP path
+  // to read/assign WorkspaceMember.recordScope"; tickets/natali.md
+  // "NAT-V1-02"). Mirrors GET/PATCH
+  // /workspaces/:workspaceId/members/:userId/record-scope — a dedicated
+  // sub-resource under the member (same relationship `updateWorkspace` has
+  // to `updateWorkspaceSettings` above), never a key on the role PATCH, so
+  // the self-assignment refusal lives on one verb.
+
+  /**
+   * Read a member's records-plane scope-field assignment — the
+   * `recordScope` that NARROWS a `scoped` member's row set on every
+   * records-plane request. Reads are laxer than writes: the server allows
+   * a member to read their OWN scope (self === userId) as well as
+   * owner/admin reading anyone's; every other combination 403s.
+   *
+   * @param {string} workspaceId
+   * @param {string} userId
+   * @returns {Promise<{ workspaceId: string, userId: string, role: string, recordScope: Record<string, Array<string>>|null, scopeFields: Array<string> }>}
+   */
+  async getWorkspaceMemberRecordScope (workspaceId, userId) {
+    if (!workspaceId || !userId) throw new Error('workspaceId and userId are required')
+    return this._call(
+      'getWorkspaceMemberRecordScope',
+      `/workspaces/${workspaceId}/members/${userId}/record-scope`
+    )
+  }
+
+  /**
+   * Assign (or clear, via `recordScope: null`) a member's records-plane
+   * scope-field assignment. Owner/admin only — same gate as
+   * `updateWorkspaceMemberRole`/`removeWorkspaceMember`. The server
+   * refuses self-assignment UNCONDITIONALLY (not even an owner may set
+   * their own scope), so `userId` must never be the caller's own id —
+   * expect a 403 `forbidden_self_scope` if it is. Field names inside
+   * `recordScope` are validated server-side against the workspace's OWN
+   * declared grant `scopeField`s; an unknown field 400s (`err.cause`
+   * carries `knownFields`) rather than silently fail-closing the member.
+   *
+   * `recordScope` must be explicitly provided (an object of
+   * `{ scopeField: [values] }`, or `null` to clear) — omitting the key
+   * entirely throws client-side before any request is sent, same as the
+   * server's own `hasOwnProperty` guard.
+   *
+   * @param {string} workspaceId
+   * @param {string} userId
+   * @param {{ recordScope: Record<string, Array<string>> | null }} options
+   * @returns {Promise<{ workspaceId: string, userId: string, role: string, recordScope: Record<string, Array<string>>|null, scopeFields: Array<string> }>}
+   */
+  async updateWorkspaceMemberRecordScope (workspaceId, userId, options = {}) {
+    if (!workspaceId || !userId) throw new Error('workspaceId and userId are required')
+    if (!Object.prototype.hasOwnProperty.call(options, 'recordScope')) {
+      throw new Error(
+        'recordScope is required (an object of { scopeField: [values] }, or null to clear)'
+      )
+    }
+    return this._call(
+      'updateWorkspaceMemberRecordScope',
+      `/workspaces/${workspaceId}/members/${userId}/record-scope`,
+      { method: 'PATCH', body: { recordScope: options.recordScope } }
+    )
+  }
+
   // ==================== TEAM GRANTS (TeamWorkspaceAccess) ====================
 
   async grantWorkspaceTeamAccess (workspaceId, { teamId, role = 'guest' }) {
