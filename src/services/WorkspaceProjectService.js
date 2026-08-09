@@ -1060,19 +1060,85 @@ export class WorkspaceProjectService extends BaseService {
     },
     // Live change stream — the member-facing relay of the server's
     // workspaceRecordEvents bus (GET /workspaces/:id/records/stream, SSE).
-    // Thin envelopes ({ collection, action, at }, never row data): on an event
-    // the caller re-reads through list/get above, which is where the grant
-    // lives. Same transport + reconnect machinery as tickets.subscribe — this
-    // is what makes a record surface realtime the way the tasks board is.
+    // Thin envelopes ({ collection, action, at }, never row data): on a
+    // `records.change` event the caller re-reads through list/get above,
+    // which is where the grant lives.
+    //
+    // Reconnect backlog (tickets/opus.md "headless Chrome recycles the
+    // records EventSource every ~33s, and records has no reconnect backlog",
+    // 2026-08-09): unlike /tickets/stream and /docs/stream, the server's
+    // /records/stream has NO snapshot frame at all — it only ever sends
+    // `records.open` (a bare connection marker, no rows) and `records.change`
+    // (a thin action marker, no rows; see WorkspaceRecordsController.stream).
+    // ANY EventSource reconnect — a real network blip, a server deploy, a
+    // laptop sleep/wake, or a browser-driven recycle — reopens with no way to
+    // learn what changed while the connection was down: a `records.change`
+    // landing inside that gap is lost, with no error and no recovery path.
+    // tickets/docs don't have this hole because their streams re-push a full
+    // snapshot on every connect INCLUDING reconnects (docs fixed alongside
+    // this, see docs.subscribe above); records' wire contract has nothing to
+    // give a client that asks.
+    //
+    // Fix, entirely client-side — no server change, and no widening of
+    // `_sseSubscribe`'s shared contract (every other consumer: tickets, docs,
+    // chat, meet — is untouched): treat every `records.open` (first connect
+    // AND every reconnect, since the server emits the identical event either
+    // way) as a cue to backfill via the SAME REST `list()` this class already
+    // exposes, and deliver the result as a synthetic
+    // `{ type: 'records.snapshot', collection, records: [...] }` event — the
+    // same "a reconnect always re-syncs full state" guarantee tickets/docs
+    // get from the wire directly, just assembled client-side. The original
+    // `records.open` event is still forwarded UNCHANGED and FIRST, so any
+    // existing consumer keyed on it (e.g. an app-side re-sync-on-open
+    // handler) is unaffected — this is additive, not a replacement.
+    //
+    // Race safety: an epoch counter discards a stale in-flight list() whose
+    // records.open has since been superseded by a newer one (a reconnect
+    // storm must not let a slow, stale backfill overwrite fresher state), and
+    // unsubscribing suppresses delivery of any backfill still in flight (no
+    // onEvent calls after teardown).
     // Returns unsubscribe().
     subscribe: (filter, onEvent) => {
       const f = filter || {}
+      const wsRaw = f.workspaceId || this._context?.activeWorkspaceId
       const ws = this._recordsWorkspaceId(f, null)
       const collection = f.collection || f.collectionKey || ''
-      return this._sseSubscribe(
+      let destroyed = false
+      let epoch = 0
+
+      const deliver = (evt) => {
+        if (destroyed) return
+        try {
+          onEvent(evt)
+        } catch (_) {
+          /* listener errors don't propagate */
+        }
+      }
+
+      const backfill = () => {
+        const myEpoch = ++epoch
+        this.records
+          .list({ collection }, { workspaceId: wsRaw })
+          .then((records) => {
+            if (destroyed || myEpoch !== epoch) return
+            deliver({ type: 'records.snapshot', collection, records })
+          })
+          .catch(() => {
+            /* No error frame exists on this stream today (records.open /
+               records.change never carry one) — a failed backfill silently
+               skipping is consistent with that, not a new failure mode. The
+               NEXT records.open (or any records.change forcing a caller
+               re-read) gives the consumer another chance to catch up. */
+          })
+      }
+
+      const unsub = this._sseSubscribe(
         `/workspaces/${ws}/records/stream`,
         { collection },
-        onEvent,
+        (framed) => {
+          deliver(framed)
+          if (framed && framed.type === 'records.open') backfill()
+        },
         {
           flatParams: true,
           events: [
@@ -1087,6 +1153,11 @@ export class WorkspaceProjectService extends BaseService {
           ]
         }
       )
+
+      return () => {
+        destroyed = true
+        unsub()
+      }
     },
     remove: async (id, options) => {
       const ws = this._recordsWorkspaceId(null, options)
