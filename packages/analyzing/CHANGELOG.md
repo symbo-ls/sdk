@@ -1,5 +1,13 @@
 # @symbo.ls/analyzing
 
+## 3.14.743
+
+### Patch Changes
+
+- Auto-generated cross-repo patch release.
+- Updated dependencies
+  - @symbo.ls/analyze@3.14.743
+
 ## 3.14.599
 
 ### Patch Changes
