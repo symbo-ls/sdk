@@ -1539,12 +1539,36 @@ export class WorkspaceProjectService extends BaseService {
     // passes through verbatim. `participant` is intentionally absent from the
     // map (D6 — never emitted by the server); the consumer's `participant`
     // branch stays dead code, unchanged.
+    //
+    // meet.snapshot (tickets/opus.md "`meet` realtime discards the server's
+    // meet.snapshot, so a reconnect recovers nothing", 2026-08-09): the server
+    // (MeetStreamController.stream) writes ONE `meet.snapshot` event per
+    // connection, unconditionally, before it ever wires the live subscribe —
+    // so it fires on the FIRST connect AND on every reconnect (a fresh
+    // EventSource is a fresh HTTP request, which re-runs `stream()` from the
+    // top; there is no server-side session that would suppress a repeat).
+    // This used to be framed as `() => undefined` — silently discarded — so a
+    // reconnect (network blip, deploy, sleep/wake, or the ~33s headless
+    // recycle) recovered nothing: a room/utterance/analysis write that
+    // landed during the gap, with no matching `meet.room.*` /
+    // `meet.transcript.insert` / `meet.analysis.*` event ever delivered for
+    // it (by definition of "the connection was down"), was lost. Same class
+    // of gap `records` had — but simpler to fix, because the server already
+    // pushes a real snapshot; nothing needs synthesizing client-side the way
+    // `records.subscribe`'s REST backfill does, so no epoch/staleness
+    // machinery is needed HERE — `chat.snapshot` (below) is the exact
+    // precedent this mirrors. Forwarded as `kind: 'meet.snapshot'` +
+    // `payload: data` (the server's `_buildSnapshot` shape:
+    // `{ rooms?, transcripts?, analysis? }`, keys present only for the
+    // kinds this subscription requested); the consumer
+    // (`workspace/packages/meet/functions/subscribeMeetRealtime.js`)
+    // reconciles it.
     subscribeMeetSse: ({ roomId, workspaceId, tables } = {}, cb) => {
       if (typeof cb !== 'function') return () => {}
 
       // (kind, payload) adapter: each event frame returns { kind, payload };
-      // a frame returning undefined is swallowed (snapshot/revoked have no
-      // consumer branch — the page's own fetch reconciles).
+      // a frame returning undefined is swallowed (revoked has no consumer
+      // branch — the page's own fetch reconciles).
       const deliver = (framed) => {
         if (!framed || !framed.kind) return
         try {
@@ -1561,9 +1585,13 @@ export class WorkspaceProjectService extends BaseService {
       const passthrough = (kind) => (data) => ({ kind, payload: data })
 
       const events = [
-        // snapshot drives a refetch on the consumer; it has no `snapshot`
-        // branch, so swallow and let the page's own initial fetch populate.
-        { name: 'meet.snapshot', frame: () => undefined },
+        // Forwarded (was `() => undefined` — see the doc comment above).
+        // Mirrors chat.snapshot exactly: kind carries the frame name itself
+        // so the consumer can route on it directly.
+        {
+          name: 'meet.snapshot',
+          frame: (data) => ({ kind: 'meet.snapshot', payload: data || {} })
+        },
         { name: 'meet.room.insert', frame: passthrough('room') },
         { name: 'meet.room.update', frame: passthrough('room') },
         { name: 'meet.room.delete', frame: passthrough('room') },
