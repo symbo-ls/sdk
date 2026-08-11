@@ -1848,10 +1848,19 @@ export class WorkspaceProjectService extends BaseService {
     // the bucket's CORS grant covers deployed hosts only), and the only
     // authenticated read this surface has. Raw-fetches like upload: _request
     // is JSON-shaped and this response is the object's bytes.
+    //
+    // `?workspaceId=` carries the tab's ACTIVE workspace (the multi-tab
+    // contract every other workspace surface follows — fileCanvas, records).
+    // Without it the server resolves scope from the auth claim alone, which
+    // can lag the tab's workspace, and the path-prefix tenant guard then
+    // 403s a legitimate read ("path outside workspace" — measured live).
+    // Membership is still enforced server-side either way.
     download: (bucket, path) => {
       const _doDownload = async () => {
         this._requireReady('storage.download')
-        const base = `${this._apiUrl}/core/storage/${encodeURIComponent(bucket)}/download`
+        const wsId = this._context?.activeWorkspaceId
+        const q = wsId ? `?workspaceId=${encodeURIComponent(String(wsId))}` : ''
+        const base = `${this._apiUrl}/core/storage/${encodeURIComponent(bucket)}/download${q}`
         const init = {
           method: 'POST',
           body: JSON.stringify({ path }),
