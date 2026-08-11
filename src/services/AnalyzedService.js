@@ -35,6 +35,7 @@ export class AnalyzedService extends BaseService {
     const params = new URLSearchParams()
     if (filter.userId) params.set('userId', filter.userId)
     if (filter.projectId) params.set('projectId', filter.projectId)
+    if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
     if (filter.since) params.set('since', filter.since)
     if (filter.country) params.set('country', filter.country)
     if (options.limit != null) params.set('limit', String(options.limit))
@@ -60,6 +61,7 @@ export class AnalyzedService extends BaseService {
     if (filter.sessionId) params.set('sessionId', filter.sessionId)
     if (filter.logType) params.set('logType', filter.logType)
     if (filter.projectId) params.set('projectId', filter.projectId)
+    if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
     if (filter.since) params.set('since', filter.since)
     if (options.order) params.set('order', options.order)
     if (options.limit != null) params.set('limit', String(options.limit))
@@ -73,6 +75,7 @@ export class AnalyzedService extends BaseService {
   listUsers (filter = {}, options = {}) {
     const params = new URLSearchParams()
     if (filter.projectId) params.set('projectId', filter.projectId)
+    if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
     if (filter.since) params.set('since', filter.since)
     if (options.limit != null) params.set('limit', String(options.limit))
     if (options.offset != null) params.set('offset', String(options.offset))
@@ -85,6 +88,7 @@ export class AnalyzedService extends BaseService {
   activeUsers (filter = {}, options = {}) {
     const params = new URLSearchParams()
     if (filter.projectId) params.set('projectId', filter.projectId)
+    if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
     if (options.limit != null) params.set('limit', String(options.limit))
     if (options.offset != null) params.set('offset', String(options.offset))
     const qs = params.toString()
@@ -98,6 +102,7 @@ export class AnalyzedService extends BaseService {
     const params = new URLSearchParams()
     if (filter.range) params.set('range', filter.range)
     if (filter.projectId) params.set('projectId', filter.projectId)
+    if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
     const qs = params.toString()
     return this._call('analyzed.changes', `/analyzed/changes${qs ? `?${qs}` : ''}`)
   }
@@ -107,6 +112,7 @@ export class AnalyzedService extends BaseService {
   demographics (filter = {}) {
     const params = new URLSearchParams()
     if (filter.projectId) params.set('projectId', filter.projectId)
+    if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
     if (filter.since) params.set('since', filter.since)
     const qs = params.toString()
     return this._call('analyzed.demographics', `/analyzed/demographics${qs ? `?${qs}` : ''}`)
@@ -119,6 +125,7 @@ export class AnalyzedService extends BaseService {
   now (filter = {}) {
     const params = new URLSearchParams()
     if (filter.projectId) params.set('projectId', filter.projectId)
+    if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
     const qs = params.toString()
     return this._call('analyzed.now', `/analyzed/now${qs ? `?${qs}` : ''}`)
   }
@@ -128,6 +135,7 @@ export class AnalyzedService extends BaseService {
   weekly (filter = {}) {
     const params = new URLSearchParams()
     if (filter.projectId) params.set('projectId', filter.projectId)
+    if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
     const qs = params.toString()
     return this._call('analyzed.weekly', `/analyzed/weekly${qs ? `?${qs}` : ''}`)
   }
@@ -137,6 +145,7 @@ export class AnalyzedService extends BaseService {
   listBugs (filter = {}, options = {}) {
     const params = new URLSearchParams()
     if (filter.projectId) params.set('projectId', filter.projectId)
+    if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
     if (filter.since) params.set('since', filter.since)
     if (options.limit != null) params.set('limit', String(options.limit))
     if (options.offset != null) params.set('offset', String(options.offset))
