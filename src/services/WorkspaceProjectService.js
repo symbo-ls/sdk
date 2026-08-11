@@ -1172,6 +1172,25 @@ export class WorkspaceProjectService extends BaseService {
     }
   }
 
+  // First-party Bookmarks helper. Bookmark CRUD stays on the generic records
+  // plane; this narrow operation only asks the server to safely enrich a URL
+  // while the composer is open. Keeping it as a real SDK namespace (rather
+  // than a client fetch) preserves the one transport/auth/scope path for every
+  // Workspace request.
+  bookmarks = {
+    enrich: async (payload, options) => {
+      const ws = this._recordsWorkspaceId(payload, options)
+      const { workspaceId: _workspaceId, ...body } =
+        payload && typeof payload === 'object' ? payload : {}
+      const r = await this._request(`/workspaces/${ws}/bookmarks/enrich`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+        methodName: 'bookmarks.enrich'
+      })
+      return r?.data ?? r
+    }
+  }
+
   // analyzed entity removed 2026-07 — the workspace-project worker's Supabase
   // analyzed surface was deleted server-side (server@fb183f5b); the
   // dispatcher's `workspaceProject.analyzed*` aliases delegate to the

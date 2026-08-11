@@ -187,6 +187,14 @@ const RECORDS_ARG_MAP = {
   subscribe: (a) => [a || {}]
 }
 
+// Bookmarks has one non-CRUD operation: enrich a composing URL. It keeps the
+// workspace routing pin in the trailing options positional like records while
+// forwarding the compact `{ url }` body unchanged. This is intentionally not a
+// generic RPC escape hatch — the server route is explicit and first-party.
+const BOOKMARKS_ARG_MAP = {
+  enrich: (a) => [a?.payload ?? a?.data ?? _stripWs(a), ..._wsOpts(a)]
+}
+
 // Party sub-resource body adapter (roles / relationships). Pulls the POST
 // body out of the well-known shapes, stripping the parent-id keys so both a
 // packed caller (`{ partyId, payload: { role } }`) and a flat caller
@@ -1498,6 +1506,14 @@ const ENTITY_ROUTES = {
     // writes down to the record payload and lost `collection`. See its
     // definition for the full note.
     argMap: RECORDS_ARG_MAP
+  },
+  // First-party URL enrichment for the native Bookmarks composer. CRUD still
+  // belongs to `workspaceProject.records` collection `bookmarks`; this entity
+  // only maps the safe metadata-preview endpoint.
+  'workspaceProject.bookmarks': {
+    service: 'workspaceProject',
+    methods: { enrich: 'bookmarks.enrich' },
+    argMap: BOOKMARKS_ARG_MAP
   },
   // workspaceProject.companyInfo + workspaceProject.companySettings entities
   // removed 2026-07 — tables dropped with the workspace-project Supabase org
