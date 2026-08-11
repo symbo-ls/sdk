@@ -1762,13 +1762,15 @@ const ENTITY_ROUTES = {
       signedUrl: 'storage.createSignedUrl',
       upload: 'storage.upload',
       remove: 'storage.remove',
-      publicUrl: 'storage.publicUrl'
+      publicUrl: 'storage.publicUrl',
+      download: 'storage.download'
     },
     argMap: {
       signedUrl: (a) => [a?.bucket, a?.path, a?.ttl ?? 300],
       upload: (a) => [a?.bucket, a?.formData ?? a?.payload, a?.options ?? {}],
       remove: (a) => [a?.bucket, a?.path],
-      publicUrl: (a) => [a?.bucket, a?.path]
+      publicUrl: (a) => [a?.bucket, a?.path],
+      download: (a) => [a?.bucket, a?.path]
     }
   },
 

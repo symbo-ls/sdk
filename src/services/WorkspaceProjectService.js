@@ -1842,7 +1842,32 @@ export class WorkspaceProjectService extends BaseService {
         method: 'POST',
         body: JSON.stringify({ path }),
         methodName: 'storage.publicUrl'
-      })
+      }),
+    // Object CONTENT through the API, as text. The read for environments where
+    // the direct bucket URL is CORS-blocked (every *.localhost dev origin —
+    // the bucket's CORS grant covers deployed hosts only), and the only
+    // authenticated read this surface has. Raw-fetches like upload: _request
+    // is JSON-shaped and this response is the object's bytes.
+    download: (bucket, path) => {
+      const _doDownload = async () => {
+        this._requireReady('storage.download')
+        const base = `${this._apiUrl}/core/storage/${encodeURIComponent(bucket)}/download`
+        const init = {
+          method: 'POST',
+          body: JSON.stringify({ path }),
+          headers: { 'Content-Type': 'application/json' }
+        }
+        const auth = await this._resolveAuthHeader()
+        if (auth) init.headers.Authorization = auth
+        const res = await fetch(base, init)
+        if (!res.ok) {
+          const json = await res.json().catch(() => ({}))
+          throw new Error(json?.message || `HTTP ${res.status}`)
+        }
+        return res.text()
+      }
+      return _doDownload()
+    }
   }
 
   // --- Generic escape hatch ---------------------------------------------------
