@@ -35,7 +35,12 @@ const IDEMPOTENT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 const RETRY_SAFE_METHOD_NAMES = new Set([
   'setActiveOrganization',
   'setActiveWorkspace',
-  'getMe'
+  'getMe',
+  // Ending a persona session is idempotent BY CONTRACT (tickets/sonnet.md
+  // PERSONA-4: double-end and end-after-expiry must succeed), so a re-sent
+  // POST /persona/end can never double-apply — and the exit affordance is a
+  // security control that should ride out an API restart rather than fail.
+  'endPersona'
 ])
 const RETRY_BASE_DELAY_MS = 300
 

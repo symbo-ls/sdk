@@ -99,6 +99,10 @@ import { BuildsService } from './BuildsService.js'
 // "storefront catalog read API", NAT-V1-25..30) — peer to ProductService but
 // with NO workspace-membership identity (anonymous shoppers).
 import { StorefrontService } from './StorefrontService.js'
+// Persona sessions — role simulation ("view as <role>"), never per-person
+// impersonation. /core/persona/* on the main server; scope resolution is
+// server-side in claimsToScope (server 886a9b27). See PersonaService.js.
+import { PersonaService, PERSONA_TARGET_ROLES } from './PersonaService.js'
 
 const createService = (ServiceClass, config) => new ServiceClass(config)
 
@@ -226,6 +230,11 @@ export const createMeetService = (config) => createService(MeetService, config)
 export const createCalendarService = (config) =>
   createService(CalendarService, config)
 
+// Persona sessions ("view as <role>") — see PersonaService.js header for the
+// full contract (server 886a9b27; tickets/sonnet.md PERSONA-4).
+export const createPersonaService = (config) =>
+  createService(PersonaService, config)
+
 // Phase-1 spine factories — the polymorphic-spine surfaces every entity
 // (shared + records) hangs on. See WORKSPACE_DATA_MODEL §7.
 export const createProposedActionService = (config) =>
@@ -346,6 +355,8 @@ export {
   CanvasLayoutService,
   MeetService,
   CalendarService,
+  PersonaService,
+  PERSONA_TARGET_ROLES,
   BuildsService,
   ProposedActionService,
   WorkflowService,

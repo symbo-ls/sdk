@@ -195,6 +195,10 @@ export const SERVICE_METHODS = {
   uploadImage: 'file',
   uploadDocument: 'file',
   getFileUrl: 'file',
+  // Authenticated private-file read (GET /core/files/:id/download) — the
+  // companion to getFileUrl, which serves only the PUBLIC route and 404s on
+  // private uploads.
+  downloadFileContent: 'file',
   validateFile: 'file',
   createFileFormData: 'file',
   uploadMultipleFiles: 'file',
@@ -665,6 +669,18 @@ export const SERVICE_METHODS = {
   listStorefrontJobs: 'storefront',
   getStorefrontJob: 'storefront',
   applyToStorefrontJob: 'storefront',
+
+  // Persona sessions (tickets/sonnet.md PERSONA-4) — role simulation
+  // ("view as <role>"), NEVER per-person impersonation; scope is resolved
+  // server-side in claimsToScope (server 886a9b27).
+  // POST /core/persona/start { role } → adopts the persona-claim token
+  // POST /core/persona/end   {}       → idempotent, never rejects
+  // getPersona → local decode of the active token's persona claim, or null
+  // ⚠ All three return Promises (init gate + async service methods):
+  // `if (sdk.getPersona())` is always truthy — await the resolved value.
+  startPersona: 'persona',
+  endPersona: 'persona',
+  getPersona: 'persona',
 
   // Storefront customer identity (tickets/server.md "storefront customer
   // identity layer", NAT-V1-25/27/28) — register/login/OTP/reset are
