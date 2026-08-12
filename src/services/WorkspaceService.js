@@ -255,22 +255,49 @@ export class WorkspaceService extends BaseService {
   }
 
   /**
-   * Start a Stripe Checkout session for a workspace-level credit top-up
-   * pack. Mirrors POST /workspaces/:workspaceId/billing/topups/checkout
-   * (WorkspaceController.createCreditTopupCheckout, server PR #349).
-   * Server validates that `credits` equals the configured TOPUP_PACK_SIZE
-   * (1000 by default); other quantities are rejected.
+   * Start a Stripe Checkout session for a workspace credit top-up.
+   * Mirrors POST /workspaces/:workspaceId/billing/topups/checkout
+   * (WorkspaceController.createCreditTopupCheckout).
+   *
+   * Top-ups are FREEFORM: name an AMOUNT and the server derives the credits
+   * at the flat retail rate. There are no packs — the fixed
+   * 1,000/6,000/36,000 table was retired (server `475b2c6b`).
+   *
+   * `amountCents` is integer cents, minimum **2000** ($20). The floor and the
+   * rate are also published on `GET /core/credits/rates`
+   * (`topupMinCents`, `topupMaxCents`, `centsPerCredit`) — read them from
+   * there rather than hardcoding, so a pricing change does not need an SDK
+   * release.
+   *
+   * The client-side checks below are for INSTANT FEEDBACK ONLY. The server
+   * re-validates and its 400 is the authority; never treat a passing local
+   * check as permission to charge.
    *
    * Owner/admin only on the workspace.
    *
    * @param {string} workspaceId
-   * @param {{ successUrl?: string, cancelUrl?: string, credits?: number }} [options]
+   * @param {{ amountCents: number, successUrl?: string, cancelUrl?: string }} [options]
    * @returns {Promise<{ type: 'checkout_required', url: string, sessionId: string }>}
    */
-  async createCreditTopupCheckout (workspaceId, { successUrl, cancelUrl, credits } = {}) {
+  async createCreditTopupCheckout (workspaceId, { amountCents, successUrl, cancelUrl, credits } = {}) {
     if (!workspaceId) throw new Error('workspaceId is required')
-    const body = {}
-    if (credits != null) body.credits = credits
+
+    // Fail loudly on the retired `credits` argument instead of translating it.
+    // Under the old pack table `credits: 6000` cost $100; mapping it onto the
+    // flat rate would silently charge $120 for the same call. The server
+    // rejects it too — this just turns a round-trip into an immediate,
+    // actionable error.
+    if (amountCents == null && credits != null) {
+      throw new Error(
+        'createCreditTopupCheckout: `credits` is no longer accepted — top-ups are freeform. ' +
+        'Pass `amountCents` (integer cents, minimum 2000).'
+      )
+    }
+    if (!Number.isInteger(Number(amountCents))) {
+      throw new Error('createCreditTopupCheckout: `amountCents` must be an integer number of cents')
+    }
+
+    const body = { amountCents: Number(amountCents) }
     if (successUrl) body.successUrl = successUrl
     if (cancelUrl) body.cancelUrl = cancelUrl
     return this._call(
