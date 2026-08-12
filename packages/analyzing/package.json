@@ -1,6 +1,6 @@
 {
   "name": "@symbo.ls/analyzing",
-  "version": "3.14.743",
+  "version": "3.14.776",
   "type": "module",
   "description": "Browser-side observability SDK for DOMQL apps — pipes @symbo.ls/analyze events (errors, console, network, perf, lifecycle, state) to the analyzed worker. Faro-compatible manual API (captureError / captureMessage / identify / setContext / addMeasurement).",
   "main": "./dist/cjs/src/index.cjs",
@@ -31,7 +31,7 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@symbo.ls/analyze": "^3.14.743"
+    "@symbo.ls/analyze": "^3.14.776"
   },
   "license": "CC-BY-NC-4.0",
   "repository": "https://github.com/symbo-ls/sdk",
