@@ -34,7 +34,16 @@ const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefine
  *   sdk          @symbo.ls/sdk instance          auto-pulls bearer from tokenManager
  *
  * Tuning:
- *   capture      object   overrides the 'remote' capture preset
+ *   capture      object   overrides the 'remote' capture preset. NOTE:
+ *                network capture is OFF by default — the server discards
+ *                un-opted-in logType='network' envelopes at ingest (server
+ *                cd64446f), so shipping them is wasted client CPU + egress.
+ *                Opt in with the same levers the server honors: `debug: true`
+ *                (restores end-to-end — the envelope stamps `app.debug`, the
+ *                server's per-envelope lever) or `capture: { network: true }`
+ *                / runtime `setNetworkCapture(true)` (the client half of the
+ *                per-workspace Organization.settings.analyzedNetworkCapture
+ *                opt-in). See resolveNetworkCapture below.
  *   level        string   'error'|'warn'|'info'|'debug'|'trace' (default 'info')
  *   sampleRate   number   0..1 client-side downsample (default 1)
  *   redact       array    regex/glob patterns for PII scrubbing
@@ -52,10 +61,37 @@ const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefine
  *   - identify({ userId, traits? })
  *   - setContext(key, value)
  *   - setTag(key, value)
+ *   - setNetworkCapture(enabled)
  *   - flush()
  *   - shutdown()
  *   - sessionId
  */
+
+/**
+ * Emitter-side network-capture default, mirroring the client-visible
+ * subset of the server ingest gate
+ * (AnalyzedWriteService.resolveNetworkCaptureEnabled, server cd64446f):
+ *   1. debug flag — wins first, like the server's per-envelope lever
+ *      (`envelope.app?.debug === true`); the remote sink stamps
+ *      `app.debug` on every envelope so this ONE switch restores
+ *      logType='network' traces end-to-end.
+ *   2. explicit `capture.network` boolean — the client half of the
+ *      per-workspace `Organization.settings.analyzedNetworkCapture`
+ *      opt-in; the consumer threads the setting, the server validates
+ *      it independently against the org record.
+ *   3. default OFF — the server's ANALYZED_CAPTURE_NETWORK ops env
+ *      switch is not visible from the client; the server stays the
+ *      backstop for anything the client can't see.
+ * Exported for direct unit testing.
+ */
+export const resolveNetworkCapture = ({ debug, captureOverrides } = {}) => {
+  if (debug === true) return true
+  if (captureOverrides && typeof captureOverrides.network === 'boolean') {
+    return captureOverrides.network
+  }
+  return false
+}
+
 export const createAnalyzing = (opts = {}) => {
   const {
     endpoint,
@@ -448,6 +484,29 @@ export const createAnalyzing = (opts = {}) => {
   // when smbls calls prepareContext — see analyzePlugin / context wiring.
   const state = createAnalyzeState(analyzeConfig)
 
+  // ── Emitter-side network gate ──────────────────────────────────────────
+  // The server discards un-opted-in logType='network' envelopes at ingest
+  // (server cd64446f — they were 77% of all analyzedevents rows), so
+  // capturing them client-side wastes CPU + egress in every session. Apply
+  // the resolved default through the public setCapture API — not just the
+  // capture map above — so it holds regardless of which @symbo.ls/analyze
+  // version the bundler resolved (older expandPresets let the `remote`
+  // preset clobber explicit capture keys). Reads state.config.debug (not
+  // the raw opt) so the plugin's `?analyze=debug` URL override counts as
+  // the debug lever too. Runs pre-activate, so with capture off the
+  // fetch/XHR listeners are never even attached.
+  state.setCapture('network', resolveNetworkCapture({
+    debug: state.config.debug === true,
+    captureOverrides
+  }))
+
+  // Thread the live debug flag to the remote sink so every envelope of a
+  // debug session stamps `app.debug: true` — the per-envelope opt-in the
+  // server's ingest gate honors (its lever 1). Read at flush time via a
+  // getter (the sink resolves lazily, after this line) so the URL
+  // override applied inside createAnalyzeState is honored as well.
+  remoteSinkConfig.getDebug = () => state.config.debug === true
+
   // ── Manual API ─────────────────────────────────────────────────────────────
 
   const emit = (event) => state.emit(event)
@@ -537,6 +596,14 @@ export const createAnalyzing = (opts = {}) => {
 
   const flush = () => state.flush()
   const shutdown = () => state.destroy()
+
+  // Runtime mirror of the per-workspace opt-in lever — call with the
+  // loaded `Organization.settings.analyzedNetworkCapture` value once org
+  // settings arrive (they load async, after boot). Post-activate, this
+  // also lazily attaches the fetch/XHR listeners that were skipped while
+  // capture was off. The server validates the same setting independently
+  // at ingest, so no envelope stamp is needed on this path.
+  const setNetworkCapture = (enabled) => state.setCapture('network', !!enabled)
 
   // Wire global error/promise hooks immediately so failures during DOMQL boot
   // (before plugin.init runs) still ship. attachBrowserListeners is normally
@@ -648,6 +715,7 @@ export const createAnalyzing = (opts = {}) => {
     identify,
     setContext,
     setTag,
+    setNetworkCapture,
     flush,
     shutdown,
     sessionId: resolvedSessionId

@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { createAnalyzing } from '../src/client.js'
+import { createAnalyzing, resolveNetworkCapture } from '../src/client.js'
 import { classifyEnvelope, LOG_TYPES } from '../src/classify.js'
 
 test('createAnalyzing requires appKey + one of sdk/endpoint/transport', () => {
@@ -53,8 +53,13 @@ test('createAnalyzing produces a config + plugin + manual API', () => {
   assert.equal(a.config.capture.remote, true)
   assert.equal(a.config.capture.errors, true)
   assert.equal(a.config.capture.console, true)
-  assert.equal(a.config.capture.network, true)
+  // Network capture defaults OFF at the emitter — the server discards
+  // un-opted-in logType='network' envelopes at ingest (server cd64446f),
+  // so shipping them was wasted client CPU + egress. See the dedicated
+  // "network capture" tests below for the opt-in levers.
+  assert.equal(a.config.capture.network, false)
   assert.ok(typeof a.captureError === 'function')
+  assert.ok(typeof a.setNetworkCapture === 'function')
   assert.ok(typeof a.captureMessage === 'function')
   assert.ok(typeof a.identify === 'function')
   assert.ok(typeof a.setContext === 'function')
@@ -397,4 +402,108 @@ test('classifyEnvelope mirrors plugin classifyEvent', () => {
   assert.equal(classifyEnvelope({ type: 'network', level: 'info' }), 'network')
   assert.equal(classifyEnvelope({ type: 'console', level: 'warn' }), 'bug')
   assert.equal(classifyEnvelope({ type: 'state', level: 'debug' }), 'verbose')
+})
+
+// ── Network capture: emitter-side default-off ────────────────────────────
+// Client half of the server ingest gate (server cd64446f): with no opt-in,
+// ZERO logType='network' envelopes may reach the transport — asserted at
+// the mocked transport, not at any intermediate buffer — while log/bug
+// flow unchanged. Levers mirror the client-visible subset of
+// AnalyzedWriteService.resolveNetworkCaptureEnabled (debug flag first,
+// then the explicit per-workspace override; the ANALYZED_CAPTURE_NETWORK
+// ops env switch is server-only and stays the server's backstop).
+
+const _events = (calls) => calls.flatMap((c) => c.events || [])
+const _networkEvents = (calls) => _events(calls).filter((e) => e.log_type === 'network')
+
+test('network capture: no opt-in → zero network envelopes at the transport; log/bug unaffected', async () => {
+  const calls = []
+  const a = createAnalyzing({
+    appKey: 'app',
+    transport: (envelope) => { calls.push(envelope); return { ok: true } },
+    level: 'trace',
+    batchMs: 5,
+    maxBatch: 1
+  })
+  assert.equal(a.config.capture.network, false)
+  a.state.activate(null)
+  // The @symbo.ls/fetch plugin path — gated at the emitter
+  a.state.emitNetwork({ phase: 'success', from: 'users', method: 'list', ok: true })
+  a.state.emitNetwork({ phase: 'error', from: 'users', method: 'list', error: 'x' })
+  a.captureMessage('hello', 'info')
+  a.captureError(new Error('boom'))
+  await new Promise((r) => setTimeout(r, 25))
+  assert.equal(_networkEvents(calls).length, 0, 'no network envelope reached the transport')
+  assert.ok(_events(calls).some((e) => e.log_type === 'log'), 'log still flows')
+  assert.ok(_events(calls).some((e) => e.log_type === 'bug'), 'bug still flows')
+})
+
+test('network capture: debug lever restores it end-to-end — events flow AND envelopes stamp app.debug', async () => {
+  const calls = []
+  const a = createAnalyzing({
+    appKey: 'app',
+    debug: true,
+    transport: (envelope) => { calls.push(envelope); return { ok: true } },
+    batchMs: 5,
+    maxBatch: 1
+  })
+  assert.equal(a.config.capture.network, true, 'debug flips capture on')
+  a.state.activate(null)
+  a.state.emitNetwork({ phase: 'success', from: 'users', method: 'list', ok: true })
+  await new Promise((r) => setTimeout(r, 25))
+  const netEnvelopes = calls.filter((c) => (c.events || []).some((e) => e.log_type === 'network'))
+  assert.ok(netEnvelopes.length >= 1, 'network envelope reached the transport')
+  for (const env of netEnvelopes) {
+    assert.equal(env.app.debug, true, 'per-envelope debug stamp (the server gate lever 1)')
+  }
+})
+
+test('network capture: explicit capture.network override (per-workspace lever) — flows WITHOUT app.debug', async () => {
+  const calls = []
+  const a = createAnalyzing({
+    appKey: 'app',
+    capture: { network: true },
+    transport: (envelope) => { calls.push(envelope); return { ok: true } },
+    level: 'trace',
+    batchMs: 5,
+    maxBatch: 1
+  })
+  assert.equal(a.config.capture.network, true)
+  a.state.activate(null)
+  a.state.emitNetwork({ phase: 'success', from: 'users', method: 'list', ok: true })
+  await new Promise((r) => setTimeout(r, 25))
+  assert.ok(_networkEvents(calls).length >= 1, 'network envelope reached the transport')
+  for (const env of calls) {
+    assert.equal(env.app.debug, undefined, 'no debug stamp — the server validates the org setting itself')
+  }
+})
+
+test('network capture: setNetworkCapture(true) at runtime (org settings load async) starts the flow', async () => {
+  const calls = []
+  const a = createAnalyzing({
+    appKey: 'app',
+    transport: (envelope) => { calls.push(envelope); return { ok: true } },
+    level: 'trace',
+    batchMs: 5,
+    maxBatch: 1
+  })
+  a.state.activate(null)
+  a.state.emitNetwork({ phase: 'success', from: 'users', method: 'list', ok: true })
+  await new Promise((r) => setTimeout(r, 25))
+  assert.equal(_networkEvents(calls).length, 0, 'gated before the opt-in')
+
+  a.setNetworkCapture(true)
+  a.state.emitNetwork({ phase: 'success', from: 'users', method: 'list', ok: true })
+  await new Promise((r) => setTimeout(r, 25))
+  assert.ok(_networkEvents(calls).length >= 1, 'flows after the runtime opt-in')
+})
+
+test('resolveNetworkCapture mirrors the server lever order: debug first, then explicit override, default off', () => {
+  assert.equal(resolveNetworkCapture(), false)
+  assert.equal(resolveNetworkCapture({}), false)
+  assert.equal(resolveNetworkCapture({ debug: true }), true)
+  assert.equal(resolveNetworkCapture({ debug: true, captureOverrides: { network: false } }), true, 'debug wins, like the server checks its envelope lever first')
+  assert.equal(resolveNetworkCapture({ captureOverrides: { network: true } }), true)
+  assert.equal(resolveNetworkCapture({ captureOverrides: { network: false } }), false)
+  assert.equal(resolveNetworkCapture({ captureOverrides: {} }), false)
 })
