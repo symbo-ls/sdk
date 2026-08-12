@@ -517,6 +517,14 @@ export class AiService extends BaseService {
       if (answered || cancelled) return
       answered = true
       clearFallback()
+      // Carry the conversation id on the error — the transport's post-error
+      // reconciliation re-reads the conversation to adopt an answer the
+      // server finished while the connection was dead, and without this it
+      // had no id to read on a first-turn/cached-id failure (seen live).
+      try {
+        const cid = resolvedConvId || (payload && payload.conversationId) || null
+        if (err && !err.conversationId && cid) err.conversationId = cid
+      } catch (_) {}
       onError?.(err)
       stopStream()
     }
