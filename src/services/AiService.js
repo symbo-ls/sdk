@@ -465,6 +465,10 @@ export class AiService extends BaseService {
     let clientToolPending = false
     let cancelStream = () => {}
     let fallbackTimer = null
+    // Turn boundary for the assistant fallback read — see
+    // _fallbackToLatestAssistant: only messages from THIS turn may be
+    // surfaced as its answer.
+    const turnStartedAt = Date.now()
     // Client tools handled this turn — the same call can arrive over BOTH the
     // SSE frame (fast-path) and a POST response (reliable path); run it once.
     const handledCalls = new Set()
@@ -683,7 +687,7 @@ export class AiService extends BaseService {
         clearFallback()
         if (clientToolPending) return
         fallbackTimer = setTimeout(() => {
-          this._fallbackToLatestAssistant(base, conversationId, finishAnswer, fail)
+          this._fallbackToLatestAssistant(base, conversationId, finishAnswer, fail, turnStartedAt)
         }, ASSISTANT_FALLBACK_MS)
       }).catch((err) => fail(err))
     })()
@@ -722,7 +726,10 @@ export class AiService extends BaseService {
 
   // One-shot read of the conversation, surfacing the latest assistant
   // message's text. Fallback for when no streamed assistant frame arrived.
-  async _fallbackToLatestAssistant (base, conversationId, finishAnswer, fail) {
+  // `sinceTs` bounds the scan to THIS turn: without it, a turn that produced
+  // no text surfaced the PREVIOUS turn's answer as if it were the reply —
+  // a silent wrong-answer substitution (observed in the 2026-08-11 audit).
+  async _fallbackToLatestAssistant (base, conversationId, finishAnswer, fail, sinceTs = 0) {
     try {
       const res = await this._requestExternal(`${base}/${conversationId}`, {
         method: 'GET',
@@ -735,7 +742,16 @@ export class AiService extends BaseService {
       // multi-step agentic turn.
       const textOf = (m) =>
         (m?.content || []).filter((p) => p && p.type === 'text').map((p) => p.text).join('')
-      const assistant = [...messages].reverse().find((m) => m?.role === 'assistant' && textOf(m))
+      const freshEnough = (m) => {
+        if (!sinceTs) return true
+        const ts = Date.parse(m?.createdAt || m?.created_at || '') || 0
+        // 5s of slack for client/server clock skew — better to accept a
+        // borderline own-turn message than to resurrect an older answer.
+        return ts >= sinceTs - 5000
+      }
+      const assistant = [...messages]
+        .reverse()
+        .find((m) => m?.role === 'assistant' && textOf(m) && freshEnough(m))
       const txt = assistant ? textOf(assistant) : ''
       const sg = assistant && assistant.metadata && Array.isArray(assistant.metadata.suggestions)
         ? assistant.metadata.suggestions
@@ -843,15 +859,37 @@ export class AiService extends BaseService {
   // for callers that drive the round-trip themselves. Returns the server's
   // { suspended, callId?, assistantMessage? } envelope.
   async submitToolResult (conversationId, callId, result, opts = {}) {
-    const res = await this._requestExternal(
-      `${this._conversationBase(opts)}/${encodeURIComponent(conversationId)}/tool-result`,
-      {
-        method: 'POST',
-        body: { callId, result, ...(opts?.modelMode ? { modelMode: opts.modelMode } : {}) },
-        methodName: 'ai.submitToolResult'
+    const doPost = () =>
+      this._requestExternal(
+        `${this._conversationBase(opts)}/${encodeURIComponent(conversationId)}/tool-result`,
+        {
+          method: 'POST',
+          body: { callId, result, ...(opts?.modelMode ? { modelMode: opts.modelMode } : {}) },
+          methodName: 'ai.submitToolResult'
+        }
+      )
+    // Network-class failures retry with backoff — the server resolves each
+    // callId exactly ONCE (duplicate submits are acknowledged, not
+    // re-appended), so retrying is safe, and a lost submit used to strand
+    // the suspended turn with an executed-but-unreported side effect
+    // (2026-08-11: a clear ran, its result never landed, the loop re-drew).
+    const RETRY_DELAYS = [1500, 4000]
+    let lastErr
+    for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt++) {
+      try {
+        const res = await doPost()
+        return this._unwrap(res)
+      } catch (err) {
+        lastErr = err
+        const msg = String(err?.message || '')
+        const networkClass =
+          err?.code === 'NETWORK_UNREACHABLE' ||
+          /failed to fetch|network unreachable|networkerror|load failed|socket|ECONNRESET|timeout/i.test(msg)
+        if (!networkClass || attempt === RETRY_DELAYS.length) throw err
+        await new Promise((r) => setTimeout(r, RETRY_DELAYS[attempt]))
       }
-    )
-    return this._unwrap(res)
+    }
+    throw lastErr
   }
 
   // Create a fresh thread. Returns the conversation summary ({ id, ... }).

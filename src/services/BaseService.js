@@ -798,7 +798,18 @@ export class BaseService {
       }
       if (!res.ok || !res.body) {
         const text = await res.text().catch(() => '')
-        safe(onError, new Error(`stream HTTP ${res.status}: ${text.slice(0, 200)}`))
+        // Friendly message — the raw `stream HTTP <code>: <body>` string used
+        // to bypass every client-side sanitizer and land verbatim in the
+        // assistant bubble. Detail stays on the error object for debugging.
+        const err = new Error(
+          res.status >= 500
+            ? 'The AI service is temporarily unavailable — please try again.'
+            : `The AI request was rejected (HTTP ${res.status}).`
+        )
+        err.status = res.status
+        err.code = `STREAM_HTTP_${res.status}`
+        err.detail = text.slice(0, 300)
+        safe(onError, err)
         return
       }
       const reader = res.body.getReader()
@@ -896,7 +907,18 @@ export class BaseService {
       }
       if (!res.ok || !res.body) {
         const text = await res.text().catch(() => '')
-        safe(onError, new Error(`stream HTTP ${res.status}: ${text.slice(0, 200)}`))
+        // Friendly message — the raw `stream HTTP <code>: <body>` string used
+        // to bypass every client-side sanitizer and land verbatim in the
+        // assistant bubble. Detail stays on the error object for debugging.
+        const err = new Error(
+          res.status >= 500
+            ? 'The AI service is temporarily unavailable — please try again.'
+            : `The AI request was rejected (HTTP ${res.status}).`
+        )
+        err.status = res.status
+        err.code = `STREAM_HTTP_${res.status}`
+        err.detail = text.slice(0, 300)
+        safe(onError, err)
         return
       }
       const reader = res.body.getReader()
