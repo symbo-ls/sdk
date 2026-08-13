@@ -438,13 +438,22 @@ export class AiService extends BaseService {
   //
   //   1. Resolve the active workspace; bail via onError if none.
   //   2. Resolve (or lazily create + cache) the conversation id for it.
-  //   3. Open the SSE stream BEFORE posting the message — the server runs
-  //      the planner synchronously during the POST and publishes
-  //      message.created, so we must be subscribed first to catch it.
+  //   3. Open the SSE stream BEFORE posting the message — a FAST turn still
+  //      runs synchronously during the POST and publishes message.created,
+  //      so we must be subscribed first to catch it; a SLOW turn (SSE-first,
+  //      tickets/opus.md "fix the >30s POST death") acks the POST early
+  //      with `{ accepted: true }` and keeps running server-side, so the
+  //      SAME subscription is what delivers its answer too — there is no
+  //      separate "slow path" transport, only a POST that may resolve
+  //      before or after the loop finishes.
   //   4. POST the message ({ content, modelMode }).
-  //   5. If no assistant frame arrives within ASSISTANT_FALLBACK_MS of the
-  //      POST resolving, fall back to a one-shot getConversation() read and
-  //      surface the latest assistant message.
+  //   5. If the POST resolves with a final answer/suspension, use it
+  //      directly. If it resolves with `{ accepted: true }` (turn still
+  //      running) or a 409 (a turn was already in flight on this
+  //      conversation), do nothing further here — the SSE stream carries the
+  //      answer. Otherwise (POST resolved with neither — a legacy/edge
+  //      shape), fall back to a one-shot getConversation() read after
+  //      ASSISTANT_FALLBACK_MS and surface the latest assistant message.
   //
   // Returns cancel() — aborts the SSE stream and marks the turn cancelled.
   _streamWorkspaceTurn (payload, callbacks = {}) {
@@ -719,6 +728,21 @@ export class AiService extends BaseService {
           )
           return
         }
+        // SSE-first (tickets/opus.md "fix the >30s POST death"). A turn that
+        // takes longer than the server's short ack window now resolves this
+        // POST early with `{ accepted: true }` — no assistantMessage, no
+        // suspension — INSTEAD of holding the connection open for however
+        // long the loop takes (that hold was the bug: the LB cuts a long-idle
+        // connection while the server keeps working and persists an answer
+        // nobody is left to receive). This is not "the POST resolved with
+        // nothing" (the race-guard case below); it is an explicit
+        // still-working signal. The turn keeps running server-side and its
+        // answer (or the next client-tool suspension) streams over the SSE
+        // connection already subscribed above via message.created /
+        // tool.call_required — never start the short race-guard fallback for
+        // it, which would fire long before a multi-minute turn finishes and
+        // wrongly report "no assistant response".
+        if (outcome && outcome.accepted) return
         // Race guard: if the assistant frame hasn't arrived shortly after
         // the POST resolves, read the conversation directly and use the
         // latest assistant message.
@@ -727,7 +751,16 @@ export class AiService extends BaseService {
         fallbackTimer = setTimeout(() => {
           this._fallbackToLatestAssistant(base, conversationId, finishAnswer, fail, turnStartedAt)
         }, ASSISTANT_FALLBACK_MS)
-      }).catch((err) => fail(err))
+      }).catch((err) => {
+        // A conversation-level "turn already in progress" (409) means this
+        // POST was correctly rejected as a duplicate/racing submit — the
+        // conversation's existing turn is still legitimately running and
+        // will deliver its answer over the SSE stream already subscribed
+        // above. Surface nothing rather than a spurious "Failed to fetch"-
+        // shaped error for a request that did exactly what it should.
+        if (err && err.status === 409) return
+        fail(err)
+      })
     })()
 
     return () => {
