@@ -457,7 +457,7 @@ export class AiService extends BaseService {
   //
   // Returns cancel() — aborts the SSE stream and marks the turn cancelled.
   _streamWorkspaceTurn (payload, callbacks = {}) {
-    const { onChunk, onDone, onError, onToolCall, onToolEvent, onProcessActive } = callbacks
+    const { onChunk, onDone, onError, onToolCall, onToolEvent, onProcessActive, onReset } = callbacks
 
     // Scope: workspace is the DEFAULT ("most common"); a project-scoped
     // conversation is used when a projectId is supplied — agents work on both.
@@ -663,6 +663,18 @@ export class AiService extends BaseService {
           // from these (never from message text).
           if (event === 'tool.activity') {
             onToolEvent?.(data || {})
+            return
+          }
+          // Discard boundary: the server threw away an unpersisted first
+          // draft (leaked build call / scratchpad dump) and is about to
+          // rerun the whole loop from scratch. Both generations stream over
+          // this SAME message.delta channel with no other marker, so
+          // without this frame the retry's tokens read as a silent
+          // continuation of the first draft — the user watches one answer
+          // get wholesale-replaced by an unrelated one. Fires strictly
+          // BETWEEN the two loop runs; never on a clean single-pass turn.
+          if (event === 'message.reset') {
+            onReset?.()
             return
           }
           // Active-process events: a delegated/chained sub-agent started or
