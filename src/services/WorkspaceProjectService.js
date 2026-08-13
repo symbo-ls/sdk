@@ -682,7 +682,9 @@ export class WorkspaceProjectService extends BaseService {
     heartbeat: (workspaceId) => {
       const wsId = this._chatWorkspaceId(workspaceId)
       const qs = wsId ? `?workspaceId=${encodeURIComponent(wsId)}` : ''
-      return this._ws('presence.heartbeat', `/presence/heartbeat${qs}`, { method: 'POST' })
+      return this._ws('presence.heartbeat', `/presence/heartbeat${qs}`, {
+        method: 'POST'
+      })
     }
   }
 
@@ -727,10 +729,14 @@ export class WorkspaceProjectService extends BaseService {
 
   // --- Search -----------------------------------------------------------------
   search = (q, opts) => {
-    const { workspaceId, ...rest } = opts && typeof opts === 'object' ? opts : {}
+    const { workspaceId, ...rest } =
+      opts && typeof opts === 'object' ? opts : {}
     const wsId = this._chatWorkspaceId(workspaceId)
     const qs = wsId ? `?workspaceId=${encodeURIComponent(wsId)}` : ''
-    return this._ws('search', `/search${qs}`, { method: 'POST', body: { q, ...rest } })
+    return this._ws('search', `/search${qs}`, {
+      method: 'POST',
+      body: { q, ...rest }
+    })
   }
 
   // --- Permissions ------------------------------------------------------------
@@ -747,6 +753,31 @@ export class WorkspaceProjectService extends BaseService {
   system = {
     status: () => this._ws('system.status', '/system/status'),
     featureFlags: () => this._ws('system.featureFlags', '/system/feature-flags')
+  }
+
+  // --- Persona oracle (escape hatch — tickets/opus.md PERSONA-3) --------------
+  // SERVER truth for the presented token's persona state — the reload oracle
+  // ("reload must re-render the pill from server truth, not client state").
+  //
+  // GET /persona is a persona-LENIENT worker route: it classifies the token's
+  // claim through the server's own `resolvePersonaScope` choke point and
+  // ALWAYS answers 200 — even when the session is dead (a 401 would lock a
+  // stale tab out of the very endpoint that tells it to recover). Resolves to:
+  //   { active: true, role, sid, startedAt, actorWorkspaceRole } — live
+  //     session, verified against the revocable store this instant;
+  //   { active: false } — the presented token carries no persona claim;
+  //   { active: false, stale: true, reason } — the token carries a claim the
+  //     server no longer honors (ended remotely, expired, demoted actor…):
+  //     shed the persona token and restore the base session.
+  //
+  // Lives HERE (not on PersonaService) so the request rides `_ws` →
+  // `_resolveAuthHeader` — the exact header pipeline every other
+  // workspace-project call uses, including the `workspaceProjectTokenProvider`
+  // that supplies the per-tab persona token. The oracle must see the SAME
+  // token the data routes see, or its answer describes the wrong session.
+  // Flat access: `sdk.getPersonaSession()` (SERVICE_METHODS).
+  getPersonaSession() {
+    return this._ws('getPersonaSession', '/persona')
   }
 
   // --- People -----------------------------------------------------------------
@@ -866,7 +897,7 @@ export class WorkspaceProjectService extends BaseService {
   // normal here rather than a caller error. Returns the RAW id — every call
   // site escapes it (URLSearchParams.set does so itself; a pre-encoded value
   // would be escaped a second time and no longer match the workspace).
-  _fileCanvasWorkspaceId (source, options) {
+  _fileCanvasWorkspaceId(source, options) {
     const ws =
       (options && options.workspaceId) ||
       (source && typeof source === 'object' && source.workspaceId) ||
@@ -898,7 +929,10 @@ export class WorkspaceProjectService extends BaseService {
     list: (filter, options) => {
       const params = new URLSearchParams()
       if (filter && typeof filter === 'object' && 'parent_id' in filter) {
-        params.set('parentId', filter.parent_id == null ? 'root' : String(filter.parent_id))
+        params.set(
+          'parentId',
+          filter.parent_id == null ? 'root' : String(filter.parent_id)
+        )
       }
       const ws = this._fileCanvasWorkspaceId(filter, options)
       if (ws) params.set('workspaceId', ws)
@@ -917,17 +951,24 @@ export class WorkspaceProjectService extends BaseService {
     },
     create: (payload, options) => {
       const ws = this._fileCanvasWorkspaceId(payload, options)
-      return this._request(`/file-canvas${ws ? `?workspaceId=${encodeURIComponent(ws)}` : ''}`, {
-        method: 'POST',
-        body: JSON.stringify(payload || {}),
-        methodName: 'fileCanvas.create'
-      }).then((r) => r?.data ?? r)
+      return this._request(
+        `/file-canvas${ws ? `?workspaceId=${encodeURIComponent(ws)}` : ''}`,
+        {
+          method: 'POST',
+          body: JSON.stringify(payload || {}),
+          methodName: 'fileCanvas.create'
+        }
+      ).then((r) => r?.data ?? r)
     },
     update: (id, payload, options) => {
       const ws = this._fileCanvasWorkspaceId(payload, options)
       return this._request(
         `/file-canvas/${encodeURIComponent(id)}${ws ? `?workspaceId=${encodeURIComponent(ws)}` : ''}`,
-        { method: 'PATCH', body: JSON.stringify(payload || {}), methodName: 'fileCanvas.update' }
+        {
+          method: 'PATCH',
+          body: JSON.stringify(payload || {}),
+          methodName: 'fileCanvas.update'
+        }
       ).then((r) => r?.data ?? r)
     },
     remove: (id, options) => {
@@ -949,7 +990,7 @@ export class WorkspaceProjectService extends BaseService {
   //   { id, collection, name, data, created_at, updated_at }
   // Workspace scope: explicit `workspaceId` (filter/options) wins, else the
   // live _context.activeWorkspaceId — the /core route path REQUIRES one.
-  _recordsWorkspaceId (filter, options) {
+  _recordsWorkspaceId(filter, options) {
     const ws =
       (options && options.workspaceId) ||
       (filter && typeof filter === 'object' && filter.workspaceId) ||
@@ -988,7 +1029,9 @@ export class WorkspaceProjectService extends BaseService {
       const ws = this._recordsWorkspaceId(filter, options)
       const params = new URLSearchParams()
       const collection =
-        filter && typeof filter === 'object' && filter.collection ? filter.collection : null
+        filter && typeof filter === 'object' && filter.collection
+          ? filter.collection
+          : null
       if (collection) params.set('collection', String(collection))
       if (options?.limit != null) params.set('limit', String(options.limit))
       // `page` (1-indexed, the canonical /core convention) wins server-side
@@ -997,20 +1040,26 @@ export class WorkspaceProjectService extends BaseService {
       if (options?.offset != null) params.set('offset', String(options.offset))
       if (options?.order) params.set('order', String(options.order))
       const qs = params.toString()
-      const r = await this._request(`/workspaces/${ws}/records${qs ? `?${qs}` : ''}`, {
-        method: 'GET',
-        methodName: 'records.list'
-      })
+      const r = await this._request(
+        `/workspaces/${ws}/records${qs ? `?${qs}` : ''}`,
+        {
+          method: 'GET',
+          methodName: 'records.list'
+        }
+      )
       const rows = r?.data ?? []
       if (r?.pagination) rows.pagination = r.pagination
       return rows
     },
     get: async (id, options) => {
       const ws = this._recordsWorkspaceId(null, options)
-      const r = await this._request(`/workspaces/${ws}/records/${encodeURIComponent(id)}`, {
-        method: 'GET',
-        methodName: 'records.get'
-      })
+      const r = await this._request(
+        `/workspaces/${ws}/records/${encodeURIComponent(id)}`,
+        {
+          method: 'GET',
+          methodName: 'records.get'
+        }
+      )
       return r?.data ?? null
     },
     create: async (payload, options) => {
@@ -1024,18 +1073,144 @@ export class WorkspaceProjectService extends BaseService {
     },
     update: async (id, payload, options) => {
       const ws = this._recordsWorkspaceId(payload, options)
-      const r = await this._request(`/workspaces/${ws}/records/${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        body: JSON.stringify(payload || {}),
-        methodName: 'records.update'
-      })
+      const r = await this._request(
+        `/workspaces/${ws}/records/${encodeURIComponent(id)}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify(payload || {}),
+          methodName: 'records.update'
+        }
+      )
       return r?.data ?? r
+    },
+    // Live change stream — the member-facing relay of the server's
+    // workspaceRecordEvents bus (GET /workspaces/:id/records/stream, SSE).
+    // Thin envelopes ({ collection, action, at }, never row data): on a
+    // `records.change` event the caller re-reads through list/get above,
+    // which is where the grant lives.
+    //
+    // Reconnect backlog (tickets/opus.md "headless Chrome recycles the
+    // records EventSource every ~33s, and records has no reconnect backlog",
+    // 2026-08-09): unlike /tickets/stream and /docs/stream, the server's
+    // /records/stream has NO snapshot frame at all — it only ever sends
+    // `records.open` (a bare connection marker, no rows) and `records.change`
+    // (a thin action marker, no rows; see WorkspaceRecordsController.stream).
+    // ANY EventSource reconnect — a real network blip, a server deploy, a
+    // laptop sleep/wake, or a browser-driven recycle — reopens with no way to
+    // learn what changed while the connection was down: a `records.change`
+    // landing inside that gap is lost, with no error and no recovery path.
+    // tickets/docs don't have this hole because their streams re-push a full
+    // snapshot on every connect INCLUDING reconnects (docs fixed alongside
+    // this, see docs.subscribe above); records' wire contract has nothing to
+    // give a client that asks.
+    //
+    // Fix, entirely client-side — no server change, and no widening of
+    // `_sseSubscribe`'s shared contract (every other consumer: tickets, docs,
+    // chat, meet — is untouched): treat every `records.open` (first connect
+    // AND every reconnect, since the server emits the identical event either
+    // way) as a cue to backfill via the SAME REST `list()` this class already
+    // exposes, and deliver the result as a synthetic
+    // `{ type: 'records.snapshot', collection, records: [...] }` event — the
+    // same "a reconnect always re-syncs full state" guarantee tickets/docs
+    // get from the wire directly, just assembled client-side. The original
+    // `records.open` event is still forwarded UNCHANGED and FIRST, so any
+    // existing consumer keyed on it (e.g. an app-side re-sync-on-open
+    // handler) is unaffected — this is additive, not a replacement.
+    //
+    // Race safety: an epoch counter discards a stale in-flight list() whose
+    // records.open has since been superseded by a newer one (a reconnect
+    // storm must not let a slow, stale backfill overwrite fresher state), and
+    // unsubscribing suppresses delivery of any backfill still in flight (no
+    // onEvent calls after teardown).
+    // Returns unsubscribe().
+    subscribe: (filter, onEvent) => {
+      const f = filter || {}
+      const wsRaw = f.workspaceId || this._context?.activeWorkspaceId
+      const ws = this._recordsWorkspaceId(f, null)
+      const collection = f.collection || f.collectionKey || ''
+      let destroyed = false
+      let epoch = 0
+
+      const deliver = (evt) => {
+        if (destroyed) return
+        try {
+          onEvent(evt)
+        } catch (_) {
+          /* listener errors don't propagate */
+        }
+      }
+
+      const backfill = () => {
+        const myEpoch = ++epoch
+        this.records
+          .list({ collection }, { workspaceId: wsRaw })
+          .then((records) => {
+            if (destroyed || myEpoch !== epoch) return
+            deliver({ type: 'records.snapshot', collection, records })
+          })
+          .catch(() => {
+            /* No error frame exists on this stream today (records.open /
+               records.change never carry one) — a failed backfill silently
+               skipping is consistent with that, not a new failure mode. The
+               NEXT records.open (or any records.change forcing a caller
+               re-read) gives the consumer another chance to catch up. */
+          })
+      }
+
+      const unsub = this._sseSubscribe(
+        `/workspaces/${ws}/records/stream`,
+        { collection },
+        (framed) => {
+          deliver(framed)
+          if (framed && framed.type === 'records.open') backfill()
+        },
+        {
+          flatParams: true,
+          events: [
+            {
+              name: 'records.open',
+              frame: (data) => ({ type: 'records.open', ...data })
+            },
+            {
+              name: 'records.change',
+              frame: (data) => ({ type: 'records.change', ...data })
+            }
+          ]
+        }
+      )
+
+      return () => {
+        destroyed = true
+        unsub()
+      }
     },
     remove: async (id, options) => {
       const ws = this._recordsWorkspaceId(null, options)
-      const r = await this._request(`/workspaces/${ws}/records/${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-        methodName: 'records.remove'
+      const r = await this._request(
+        `/workspaces/${ws}/records/${encodeURIComponent(id)}`,
+        {
+          method: 'DELETE',
+          methodName: 'records.remove'
+        }
+      )
+      return r?.data ?? r
+    }
+  }
+
+  // First-party Bookmarks helper. Bookmark CRUD stays on the generic records
+  // plane; this narrow operation only asks the server to safely enrich a URL
+  // while the composer is open. Keeping it as a real SDK namespace (rather
+  // than a client fetch) preserves the one transport/auth/scope path for every
+  // Workspace request.
+  bookmarks = {
+    enrich: async (payload, options) => {
+      const ws = this._recordsWorkspaceId(payload, options)
+      const { workspaceId: _workspaceId, ...body } =
+        payload && typeof payload === 'object' ? payload : {}
+      const r = await this._request(`/workspaces/${ws}/bookmarks/enrich`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+        methodName: 'bookmarks.enrich'
       })
       return r?.data ?? r
     }
@@ -1176,7 +1351,7 @@ export class WorkspaceProjectService extends BaseService {
   // The activity routes are path-scoped (/workspaces/:workspaceId/...), so a
   // workspace is REQUIRED — throw like records rather than returning null, so a
   // scopeless call fails at the SDK instead of 404-ing on a malformed path.
-  _activityWorkspaceId (source, options) {
+  _activityWorkspaceId(source, options) {
     const ws =
       (options && options.workspaceId) ||
       (source && typeof source === 'object' && source.workspaceId) ||
@@ -1208,7 +1383,10 @@ export class WorkspaceProjectService extends BaseService {
       const ws = this._activityWorkspaceId(filter, options)
       const params = new URLSearchParams()
       const author =
-        (filter && typeof filter === 'object' && (filter.author ?? filter.author_email)) || null
+        (filter &&
+          typeof filter === 'object' &&
+          (filter.author ?? filter.author_email)) ||
+        null
       if (author) params.set('author', String(author))
       if (filter && typeof filter === 'object' && filter.date) {
         params.set('date', String(filter.date))
@@ -1222,10 +1400,13 @@ export class WorkspaceProjectService extends BaseService {
     },
     get: (id, options) => {
       const ws = this._activityWorkspaceId(null, options)
-      return this._request(`/workspaces/${ws}/standups/${encodeURIComponent(id)}`, {
-        method: 'GET',
-        methodName: 'standups.get'
-      }).then((r) => r?.data ?? null)
+      return this._request(
+        `/workspaces/${ws}/standups/${encodeURIComponent(id)}`,
+        {
+          method: 'GET',
+          methodName: 'standups.get'
+        }
+      ).then((r) => r?.data ?? null)
     },
     create: (payload, options) => {
       const ws = this._activityWorkspaceId(payload, options)
@@ -1237,11 +1418,14 @@ export class WorkspaceProjectService extends BaseService {
     },
     update: (id, payload, options) => {
       const ws = this._activityWorkspaceId(payload, options)
-      return this._request(`/workspaces/${ws}/standups/${encodeURIComponent(id)}`, {
-        method: 'PATCH',
-        body: JSON.stringify(payload || {}),
-        methodName: 'standups.update'
-      }).then((r) => r?.data ?? r)
+      return this._request(
+        `/workspaces/${ws}/standups/${encodeURIComponent(id)}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify(payload || {}),
+          methodName: 'standups.update'
+        }
+      ).then((r) => r?.data ?? r)
     },
     upsert: (payload, options) => {
       const ws = this._activityWorkspaceId(payload, options)
@@ -1265,8 +1449,11 @@ export class WorkspaceProjectService extends BaseService {
   auditLog = {
     list: (filter, options) => {
       const ws = this._activityWorkspaceId(filter, options)
-      const limit = options?.limit ?? (filter && typeof filter === 'object' ? filter.limit : null)
-      const qs = limit != null ? `?limit=${encodeURIComponent(String(limit))}` : ''
+      const limit =
+        options?.limit ??
+        (filter && typeof filter === 'object' ? filter.limit : null)
+      const qs =
+        limit != null ? `?limit=${encodeURIComponent(String(limit))}` : ''
       return this._request(`/workspaces/${ws}/activity-log${qs}`, {
         method: 'GET',
         methodName: 'auditLog.list'
@@ -1396,12 +1583,36 @@ export class WorkspaceProjectService extends BaseService {
     // passes through verbatim. `participant` is intentionally absent from the
     // map (D6 — never emitted by the server); the consumer's `participant`
     // branch stays dead code, unchanged.
+    //
+    // meet.snapshot (tickets/opus.md "`meet` realtime discards the server's
+    // meet.snapshot, so a reconnect recovers nothing", 2026-08-09): the server
+    // (MeetStreamController.stream) writes ONE `meet.snapshot` event per
+    // connection, unconditionally, before it ever wires the live subscribe —
+    // so it fires on the FIRST connect AND on every reconnect (a fresh
+    // EventSource is a fresh HTTP request, which re-runs `stream()` from the
+    // top; there is no server-side session that would suppress a repeat).
+    // This used to be framed as `() => undefined` — silently discarded — so a
+    // reconnect (network blip, deploy, sleep/wake, or the ~33s headless
+    // recycle) recovered nothing: a room/utterance/analysis write that
+    // landed during the gap, with no matching `meet.room.*` /
+    // `meet.transcript.insert` / `meet.analysis.*` event ever delivered for
+    // it (by definition of "the connection was down"), was lost. Same class
+    // of gap `records` had — but simpler to fix, because the server already
+    // pushes a real snapshot; nothing needs synthesizing client-side the way
+    // `records.subscribe`'s REST backfill does, so no epoch/staleness
+    // machinery is needed HERE — `chat.snapshot` (below) is the exact
+    // precedent this mirrors. Forwarded as `kind: 'meet.snapshot'` +
+    // `payload: data` (the server's `_buildSnapshot` shape:
+    // `{ rooms?, transcripts?, analysis? }`, keys present only for the
+    // kinds this subscription requested); the consumer
+    // (`workspace/packages/meet/functions/subscribeMeetRealtime.js`)
+    // reconciles it.
     subscribeMeetSse: ({ roomId, workspaceId, tables } = {}, cb) => {
       if (typeof cb !== 'function') return () => {}
 
       // (kind, payload) adapter: each event frame returns { kind, payload };
-      // a frame returning undefined is swallowed (snapshot/revoked have no
-      // consumer branch — the page's own fetch reconciles).
+      // a frame returning undefined is swallowed (revoked has no consumer
+      // branch — the page's own fetch reconciles).
       const deliver = (framed) => {
         if (!framed || !framed.kind) return
         try {
@@ -1418,9 +1629,13 @@ export class WorkspaceProjectService extends BaseService {
       const passthrough = (kind) => (data) => ({ kind, payload: data })
 
       const events = [
-        // snapshot drives a refetch on the consumer; it has no `snapshot`
-        // branch, so swallow and let the page's own initial fetch populate.
-        { name: 'meet.snapshot', frame: () => undefined },
+        // Forwarded (was `() => undefined` — see the doc comment above).
+        // Mirrors chat.snapshot exactly: kind carries the frame name itself
+        // so the consumer can route on it directly.
+        {
+          name: 'meet.snapshot',
+          frame: (data) => ({ kind: 'meet.snapshot', payload: data || {} })
+        },
         { name: 'meet.room.insert', frame: passthrough('room') },
         { name: 'meet.room.update', frame: passthrough('room') },
         { name: 'meet.room.delete', frame: passthrough('room') },
@@ -1652,7 +1867,41 @@ export class WorkspaceProjectService extends BaseService {
         method: 'POST',
         body: JSON.stringify({ path }),
         methodName: 'storage.publicUrl'
-      })
+      }),
+    // Object CONTENT through the API, as text. The read for environments where
+    // the direct bucket URL is CORS-blocked (every *.localhost dev origin —
+    // the bucket's CORS grant covers deployed hosts only), and the only
+    // authenticated read this surface has. Raw-fetches like upload: _request
+    // is JSON-shaped and this response is the object's bytes.
+    //
+    // `?workspaceId=` carries the tab's ACTIVE workspace (the multi-tab
+    // contract every other workspace surface follows — fileCanvas, records).
+    // Without it the server resolves scope from the auth claim alone, which
+    // can lag the tab's workspace, and the path-prefix tenant guard then
+    // 403s a legitimate read ("path outside workspace" — measured live).
+    // Membership is still enforced server-side either way.
+    download: (bucket, path) => {
+      const _doDownload = async () => {
+        this._requireReady('storage.download')
+        const wsId = this._context?.activeWorkspaceId
+        const q = wsId ? `?workspaceId=${encodeURIComponent(String(wsId))}` : ''
+        const base = `${this._apiUrl}/core/storage/${encodeURIComponent(bucket)}/download${q}`
+        const init = {
+          method: 'POST',
+          body: JSON.stringify({ path }),
+          headers: { 'Content-Type': 'application/json' }
+        }
+        const auth = await this._resolveAuthHeader()
+        if (auth) init.headers.Authorization = auth
+        const res = await fetch(base, init)
+        if (!res.ok) {
+          const json = await res.json().catch(() => ({}))
+          throw new Error(json?.message || `HTTP ${res.status}`)
+        }
+        return res.text()
+      }
+      return _doDownload()
+    }
   }
 
   // --- Generic escape hatch ---------------------------------------------------

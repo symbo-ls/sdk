@@ -62,13 +62,21 @@ By default, the `remote` preset enables:
 | errors      | `window.onerror`, `unhandledrejection`, DOMQL lifecycle throws          |
 | warnings    | console.warn + sentinel framework warnings                              |
 | console     | `log` / `warn` / `error` / `debug` — args safely stringified            |
-| network     | window.fetch + XMLHttpRequest + smbls fetch plugin events               |
 | performance | LCP, CLS, longtask, paint, first-input, custom measurements             |
 | navigation  | router transitions                                                       |
 | viewport    | resize, orientationchange, visibilitychange                              |
 
 Opt in via `capture: { … }` overrides. Sensitive categories (`pointer`,
 `keyboard`, `forms`, `scroll`) stay **off** in the remote preset by design.
+
+**Network capture** (window.fetch + XMLHttpRequest + smbls fetch plugin
+events) is **off by default** — the analyzed server discards un-opted-in
+`logType='network'` envelopes at ingest (server `cd64446f`), so shipping them
+was wasted client CPU + egress. Re-enable with the same levers the server
+honors: `debug: true` (restores traces end-to-end — every envelope stamps
+`app.debug`, the server's per-envelope opt-in) or `capture: { network: true }`
+/ runtime `setNetworkCapture(true)` (the client half of the per-workspace
+`Organization.settings.analyzedNetworkCapture` opt-in).
 
 ## Log type classification
 

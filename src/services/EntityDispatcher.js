@@ -154,6 +154,47 @@ const WS_CRUD_ARG_MAP = {
   remove: wsArgMaps.id
 }
 
+// RECORDS ARG MAP — the generic maps above cannot serve this entity.
+//
+// `wsArgMaps.payload` resolves the request body as
+// `a?.payload ?? a?.data ?? rest`. That `a?.data` branch exists because most
+// entities let a caller pack the body as `{ data: {...} }`. The records plane
+// is the one entity where `data` is a FIRST-CLASS FIELD of the body itself —
+// the wire shape is `{ collection, name, data }` — so on a flat write the
+// heuristic fires on the record's own payload and returns just that, silently
+// dropping `collection` and `name` before the request is built. The server
+// then rejects it with "A `collection` namespace is required", which reads as
+// a caller mistake and is really an unpacking bug three layers up. Symptom
+// when it bit: workspace-module board autosave failing on every create, and
+// row create/update on the workspace `/data` surface (`externalData.js`)
+// failing the same way — both pass the documented flat shape.
+//
+// The packed form (`{ payload: {...} }`) is still honoured; only the `data`
+// shortcut is dropped, and only here.
+const recordsBody = (a, extraKeys) => a?.payload ?? _stripWs(a, extraKeys)
+
+const RECORDS_ARG_MAP = {
+  list: argMaps.filterOptions,
+  get: wsArgMaps.id,
+  create: (a) => [recordsBody(a), ..._wsOpts(a)],
+  update: (a) => [
+    a?.id ?? a?.number,
+    recordsBody(a, ['id', 'number']),
+    ..._wsOpts(a)
+  ],
+  remove: wsArgMaps.id,
+  // (filter, cb) — the dispatcher appends the callback for subscribe ops.
+  subscribe: (a) => [a || {}]
+}
+
+// Bookmarks has one non-CRUD operation: enrich a composing URL. It keeps the
+// workspace routing pin in the trailing options positional like records while
+// forwarding the compact `{ url }` body unchanged. This is intentionally not a
+// generic RPC escape hatch — the server route is explicit and first-party.
+const BOOKMARKS_ARG_MAP = {
+  enrich: (a) => [a?.payload ?? a?.data ?? _stripWs(a), ..._wsOpts(a)]
+}
+
 // Party sub-resource body adapter (roles / relationships). Pulls the POST
 // body out of the well-known shapes, stripping the parent-id keys so both a
 // packed caller (`{ partyId, payload: { role } }`) and a flat caller
@@ -309,6 +350,53 @@ const ENTITY_ROUTES = {
     service: 'workspace',
     methods: { list: 'listWorkspaceMembers', create: 'addWorkspaceMember' }
   },
+  // Member record-scope sub-resource — the records-plane LOCATION axis
+  // (server a95cda9f "records: a real HTTP path to read/assign
+  // WorkspaceMember.recordScope"; tickets/natali.md "NAT-V1-02"). Distinct
+  // entity from 'workspace.members' (same parent/child relationship as
+  // 'workspace' → 'workspace.settings' below) so a role PATCH and a
+  // recordScope PATCH can never collide on one `update` op. Singleton-
+  // per-member shape — get/update (+list, see below), no create/remove —
+  // mirrors the `companyProfile` entity's { get, update } singleton pair.
+  //   sdk.execute('workspace.members.recordScope', 'get', { workspaceId, userId })
+  //   sdk.execute('workspace.members.recordScope', 'update', { workspaceId, userId, recordScope })
+  //
+  // `list` is ALSO mapped to the same read (not just `get`): the fetch
+  // plugin's declarative adapter (@symbo.ls/fetch) only ever emits
+  // list/rpc/insert/update/upsert/delete/subscribe — never bare `get` — so
+  // a `fetch: [{ from: 'workspace.members.recordScope', method: 'select',
+  // params: { workspaceId, userId } }]` declaration would 404 on "does not
+  // support op 'list'" without this alias. sdkAdapter's `select` handler
+  // passes non-array data through untouched, so returning a single object
+  // under `list` is safe — this is the one place this entity intentionally
+  // diverges from companyProfile's precedent, so the LOCATION-axis role UI
+  // can read a member's own scope on mount purely declaratively.
+  'workspace.members.recordScope': {
+    service: 'workspace',
+    methods: {
+      get: 'getWorkspaceMemberRecordScope',
+      list: 'getWorkspaceMemberRecordScope',
+      update: 'updateWorkspaceMemberRecordScope'
+    },
+    argMap: {
+      get: (a) => [a?.workspaceId, a?.userId],
+      list: (a) => [a?.workspaceId, a?.userId],
+      // recordScope may be legitimately `null` (clears the assignment) —
+      // rest-strip (not `??`-chained) so an explicit null survives and a
+      // truly-omitted key still throws service-side, same as
+      // partySubPayload's convention below.
+      update: (a) => [
+        a?.workspaceId,
+        a?.userId,
+        a?.payload ??
+          a?.data ??
+          (() => {
+            const { workspaceId, userId, ...rest } = a || {}
+            return rest
+          })()
+      ]
+    }
+  },
   // Merge-safe partial settings write — PATCH /workspaces/:id/settings. The
   // single writer for settings.{workspaceModule,navbar,apps,
   // home_default_panels,designSystem,language,layoutDirection,modules} that
@@ -349,12 +437,14 @@ const ENTITY_ROUTES = {
       update: 'update',
       remove: 'remove',
       assign: 'assign',
-      epicCounts: 'epicCounts'
+      epicCounts: 'epicCounts',
+      columnCounts: 'columnCounts'
     },
     argMap: {
       ...CRUD_ARG_MAP,
       assign: (a) => [a?.id ?? a?.number, a?.assignee ?? a?.email],
-      epicCounts: () => []
+      epicCounts: () => [],
+      columnCounts: (a) => [a?.filter ?? a ?? {}]
     }
   },
   'tickets.columns': {
@@ -907,7 +997,15 @@ const ENTITY_ROUTES = {
       getSession: 'getSession',
       listEvents: 'listEvents',
       listUsers: 'listUsers',
-      listBugs: 'listBugs'
+      listBugs: 'listBugs',
+      // Rollup + presence reads — the dashboard chain. Registered so
+      // `sdk.execute('analyzed', 'now'|…)` works like every other op
+      // (previously only reachable via getService('analyzed')).
+      now: 'now',
+      weekly: 'weekly',
+      demographics: 'demographics',
+      changes: 'changes',
+      activeUsers: 'activeUsers'
     },
     argMap: {
       ingest: (a) => [a],
@@ -916,7 +1014,12 @@ const ENTITY_ROUTES = {
       getSession: argMaps.id,
       listEvents: (a) => [a?.filter ?? {}, a?.options ?? {}],
       listUsers: (a) => [a?.filter ?? {}, a?.options ?? {}],
-      listBugs: (a) => [a?.filter ?? {}, a?.options ?? {}]
+      listBugs: (a) => [a?.filter ?? {}, a?.options ?? {}],
+      now: (a) => [a?.filter ?? a ?? {}],
+      weekly: (a) => [a?.filter ?? a ?? {}],
+      demographics: (a) => [a?.filter ?? a ?? {}],
+      changes: (a) => [a?.filter ?? a ?? {}],
+      activeUsers: (a) => [a?.filter ?? {}, a?.options ?? {}]
     }
   },
   'docs.documents': {
@@ -1284,10 +1387,12 @@ const ENTITY_ROUTES = {
   // (2026-06); the Mongo successor is Team.permissions[].
 
   // ─── Analyzed (observability) ──────────────────────────────────────────────
-  // Replaces Grafana Faro. Browser → workspace-project worker →
-  // analyzed_* tables. Writes use the curated POST /analyzed/ingest route
-  // (server-stamps workspace_id from the JWT); reads use the PostgREST
-  // passthrough with RLS gating by app_metadata.workspace_id.
+  // Replaces Grafana Faro. Browser → main API server's Mongo-backed
+  // POST /core/analyzed/ingest route (server-stamps workspace_id from the
+  // JWT / envelope). The old workspace-project-worker → PostgREST →
+  // analyzed_* Postgres tables path (RLS gated by app_metadata.workspace_id)
+  // was deleted with the Supabase plane (2026-07-27) — every entry below is
+  // now a pure alias, not a live worker route.
   // SERVER-LOGS-MONGO-MIGRATION Phase 5 — legacy `workspaceProject.analyzed*`
   // entities are deprecated aliases that delegate to the new top-level
   // `sdk.analyzed.*` service (main API server, Mongo-backed). Same pattern
@@ -1386,7 +1491,8 @@ const ENTITY_ROUTES = {
       get: 'records.get',
       create: 'records.create',
       update: 'records.update',
-      remove: 'records.remove'
+      remove: 'records.remove',
+      subscribe: 'records.subscribe'
     },
     // WS map, not plain CRUD: records.* shares the uniform `(…, { workspaceId })`
     // signature, and CRUD_ARG_MAP gave get/remove NO channel to carry the
@@ -1394,7 +1500,20 @@ const ENTITY_ROUTES = {
     // (org home) every op threw `no workspace scope`. WS_CRUD_ARG_MAP threads
     // a caller's top-level workspaceId into the options positional and keeps
     // it out of the request body.
-    argMap: WS_CRUD_ARG_MAP
+    //
+    // RECORDS_ARG_MAP, not WS_CRUD_ARG_MAP: `data` is a real field of this
+    // entity's body, so the generic map's `?? a?.data` shortcut unpacked flat
+    // writes down to the record payload and lost `collection`. See its
+    // definition for the full note.
+    argMap: RECORDS_ARG_MAP
+  },
+  // First-party URL enrichment for the native Bookmarks composer. CRUD still
+  // belongs to `workspaceProject.records` collection `bookmarks`; this entity
+  // only maps the safe metadata-preview endpoint.
+  'workspaceProject.bookmarks': {
+    service: 'workspaceProject',
+    methods: { enrich: 'bookmarks.enrich' },
+    argMap: BOOKMARKS_ARG_MAP
   },
   // workspaceProject.companyInfo + workspaceProject.companySettings entities
   // removed 2026-07 — tables dropped with the workspace-project Supabase org
@@ -1643,13 +1762,15 @@ const ENTITY_ROUTES = {
       signedUrl: 'storage.createSignedUrl',
       upload: 'storage.upload',
       remove: 'storage.remove',
-      publicUrl: 'storage.publicUrl'
+      publicUrl: 'storage.publicUrl',
+      download: 'storage.download'
     },
     argMap: {
       signedUrl: (a) => [a?.bucket, a?.path, a?.ttl ?? 300],
       upload: (a) => [a?.bucket, a?.formData ?? a?.payload, a?.options ?? {}],
       remove: (a) => [a?.bucket, a?.path],
-      publicUrl: (a) => [a?.bucket, a?.path]
+      publicUrl: (a) => [a?.bucket, a?.path],
+      download: (a) => [a?.bucket, a?.path]
     }
   },
 
@@ -1706,7 +1827,41 @@ const ENTITY_ROUTES = {
       get: 'getProject',
       create: 'createProject',
       update: 'updateProject',
-      remove: 'deleteProject'
+      remove: 'removeProject'
+    }
+  },
+
+  // ─── Project version history ──────────────────────────────────────────────
+  'project.versions': {
+    service: 'project',
+    methods: {
+      list: 'getProjectVersions',
+      get: 'getProjectVersion',
+      rpc: 'restoreProjectVersion'
+    },
+    argMap: {
+      list: (a) => [
+        a?.projectId ?? a?.params?.projectId ?? a?.filter?.projectId,
+        {
+          branch: a?.branch ?? a?.params?.branch,
+          page: a?.page ?? a?.params?.page,
+          limit: a?.limit ?? a?.params?.limit,
+          fields: a?.fields ?? a?.params?.fields
+        }
+      ],
+      get: (a) => [
+        a?.projectId ?? a?.params?.projectId,
+        a?.versionId ?? a?.id ?? a?.params?.versionId
+      ],
+      rpc: (a) => [
+        a?.projectId ?? a?.params?.projectId,
+        a?.version ?? a?.versionId ?? a?.params?.version,
+        {
+          message: a?.message ?? a?.params?.message,
+          branch: a?.branch ?? a?.params?.branch,
+          type: a?.type ?? a?.params?.type
+        }
+      ]
     }
   },
 

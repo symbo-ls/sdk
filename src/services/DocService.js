@@ -139,6 +139,34 @@ export class DocService extends BaseService {
   /**
    * Subscribe to real-time doc events via Server-Sent Events.
    *
+   * Fires onEvent with shapes (matching DocStreamController's wire vocabulary
+   * — see server src/domains/docs/controllers/DocStreamController.js):
+   *   { type: 'snapshot', docs: [...] }    — full list on connect AND on every
+   *                                           reconnect (server re-sends
+   *                                           `docs.snapshot` as the first frame
+   *                                           of every new connection, so a
+   *                                           consumer that reconciles state
+   *                                           from `snapshot` self-heals across
+   *                                           any drop/recycle — same guarantee
+   *                                           tickets.subscribe() has).
+   *   { type: 'docs.insert', doc: {} }     — new doc matching filter
+   *   { type: 'docs.update', doc: {} }     — updated doc matching filter
+   *   { type: 'docs.delete', doc: {_id} }  — deleted doc (id only)
+   *
+   * BUGFIX (tickets/opus.md "records EventSource reconnect backlog" audit,
+   * 2026-08-09): this previously called `_sseSubscribe('/docs/stream', filter,
+   * onEvent)` with NO `events` option, which defaults to `_sseSubscribe`'s
+   * tickets-shaped vocabulary (`tickets.snapshot`/`tickets.insert`/…). The
+   * server's `/docs/stream` has only ever emitted `docs.*`-named SSE events
+   * (see DocStreamController — `docs.snapshot`, `docs.insert`, `docs.update`,
+   * `docs.delete`), so every `docs.subscribe()` call was listening for event
+   * names the server never sends: the EventSource opened successfully (so
+   * nothing looked broken — no thrown error, no failed test) but `onEvent`
+   * was never invoked, for any event, ever. Passing the real vocabulary here
+   * is a pure bugfix — from "delivers nothing" to "delivers per its own
+   * documented contract" — not a behaviour change any working caller could
+   * have depended on, since no working caller was possible before this.
+   *
    * Auto-reconnects on disconnect with exponential backoff (1s → 2s → 4s → 8s cap).
    * Returns an unsubscribe() function that tears down the connection.
    *
@@ -147,7 +175,14 @@ export class DocService extends BaseService {
    * @returns {function} unsubscribe() — call to close the connection
    */
   subscribe (filter = {}, onEvent) {
-    return this._sseSubscribe('/docs/stream', filter, onEvent)
+    return this._sseSubscribe('/docs/stream', filter, onEvent, {
+      events: [
+        { name: 'docs.snapshot', frame: (data) => ({ type: 'snapshot', docs: data.docs || data }) },
+        { name: 'docs.insert', frame: (data) => ({ type: 'docs.insert', doc: data.doc || data }) },
+        { name: 'docs.update', frame: (data) => ({ type: 'docs.update', doc: data.doc || data }) },
+        { name: 'docs.delete', frame: (data) => ({ type: 'docs.delete', doc: data.doc || data }) }
+      ]
+    })
   }
 
   // ==================== TYPE-SPECIFIC SUGAR ====================

@@ -58,6 +58,7 @@ import {
   createCalendarService,
   createBuildsService,
   createStorefrontService,
+  createPersonaService,
   workspaceProjectBaseUrl
 } from './services/index.js'
 
@@ -581,6 +582,17 @@ export class SDK {
           context: this._context,
           options: this._options
         })
+      ),
+      // Persona sessions ("view as <role>" — role simulation, never
+      // per-person impersonation) against /core/persona/* on the main
+      // server. Scope resolution is server-side in claimsToScope (server
+      // 886a9b27). See PersonaService.js.
+      this._initService(
+        'persona',
+        createPersonaService({
+          context: this._context,
+          options: this._options
+        })
       )
     ])
 
@@ -1006,8 +1018,15 @@ export {
   createCalendarService,
   createBuildsService,
   createStorefrontService,
+  createPersonaService,
   workspaceProjectBaseUrl
 } from './services/index.js'
+
+// Persona role enum (server 886a9b27's PERSONA_TARGET_ROLES literal) —
+// exported from the MAIN entry for the same reason as PERMISSION_MAP below:
+// pickers need a SYNCHRONOUS role list, and every flat sdk.* method returns
+// a Promise through the workspace init gate.
+export { PERSONA_TARGET_ROLES } from './services/index.js'
 
 // Re-export entity dispatcher helpers so external packages (e.g. plugins
 // extending the fetch adapter) can add their own routes at boot.

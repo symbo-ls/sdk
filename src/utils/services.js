@@ -132,6 +132,9 @@ export const SERVICE_METHODS = {
   applyProjectChanges: 'project',
   getProjectData: 'project',
   getProjectVersions: 'project',
+  getProjectVersion: 'project',
+  getLatestProjectVersion: 'project',
+  getProjectVersionData: 'project',
   restoreProjectVersion: 'project',
   updateProjectItem: 'project',
   deleteProjectItem: 'project',
@@ -192,6 +195,10 @@ export const SERVICE_METHODS = {
   uploadImage: 'file',
   uploadDocument: 'file',
   getFileUrl: 'file',
+  // Authenticated private-file read (GET /core/files/:id/download) — the
+  // companion to getFileUrl, which serves only the PUBLIC route and 404s on
+  // private uploads.
+  downloadFileContent: 'file',
   validateFile: 'file',
   createFileFormData: 'file',
   uploadMultipleFiles: 'file',
@@ -475,15 +482,35 @@ export const SERVICE_METHODS = {
   addWorkspaceMember: 'workspace',
   updateWorkspaceMemberRole: 'workspace',
   removeWorkspaceMember: 'workspace',
+  // Records-plane LOCATION axis — read/assign WorkspaceMember.recordScope
+  // (server a95cda9f). See WorkspaceService.js for the full contract.
+  getWorkspaceMemberRecordScope: 'workspace',
+  updateWorkspaceMemberRecordScope: 'workspace',
   grantWorkspaceTeamAccess: 'workspace',
   revokeWorkspaceTeamAccess: 'workspace',
   getBilling: 'workspace',
   getCreditBalance: 'workspace',
   getCreditLedger: 'workspace',
+  // CREDITS-CLAIM (tickets/sonnet.md) — existing-signed-in-free-user claim
+  // surface. See WorkspaceService.js for the full contract.
+  getSignupClaimStatus: 'workspace',
+  claimSignupCredits: 'workspace',
   getWorkspaceUsage: 'workspace',
+  // Usage-by-actor (member/system/machine + unattributed-historical) —
+  // tickets/fable.md CREDITS-ATTR-3 / tickets/sonnet.md CREDITS-ATTR-2.
+  // See the docblock on WorkspaceService#getWorkspaceUsageByActor for the
+  // contract-vs-live-route status.
+  getWorkspaceUsageByActor: 'workspace',
   createCreditTopupCheckout: 'workspace',
   getSpendControls: 'workspace',
   updateSpendControls: 'workspace',
+
+  // App interdependencies (Manifest v2.1 — spec-app-dependencies.md §6).
+  // Atomic, dependency-aware install/uninstall — distinct from the
+  // whole-array `updateWorkspaceSettings({workspaceApps})` writer above.
+  getWorkspaceAppDependencies: 'workspace',
+  installWorkspaceApps: 'workspace',
+  removeWorkspaceApp: 'workspace',
 
   // Workspace public config + write-only private-secret management.
   // Trusted runtime secret resolution is intentionally not browser-exposed.
@@ -651,6 +678,27 @@ export const SERVICE_METHODS = {
   listStorefrontJobs: 'storefront',
   getStorefrontJob: 'storefront',
   applyToStorefrontJob: 'storefront',
+
+  // Persona sessions (tickets/sonnet.md PERSONA-4) — role simulation
+  // ("view as <role>"), NEVER per-person impersonation; scope is resolved
+  // server-side in claimsToScope (server 886a9b27).
+  // POST /core/persona/start { role } → adopts the persona-claim token
+  // POST /core/persona/end   {}       → idempotent, never rejects
+  // getPersona → local decode of the active token's persona claim, or null
+  // ⚠ All three return Promises (init gate + async service methods):
+  // `if (sdk.getPersona())` is always truthy — await the resolved value.
+  startPersona: 'persona',
+  endPersona: 'persona',
+  getPersona: 'persona',
+  // Server-truth oracle (PERSONA-3): GET <workspace-project>/persona via the
+  // worker's persona-LENIENT route — 200 from ANY persona state, including a
+  // dead session ({ active: false, stale: true }). The persona pill re-renders
+  // from THIS on boot; getPersona above stays the zero-network local decode.
+  // On workspaceProject (not persona) so the request rides _ws →
+  // _resolveAuthHeader — the provider-aware header pipeline that carries the
+  // per-tab persona token; a TokenManager-only transport would show the
+  // oracle a base token and mis-report a live persona as inactive.
+  getPersonaSession: 'workspaceProject',
 
   // Storefront customer identity (tickets/server.md "storefront customer
   // identity layer", NAT-V1-25/27/28) — register/login/OTP/reset are

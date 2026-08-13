@@ -35,7 +35,12 @@ const IDEMPOTENT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 const RETRY_SAFE_METHOD_NAMES = new Set([
   'setActiveOrganization',
   'setActiveWorkspace',
-  'getMe'
+  'getMe',
+  // Ending a persona session is idempotent BY CONTRACT (tickets/sonnet.md
+  // PERSONA-4: double-end and end-after-expiry must succeed), so a re-sent
+  // POST /persona/end can never double-apply — and the exit affordance is a
+  // security control that should ride out an API restart rather than fail.
+  'endPersona'
 ])
 const RETRY_BASE_DELAY_MS = 300
 
@@ -491,13 +496,28 @@ export class BaseService {
   // { success, data, message } and unwraps to `data` on success or throws
   // `new Error(message)` otherwise. Collapses the ~5 lines of boilerplate
   // that every service method repeats.
-  async _call (methodName, endpoint, { method = 'GET', body, headers } = {}) {
+  //
+  // `raw: true` opts out of the `.data` unwrap for controllers that reply
+  // flat (`{success, ...fields}` with no `data` envelope) — throw-on-
+  // `!success` behavior is preserved, but the full response is returned so
+  // the caller can pick its own fields. Use this instead of hand-rolling
+  // `_requireReady` → `_request` → `if (!response || response.success ===
+  // false) throw` at the call site.
+  async _call (methodName, endpoint, { method = 'GET', body, headers, raw = false } = {}) {
     this._requireReady(methodName)
     const init = { method, methodName }
     if (headers) init.headers = headers
     if (body !== undefined) init.body = body instanceof FormData ? body : JSON.stringify(body)
 
     const response = await this._request(endpoint, init)
+
+    if (raw) {
+      if (!response || response.success === false) {
+        throw new Error(response?.message || `${methodName} failed`)
+      }
+      return response
+    }
+
     // Tolerate both enveloped {success, data, message} and bare payloads.
     if (response && typeof response === 'object' && 'success' in response) {
       if (response.success) return response.data
@@ -783,7 +803,18 @@ export class BaseService {
       }
       if (!res.ok || !res.body) {
         const text = await res.text().catch(() => '')
-        safe(onError, new Error(`stream HTTP ${res.status}: ${text.slice(0, 200)}`))
+        // Friendly message — the raw `stream HTTP <code>: <body>` string used
+        // to bypass every client-side sanitizer and land verbatim in the
+        // assistant bubble. Detail stays on the error object for debugging.
+        const err = new Error(
+          res.status >= 500
+            ? 'The AI service is temporarily unavailable — please try again.'
+            : `The AI request was rejected (HTTP ${res.status}).`
+        )
+        err.status = res.status
+        err.code = `STREAM_HTTP_${res.status}`
+        err.detail = text.slice(0, 300)
+        safe(onError, err)
         return
       }
       const reader = res.body.getReader()
@@ -881,7 +912,18 @@ export class BaseService {
       }
       if (!res.ok || !res.body) {
         const text = await res.text().catch(() => '')
-        safe(onError, new Error(`stream HTTP ${res.status}: ${text.slice(0, 200)}`))
+        // Friendly message — the raw `stream HTTP <code>: <body>` string used
+        // to bypass every client-side sanitizer and land verbatim in the
+        // assistant bubble. Detail stays on the error object for debugging.
+        const err = new Error(
+          res.status >= 500
+            ? 'The AI service is temporarily unavailable — please try again.'
+            : `The AI request was rejected (HTTP ${res.status}).`
+        )
+        err.status = res.status
+        err.code = `STREAM_HTTP_${res.status}`
+        err.detail = text.slice(0, 300)
+        safe(onError, err)
         return
       }
       const reader = res.body.getReader()

@@ -31,7 +31,10 @@ import {
   MeetService,
   CalendarService,
   BuildsService,
-  StorefrontService
+  StorefrontService,
+  McpConnectorService,
+  VoiceService,
+  PersonaService
 } from '../../index.js'
 
 // service-name → ServiceClass — the same wiring `_initService` does in
@@ -68,7 +71,10 @@ const SERVICES = {
   meet: MeetService,
   calendar: CalendarService,
   builds: BuildsService,
-  storefront: StorefrontService
+  storefront: StorefrontService,
+  mcpConnector: McpConnectorService,
+  voice: VoiceService,
+  persona: PersonaService
 }
 
 // Methods that intentionally exist on a service but are NOT flat-exposed via
@@ -105,7 +111,16 @@ const INTENTIONALLY_NOT_FLAT_EXPOSED = new Set([
   // etc.), NOT as top-level flat proxy methods. Flat-exposing them would cause
   // collisions with same-name methods on other services (e.g. `list`, `get`,
   // `create`, `update`, `remove`, `subscribe`, `tree`, `folders`).
-  'DocService:*'
+  'DocService:*',
+  // Internal boot-hydration hook: SDK.boot() calls it via
+  // getService('auth') to replay the boot payload's `me` section into the
+  // auth session. Never a user-facing flat method.
+  'AuthService:adoptSessionUser',
+  // Per-service scope-switch hooks — sdk.switchWorkspace/sdk.switchOrg (SDK
+  // class methods) WALK these on every registered service; flat-exposing
+  // them would shadow those SDK-level walkers with a single service's hook.
+  'PersonaService:switchWorkspace',
+  'PersonaService:switchOrg'
 ])
 
 // Pre-existing drift captured 2026-05-18 when this audit first ran. Each

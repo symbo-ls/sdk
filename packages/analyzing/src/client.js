@@ -34,7 +34,16 @@ const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefine
  *   sdk          @symbo.ls/sdk instance          auto-pulls bearer from tokenManager
  *
  * Tuning:
- *   capture      object   overrides the 'remote' capture preset
+ *   capture      object   overrides the 'remote' capture preset. NOTE:
+ *                network capture is OFF by default — the server discards
+ *                un-opted-in logType='network' envelopes at ingest (server
+ *                cd64446f), so shipping them is wasted client CPU + egress.
+ *                Opt in with the same levers the server honors: `debug: true`
+ *                (restores end-to-end — the envelope stamps `app.debug`, the
+ *                server's per-envelope lever) or `capture: { network: true }`
+ *                / runtime `setNetworkCapture(true)` (the client half of the
+ *                per-workspace Organization.settings.analyzedNetworkCapture
+ *                opt-in). See resolveNetworkCapture below.
  *   level        string   'error'|'warn'|'info'|'debug'|'trace' (default 'info')
  *   sampleRate   number   0..1 client-side downsample (default 1)
  *   redact       array    regex/glob patterns for PII scrubbing
@@ -52,10 +61,37 @@ const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefine
  *   - identify({ userId, traits? })
  *   - setContext(key, value)
  *   - setTag(key, value)
+ *   - setNetworkCapture(enabled)
  *   - flush()
  *   - shutdown()
  *   - sessionId
  */
+
+/**
+ * Emitter-side network-capture default, mirroring the client-visible
+ * subset of the server ingest gate
+ * (AnalyzedWriteService.resolveNetworkCaptureEnabled, server cd64446f):
+ *   1. debug flag — wins first, like the server's per-envelope lever
+ *      (`envelope.app?.debug === true`); the remote sink stamps
+ *      `app.debug` on every envelope so this ONE switch restores
+ *      logType='network' traces end-to-end.
+ *   2. explicit `capture.network` boolean — the client half of the
+ *      per-workspace `Organization.settings.analyzedNetworkCapture`
+ *      opt-in; the consumer threads the setting, the server validates
+ *      it independently against the org record.
+ *   3. default OFF — the server's ANALYZED_CAPTURE_NETWORK ops env
+ *      switch is not visible from the client; the server stays the
+ *      backstop for anything the client can't see.
+ * Exported for direct unit testing.
+ */
+export const resolveNetworkCapture = ({ debug, captureOverrides } = {}) => {
+  if (debug === true) return true
+  if (captureOverrides && typeof captureOverrides.network === 'boolean') {
+    return captureOverrides.network
+  }
+  return false
+}
+
 export const createAnalyzing = (opts = {}) => {
   const {
     endpoint,
@@ -106,6 +142,22 @@ export const createAnalyzing = (opts = {}) => {
   // SDK-ANALYZING-PUBLIC-TOLERATE-MISSING-WORKSPACE-ID and
   // architecture/MODEL.md §"Per-org visitor telemetry" → "No client-side scope".
   let resolvedTransport = transport
+  // Unload-safe terminal delivery (SDK mode). The async transport below is
+  // killed by an unloading page, so the pagehide/beforeunload terminal
+  // envelope — the one that stamps session.endedAt — never reached the
+  // server from a real close (measured: zero organically-ended sessions
+  // across hours of tab churn). The sink's sync flushes route through
+  // resolvedSyncTransport (defined after the async transport below) —
+  // sendBeacon with a preflight-free text/plain body. The ingest URL is
+  // refreshed on every successful async delivery, so it is synchronously
+  // available at unload with no awaits to lose.
+  let resolvedSyncTransport = null
+  const _syncCache = { url: null, token: null }
+  const _syncCacheRefresh = (live, token) => {
+    const apiBase = live?._context?.apiUrl
+    if (apiBase) _syncCache.url = `${apiBase}/core/analyzed/ingest`
+    if (token) _syncCache.token = token
+  }
   if (!resolvedTransport && mode === 'public') {
     // Same-origin default so mermaid's HTMLRewriter can inject the tracker
     // stub without having to know an absolute ingest URL. Mermaid's /v1/
@@ -241,6 +293,7 @@ export const createAnalyzing = (opts = {}) => {
       if (!live) return { ok: false, reason: 'no-sdk' }
       const _token = await _resolveIngestToken(live)
       if (!_token) return { ok: false, reason: 'no-auth' }
+      _syncCacheRefresh(live, _token)
       if (typeof live.execute === 'function') {
         try {
           const res = await live.execute('analyzed', 'ingest', envelope)
@@ -295,6 +348,7 @@ export const createAnalyzing = (opts = {}) => {
       // breaking the page-load logs.
       const _token = await _resolveIngestToken(live)
       if (!_token) return { ok: false, reason: 'no-auth' }
+      _syncCacheRefresh(live, _token)
       // Prefer the typed dispatcher when services are wired — that path
       // benefits from the SDK's retry/backoff + token refresh hooks.
       if (typeof live.execute === 'function') {
@@ -314,6 +368,46 @@ export const createAnalyzing = (opts = {}) => {
         _bufferPush(envelope)
       }
       return result
+    }
+
+    // The terminal request MUST be CORS-"simple" (no preflight). A fetch
+    // with an Authorization header (or a JSON content-type) is preflighted,
+    // and Chrome drops the follow-up POST when the initiating page unloads
+    // between OPTIONS and POST — measured live: the preflight got its 200,
+    // the terminal POST never hit the wire, endedAt never landed. So:
+    // sendBeacon with a text/plain Blob (safelisted → zero preflight,
+    // unload-proof by contract), NO auth header — the server's ingest is
+    // optionalAuth and scopes the anonymous path by envelope.workspace_id,
+    // and isVisitor is insert-only there so an anonymous terminal envelope
+    // can only stamp endedAt on the session it belongs to, never reclassify
+    // it. fetch-keepalive (still simple: text/plain, no auth) is the
+    // fallback where sendBeacon is unavailable.
+    resolvedSyncTransport = (envelope) => {
+      if (!_syncCache.url) return false
+      const body = (() => {
+        try { return JSON.stringify(envelope) } catch (_) { return null }
+      })()
+      if (!body) return false
+      try {
+        if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+          const blob = typeof Blob !== 'undefined' ? new Blob([body], { type: 'text/plain' }) : body
+          if (navigator.sendBeacon(_syncCache.url, blob)) return true
+        }
+      } catch (_) { /* fall through to keepalive */ }
+      if (typeof fetch !== 'function') return false
+      try {
+        fetch(_syncCache.url, {
+          method: 'POST',
+          keepalive: true,
+          credentials: 'omit',
+          mode: 'cors',
+          headers: { 'Content-Type': 'text/plain' },
+          body
+        }).catch(() => {})
+        return true
+      } catch (_) {
+        return false
+      }
     }
   }
   if (!endpoint && !resolvedTransport) {
@@ -345,6 +439,7 @@ export const createAnalyzing = (opts = {}) => {
     type: 'remote',
     url: endpoint,
     transport: resolvedTransport,
+    syncTransport: resolvedSyncTransport,
     apiKey,
     appKey,
     tenantKey,
@@ -388,6 +483,29 @@ export const createAnalyzing = (opts = {}) => {
   // The plugin lifecycle will pick this same state up via context.analyze
   // when smbls calls prepareContext — see analyzePlugin / context wiring.
   const state = createAnalyzeState(analyzeConfig)
+
+  // ── Emitter-side network gate ──────────────────────────────────────────
+  // The server discards un-opted-in logType='network' envelopes at ingest
+  // (server cd64446f — they were 77% of all analyzedevents rows), so
+  // capturing them client-side wastes CPU + egress in every session. Apply
+  // the resolved default through the public setCapture API — not just the
+  // capture map above — so it holds regardless of which @symbo.ls/analyze
+  // version the bundler resolved (older expandPresets let the `remote`
+  // preset clobber explicit capture keys). Reads state.config.debug (not
+  // the raw opt) so the plugin's `?analyze=debug` URL override counts as
+  // the debug lever too. Runs pre-activate, so with capture off the
+  // fetch/XHR listeners are never even attached.
+  state.setCapture('network', resolveNetworkCapture({
+    debug: state.config.debug === true,
+    captureOverrides
+  }))
+
+  // Thread the live debug flag to the remote sink so every envelope of a
+  // debug session stamps `app.debug: true` — the per-envelope opt-in the
+  // server's ingest gate honors (its lever 1). Read at flush time via a
+  // getter (the sink resolves lazily, after this line) so the URL
+  // override applied inside createAnalyzeState is honored as well.
+  remoteSinkConfig.getDebug = () => state.config.debug === true
 
   // ── Manual API ─────────────────────────────────────────────────────────────
 
@@ -478,6 +596,14 @@ export const createAnalyzing = (opts = {}) => {
 
   const flush = () => state.flush()
   const shutdown = () => state.destroy()
+
+  // Runtime mirror of the per-workspace opt-in lever — call with the
+  // loaded `Organization.settings.analyzedNetworkCapture` value once org
+  // settings arrive (they load async, after boot). Post-activate, this
+  // also lazily attaches the fetch/XHR listeners that were skipped while
+  // capture was off. The server validates the same setting independently
+  // at ingest, so no envelope stamp is needed on this path.
+  const setNetworkCapture = (enabled) => state.setCapture('network', !!enabled)
 
   // Wire global error/promise hooks immediately so failures during DOMQL boot
   // (before plugin.init runs) still ship. attachBrowserListeners is normally
@@ -589,6 +715,7 @@ export const createAnalyzing = (opts = {}) => {
     identify,
     setContext,
     setTag,
+    setNetworkCapture,
     flush,
     shutdown,
     sessionId: resolvedSessionId

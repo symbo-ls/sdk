@@ -192,6 +192,60 @@ test('docs.subscribe calls _sseSubscribe with /docs/stream', t => {
   t.end()
 })
 
+// Regression (tickets/opus.md "records EventSource reconnect backlog" audit,
+// 2026-08-09): docs.subscribe used to pass NO `events` option, which meant
+// _sseSubscribe defaulted to the tickets-shaped vocabulary
+// (tickets.snapshot/insert/update/delete) — event NAMES the server's
+// /docs/stream never emits (it only ever sends docs.snapshot/insert/update/
+// delete, per DocStreamController). onEvent was therefore never invoked for
+// ANY event: the EventSource opened fine (nothing looked broken), but zero
+// callbacks ever fired. These tests pin the real server vocabulary so this
+// can't silently regress back to "delivers nothing".
+test('docs.subscribe wires the REAL docs.* server event names, not the tickets.* default', t => {
+  t.plan(4)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_sseSubscribe').returns(() => {})
+  svc.subscribe({}, () => {})
+  const opts = stub.firstCall.args[3]
+  const names = opts.events.map((e) => e.name)
+  t.deepEqual(
+    names,
+    ['docs.snapshot', 'docs.insert', 'docs.update', 'docs.delete'],
+    'listens for the docs.* names DocStreamController actually writeEvent()s'
+  )
+  t.equal(names.includes('tickets.snapshot'), false, 'does NOT listen for the tickets.* default')
+  t.equal(opts.events.length, 4, 'exactly 4 event descriptors')
+  t.equal(typeof opts.events[0].frame, 'function', 'snapshot descriptor has a frame fn')
+  sandbox.restore()
+  t.end()
+})
+
+test('docs.subscribe frames docs.snapshot/insert/update/delete into the documented onEvent shapes', t => {
+  t.plan(4)
+  const svc = makeService()
+  const received = []
+  const stub = sandbox.stub(svc, '_sseSubscribe').callsFake((path, filter, onEvent, opts) => {
+    // Simulate the server sending one frame of each kind, exactly as
+    // DocStreamController's writeEvent() shapes them on the wire.
+    for (const { name, frame } of opts.events) {
+      const wireData =
+        name === 'docs.snapshot'
+          ? { docs: [{ _id: 'd1' }, { _id: 'd2' }], filter: {} }
+          : { doc: { _id: 'd1', type: 'document' } }
+      received.push(frame(wireData, name))
+    }
+    return () => {}
+  })
+  svc.subscribe({}, () => {})
+  t.deepEqual(received[0], { type: 'snapshot', docs: [{ _id: 'd1' }, { _id: 'd2' }] }, 'docs.snapshot')
+  t.deepEqual(received[1], { type: 'docs.insert', doc: { _id: 'd1', type: 'document' } }, 'docs.insert')
+  t.deepEqual(received[2], { type: 'docs.update', doc: { _id: 'd1', type: 'document' } }, 'docs.update')
+  t.deepEqual(received[3], { type: 'docs.delete', doc: { _id: 'd1', type: 'document' } }, 'docs.delete')
+  stub.restore()
+  sandbox.restore()
+  t.end()
+})
+
 // ─── documents sub-namespace ──────────────────────────────────────────────────
 
 test('docs.documents.list calls list with type=document', async t => {

@@ -1,4 +1,5 @@
 import { BaseService } from './BaseService.js'
+import { logger } from '../utils/logger.js'
 
 // AiService — single entry point for every UI surface that talks to an
 // LLM (AppAssistant, CanvasPromptTextarea, ticket standup/detail editor,
@@ -40,8 +41,22 @@ const DEFAULT_AUTH_MODE = 'ask'
 
 // Model-mode catalog — the upstream provider routing the workspace agent
 // should use for a turn. Persisted in localStorage and sent as `modelMode`
-// on every appended message.
-const MODEL_MODES = ['auto', 'openai', 'openrouter', 'anthropic', 'gemini', 'research', 'cheap']
+// on every appended message. Mirrors the server's AgentModelModes enum
+// (packages/agent-core/agentRuntime.js) — 'simone' was missing here until
+// 2026-08-08 (tickets/server.md "restore simone as the default AI mode"),
+// which meant setModelMode('simone') THREW even though the server has
+// always accepted it as an explicit mode: this list, not the server, was
+// the reason the picker could never offer it.
+const MODEL_MODES = [
+  'auto',
+  'simone',
+  'openai',
+  'openrouter',
+  'anthropic',
+  'gemini',
+  'research',
+  'cheap'
+]
 
 // How long to wait after the message POST resolves before falling back to
 // a one-shot getConversation() read — the server publishes message.created
@@ -112,6 +127,26 @@ export class AiService extends BaseService {
       label: key === 'auto' ? 'Auto' : key.charAt(0).toUpperCase() + key.slice(1),
       active: key === current
     }))
+  }
+
+  // Real per-provider diagnostics for the model picker — GET
+  // /core/ai/providers (AiProviderController, backed by
+  // ModelRouterService.describeConfiguredProviders()/listDemotedProviders()).
+  // Returns { defaultMode, providers:[{provider,usable,enabled,available,
+  // hasCredentials,demoted,model,reason,demotedUntil}], demotedProviders }
+  // so a picker can show EVERY mode and, for the unusable ones, WHY — never
+  // configured, disabled, missing credentials, or temporarily demoted (self-
+  // heals; see ProviderHealthTracker). Never throws: callers render the
+  // picker with plain mode labels (no reason badges) on failure rather than
+  // losing the picker entirely — this is a diagnostics enhancement, not a
+  // hard dependency of picking a mode.
+  async describeProviders () {
+    try {
+      return await this._request('/ai/providers', { method: 'GET', methodName: 'ai.describeProviders' })
+    } catch (error) {
+      logger.warn('[sdk.ai] describeProviders failed:', error)
+      return { defaultMode: DEFAULT_MODEL_MODE, providers: [], demotedProviders: [] }
+    }
   }
 
   // ==================== MODE (deprecated shims) ====================
@@ -226,7 +261,18 @@ export class AiService extends BaseService {
             messageId: donePayload?.messageId || null,
             // Follow-up suggestions (server-validated) — rendered as
             // tappable pills under the reply.
-            suggestions: Array.isArray(donePayload?.suggestions) ? donePayload.suggestions : []
+            suggestions: Array.isArray(donePayload?.suggestions) ? donePayload.suggestions : [],
+            // The assistant message's own metadata (tickets/opus.md
+            // "credits-exhausted UX") — carries `{ kind:'error', errorCode,
+            // errorMessage, retryable, creditsExhausted }` when
+            // failWorkspaceLoop synthesized this answer after a loop
+            // failure. Passed through VERBATIM (never re-derived here) so
+            // the consumer's metadata-key check matches byte-for-byte what
+            // the server persisted. Previously dropped entirely — every
+            // live turn lost the structured signal and only history reloads
+            // (which don't restore it either — see sessions.js) could have
+            // recovered it.
+            metadata: donePayload?.metadata || null
           }
           callbacks.onDone?.(result)
           resolve(result)
@@ -392,17 +438,26 @@ export class AiService extends BaseService {
   //
   //   1. Resolve the active workspace; bail via onError if none.
   //   2. Resolve (or lazily create + cache) the conversation id for it.
-  //   3. Open the SSE stream BEFORE posting the message — the server runs
-  //      the planner synchronously during the POST and publishes
-  //      message.created, so we must be subscribed first to catch it.
+  //   3. Open the SSE stream BEFORE posting the message — a FAST turn still
+  //      runs synchronously during the POST and publishes message.created,
+  //      so we must be subscribed first to catch it; a SLOW turn (SSE-first,
+  //      tickets/opus.md "fix the >30s POST death") acks the POST early
+  //      with `{ accepted: true }` and keeps running server-side, so the
+  //      SAME subscription is what delivers its answer too — there is no
+  //      separate "slow path" transport, only a POST that may resolve
+  //      before or after the loop finishes.
   //   4. POST the message ({ content, modelMode }).
-  //   5. If no assistant frame arrives within ASSISTANT_FALLBACK_MS of the
-  //      POST resolving, fall back to a one-shot getConversation() read and
-  //      surface the latest assistant message.
+  //   5. If the POST resolves with a final answer/suspension, use it
+  //      directly. If it resolves with `{ accepted: true }` (turn still
+  //      running) or a 409 (a turn was already in flight on this
+  //      conversation), do nothing further here — the SSE stream carries the
+  //      answer. Otherwise (POST resolved with neither — a legacy/edge
+  //      shape), fall back to a one-shot getConversation() read after
+  //      ASSISTANT_FALLBACK_MS and surface the latest assistant message.
   //
   // Returns cancel() — aborts the SSE stream and marks the turn cancelled.
   _streamWorkspaceTurn (payload, callbacks = {}) {
-    const { onChunk, onDone, onError, onToolCall, onToolEvent, onProcessActive } = callbacks
+    const { onChunk, onDone, onError, onToolCall, onToolEvent, onProcessActive, onReset } = callbacks
 
     // Scope: workspace is the DEFAULT ("most common"); a project-scoped
     // conversation is used when a projectId is supplied — agents work on both.
@@ -430,6 +485,10 @@ export class AiService extends BaseService {
     let clientToolPending = false
     let cancelStream = () => {}
     let fallbackTimer = null
+    // Turn boundary for the assistant fallback read — see
+    // _fallbackToLatestAssistant: only messages from THIS turn may be
+    // surfaced as its answer.
+    const turnStartedAt = Date.now()
     // Client tools handled this turn — the same call can arrive over BOTH the
     // SSE frame (fast-path) and a POST response (reliable path); run it once.
     const handledCalls = new Set()
@@ -443,7 +502,7 @@ export class AiService extends BaseService {
     const blocksToText = (content) =>
       (content || []).filter((p) => p && p.type === 'text').map((p) => p.text).join('')
 
-    const finishAnswer = (txt, messageId, suggestions) => {
+    const finishAnswer = (txt, messageId, suggestions, metadata) => {
       if (answered || cancelled) return
       answered = true
       clearFallback()
@@ -459,11 +518,17 @@ export class AiService extends BaseService {
       // `suggestions` = the server-validated follow-up actions from the
       // assistant message's metadata (buttons the surface renders under the
       // reply); [] when the answer carries none.
+      // `metadata` = the assistant message's raw metadata object (tickets/
+      // opus.md "credits-exhausted UX") — carries `{ kind:'error',
+      // errorCode, errorMessage, retryable, creditsExhausted }` when
+      // failWorkspaceLoop synthesized this answer; null otherwise. Passed
+      // through untouched — see `messageMetadata` below.
       onDone?.({
         text: txt,
         conversationId: resolvedConvId,
         messageId: messageId || null,
-        suggestions: Array.isArray(suggestions) ? suggestions : []
+        suggestions: Array.isArray(suggestions) ? suggestions : [],
+        metadata: metadata || null
       })
       stopStream()
     }
@@ -474,10 +539,22 @@ export class AiService extends BaseService {
       return Array.isArray(list) ? list : []
     }
 
+    // Pull the raw metadata object off a serialized assistant message — see
+    // finishAnswer's `metadata` param above.
+    const messageMetadata = (msg) => (msg && msg.metadata) || null
+
     const fail = (err) => {
       if (answered || cancelled) return
       answered = true
       clearFallback()
+      // Carry the conversation id on the error — the transport's post-error
+      // reconciliation re-reads the conversation to adopt an answer the
+      // server finished while the connection was dead, and without this it
+      // had no id to read on a first-turn/cached-id failure (seen live).
+      try {
+        const cid = resolvedConvId || (payload && payload.conversationId) || null
+        if (err && !err.conversationId && cid) err.conversationId = cid
+      } catch (_) {}
       onError?.(err)
       stopStream()
     }
@@ -521,7 +598,8 @@ export class AiService extends BaseService {
             finishAnswer(
               txt,
               resume.assistantMessage?._id || resume.assistantMessage?.id || null,
-              messageSuggestions(resume.assistantMessage)
+              messageSuggestions(resume.assistantMessage),
+              messageMetadata(resume.assistantMessage)
             )
           }
         })
@@ -587,6 +665,18 @@ export class AiService extends BaseService {
             onToolEvent?.(data || {})
             return
           }
+          // Discard boundary: the server threw away an unpersisted first
+          // draft (leaked build call / scratchpad dump) and is about to
+          // rerun the whole loop from scratch. Both generations stream over
+          // this SAME message.delta channel with no other marker, so
+          // without this frame the retry's tokens read as a silent
+          // continuation of the first draft — the user watches one answer
+          // get wholesale-replaced by an unrelated one. Fires strictly
+          // BETWEEN the two loop runs; never on a clean single-pass turn.
+          if (event === 'message.reset') {
+            onReset?.()
+            return
+          }
           // Active-process events: a delegated/chained sub-agent started or
           // finished. PURELY INFORMATIONAL — they do NOT end or suspend the turn
           // (no finishAnswer, no fallback-timer touch), so the final assistant
@@ -603,7 +693,14 @@ export class AiService extends BaseService {
             // the turn on an empty message. Only the final, text-bearing
             // assistant message ends the turn.
             const txt = blocksToText(data.content)
-            if (txt) finishAnswer(txt, data.id || data._id || null, messageSuggestions(data))
+            if (txt) {
+              finishAnswer(
+                txt,
+                data.id || data._id || null,
+                messageSuggestions(data),
+                messageMetadata(data)
+              )
+            }
           }
         },
         onError: (err) => fail(err)
@@ -638,19 +735,44 @@ export class AiService extends BaseService {
           finishAnswer(
             finalTxt,
             outcome?.assistantMessage?._id || outcome?.assistantMessage?.id || null,
-            messageSuggestions(outcome?.assistantMessage)
+            messageSuggestions(outcome?.assistantMessage),
+            messageMetadata(outcome?.assistantMessage)
           )
           return
         }
+        // SSE-first (tickets/opus.md "fix the >30s POST death"). A turn that
+        // takes longer than the server's short ack window now resolves this
+        // POST early with `{ accepted: true }` — no assistantMessage, no
+        // suspension — INSTEAD of holding the connection open for however
+        // long the loop takes (that hold was the bug: the LB cuts a long-idle
+        // connection while the server keeps working and persists an answer
+        // nobody is left to receive). This is not "the POST resolved with
+        // nothing" (the race-guard case below); it is an explicit
+        // still-working signal. The turn keeps running server-side and its
+        // answer (or the next client-tool suspension) streams over the SSE
+        // connection already subscribed above via message.created /
+        // tool.call_required — never start the short race-guard fallback for
+        // it, which would fire long before a multi-minute turn finishes and
+        // wrongly report "no assistant response".
+        if (outcome && outcome.accepted) return
         // Race guard: if the assistant frame hasn't arrived shortly after
         // the POST resolves, read the conversation directly and use the
         // latest assistant message.
         clearFallback()
         if (clientToolPending) return
         fallbackTimer = setTimeout(() => {
-          this._fallbackToLatestAssistant(base, conversationId, finishAnswer, fail)
+          this._fallbackToLatestAssistant(base, conversationId, finishAnswer, fail, turnStartedAt)
         }, ASSISTANT_FALLBACK_MS)
-      }).catch((err) => fail(err))
+      }).catch((err) => {
+        // A conversation-level "turn already in progress" (409) means this
+        // POST was correctly rejected as a duplicate/racing submit — the
+        // conversation's existing turn is still legitimately running and
+        // will deliver its answer over the SSE stream already subscribed
+        // above. Surface nothing rather than a spurious "Failed to fetch"-
+        // shaped error for a request that did exactly what it should.
+        if (err && err.status === 409) return
+        fail(err)
+      })
     })()
 
     return () => {
@@ -687,7 +809,10 @@ export class AiService extends BaseService {
 
   // One-shot read of the conversation, surfacing the latest assistant
   // message's text. Fallback for when no streamed assistant frame arrived.
-  async _fallbackToLatestAssistant (base, conversationId, finishAnswer, fail) {
+  // `sinceTs` bounds the scan to THIS turn: without it, a turn that produced
+  // no text surfaced the PREVIOUS turn's answer as if it were the reply —
+  // a silent wrong-answer substitution (observed in the 2026-08-11 audit).
+  async _fallbackToLatestAssistant (base, conversationId, finishAnswer, fail, sinceTs = 0) {
     try {
       const res = await this._requestExternal(`${base}/${conversationId}`, {
         method: 'GET',
@@ -700,12 +825,22 @@ export class AiService extends BaseService {
       // multi-step agentic turn.
       const textOf = (m) =>
         (m?.content || []).filter((p) => p && p.type === 'text').map((p) => p.text).join('')
-      const assistant = [...messages].reverse().find((m) => m?.role === 'assistant' && textOf(m))
+      const freshEnough = (m) => {
+        if (!sinceTs) return true
+        const ts = Date.parse(m?.createdAt || m?.created_at || '') || 0
+        // 5s of slack for client/server clock skew — better to accept a
+        // borderline own-turn message than to resurrect an older answer.
+        return ts >= sinceTs - 5000
+      }
+      const assistant = [...messages]
+        .reverse()
+        .find((m) => m?.role === 'assistant' && textOf(m) && freshEnough(m))
       const txt = assistant ? textOf(assistant) : ''
       const sg = assistant && assistant.metadata && Array.isArray(assistant.metadata.suggestions)
         ? assistant.metadata.suggestions
         : []
-      if (txt) finishAnswer(txt, (assistant && (assistant.id || assistant._id)) || null, sg)
+      const meta = (assistant && assistant.metadata) || null
+      if (txt) finishAnswer(txt, (assistant && (assistant.id || assistant._id)) || null, sg, meta)
       else fail(new Error('[sdk.ai] no assistant response'))
     } catch (err) {
       fail(err)
@@ -808,15 +943,37 @@ export class AiService extends BaseService {
   // for callers that drive the round-trip themselves. Returns the server's
   // { suspended, callId?, assistantMessage? } envelope.
   async submitToolResult (conversationId, callId, result, opts = {}) {
-    const res = await this._requestExternal(
-      `${this._conversationBase(opts)}/${encodeURIComponent(conversationId)}/tool-result`,
-      {
-        method: 'POST',
-        body: { callId, result, ...(opts?.modelMode ? { modelMode: opts.modelMode } : {}) },
-        methodName: 'ai.submitToolResult'
+    const doPost = () =>
+      this._requestExternal(
+        `${this._conversationBase(opts)}/${encodeURIComponent(conversationId)}/tool-result`,
+        {
+          method: 'POST',
+          body: { callId, result, ...(opts?.modelMode ? { modelMode: opts.modelMode } : {}) },
+          methodName: 'ai.submitToolResult'
+        }
+      )
+    // Network-class failures retry with backoff — the server resolves each
+    // callId exactly ONCE (duplicate submits are acknowledged, not
+    // re-appended), so retrying is safe, and a lost submit used to strand
+    // the suspended turn with an executed-but-unreported side effect
+    // (2026-08-11: a clear ran, its result never landed, the loop re-drew).
+    const RETRY_DELAYS = [1500, 4000]
+    let lastErr
+    for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt++) {
+      try {
+        const res = await doPost()
+        return this._unwrap(res)
+      } catch (err) {
+        lastErr = err
+        const msg = String(err?.message || '')
+        const networkClass =
+          err?.code === 'NETWORK_UNREACHABLE' ||
+          /failed to fetch|network unreachable|networkerror|load failed|socket|ECONNRESET|timeout/i.test(msg)
+        if (!networkClass || attempt === RETRY_DELAYS.length) throw err
+        await new Promise((r) => setTimeout(r, RETRY_DELAYS[attempt]))
       }
-    )
-    return this._unwrap(res)
+    }
+    throw lastErr
   }
 
   // Create a fresh thread. Returns the conversation summary ({ id, ... }).

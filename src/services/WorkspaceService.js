@@ -122,6 +122,71 @@ export class WorkspaceService extends BaseService {
     })
   }
 
+  // ==================== MEMBER RECORD SCOPE (LOCATION axis) ====================
+  //
+  // The caller side of the records-plane scope-field mechanism (server
+  // f94da4cd/b8e05de5; HTTP path server a95cda9f "records: a real HTTP path
+  // to read/assign WorkspaceMember.recordScope"; tickets/natali.md
+  // "NAT-V1-02"). Mirrors GET/PATCH
+  // /workspaces/:workspaceId/members/:userId/record-scope — a dedicated
+  // sub-resource under the member (same relationship `updateWorkspace` has
+  // to `updateWorkspaceSettings` above), never a key on the role PATCH, so
+  // the self-assignment refusal lives on one verb.
+
+  /**
+   * Read a member's records-plane scope-field assignment — the
+   * `recordScope` that NARROWS a `scoped` member's row set on every
+   * records-plane request. Reads are laxer than writes: the server allows
+   * a member to read their OWN scope (self === userId) as well as
+   * owner/admin reading anyone's; every other combination 403s.
+   *
+   * @param {string} workspaceId
+   * @param {string} userId
+   * @returns {Promise<{ workspaceId: string, userId: string, role: string, recordScope: Record<string, Array<string>>|null, scopeFields: Array<string> }>}
+   */
+  async getWorkspaceMemberRecordScope (workspaceId, userId) {
+    if (!workspaceId || !userId) throw new Error('workspaceId and userId are required')
+    return this._call(
+      'getWorkspaceMemberRecordScope',
+      `/workspaces/${workspaceId}/members/${userId}/record-scope`
+    )
+  }
+
+  /**
+   * Assign (or clear, via `recordScope: null`) a member's records-plane
+   * scope-field assignment. Owner/admin only — same gate as
+   * `updateWorkspaceMemberRole`/`removeWorkspaceMember`. The server
+   * refuses self-assignment UNCONDITIONALLY (not even an owner may set
+   * their own scope), so `userId` must never be the caller's own id —
+   * expect a 403 `forbidden_self_scope` if it is. Field names inside
+   * `recordScope` are validated server-side against the workspace's OWN
+   * declared grant `scopeField`s; an unknown field 400s (`err.cause`
+   * carries `knownFields`) rather than silently fail-closing the member.
+   *
+   * `recordScope` must be explicitly provided (an object of
+   * `{ scopeField: [values] }`, or `null` to clear) — omitting the key
+   * entirely throws client-side before any request is sent, same as the
+   * server's own `hasOwnProperty` guard.
+   *
+   * @param {string} workspaceId
+   * @param {string} userId
+   * @param {{ recordScope: Record<string, Array<string>> | null }} options
+   * @returns {Promise<{ workspaceId: string, userId: string, role: string, recordScope: Record<string, Array<string>>|null, scopeFields: Array<string> }>}
+   */
+  async updateWorkspaceMemberRecordScope (workspaceId, userId, options = {}) {
+    if (!workspaceId || !userId) throw new Error('workspaceId and userId are required')
+    if (!Object.prototype.hasOwnProperty.call(options, 'recordScope')) {
+      throw new Error(
+        'recordScope is required (an object of { scopeField: [values] }, or null to clear)'
+      )
+    }
+    return this._call(
+      'updateWorkspaceMemberRecordScope',
+      `/workspaces/${workspaceId}/members/${userId}/record-scope`,
+      { method: 'PATCH', body: { recordScope: options.recordScope } }
+    )
+  }
+
   // ==================== TEAM GRANTS (TeamWorkspaceAccess) ====================
 
   async grantWorkspaceTeamAccess (workspaceId, { teamId, role = 'guest' }) {
@@ -166,6 +231,34 @@ export class WorkspaceService extends BaseService {
     return this._call('getCreditLedger', `/workspaces/${workspaceId}/credits/ledger${qs}`)
   }
 
+  // CREDITS-CLAIM (tickets/sonnet.md "CREDITS-CLAIM client wiring") — the
+  // one-time "claim 100 free credits" signup grant, for surfaces OTHER than
+  // the signup form itself (which claims inline via `register({ claimCredits:
+  // true })` and reads `data.creditsClaim` off the register response). This
+  // pair backs the "existing signed-in free user who never claimed" surface
+  // (billing/settings): GET reports eligibility without mutating, POST
+  // performs the claim. Both idempotent server-side (CreditLedger.
+  // idempotencyKey keyed on the user id) — safe to call GET then POST, and
+  // safe to POST twice.
+  //
+  // GET resolves `{ claimed, claimableCredits }`.
+  async getSignupClaimStatus (workspaceId) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    return this._call('getSignupClaimStatus', `/workspaces/${workspaceId}/credits/claim-signup`)
+  }
+
+  // POST resolves `{ claimed, alreadyClaimed, grantRemaining, topupRemaining,
+  // total, scope }` — `claimed: true` on a fresh grant, `claimed: false,
+  // alreadyClaimed: true` on a re-claim (never an error).
+  async claimSignupCredits (workspaceId) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    return this._call(
+      'claimSignupCredits',
+      `/workspaces/${workspaceId}/credits/claim-signup`,
+      { method: 'POST' },
+    )
+  }
+
   /**
    * Workspace credit-meter usage rollup. Mirrors
    * `GET /workspaces/:workspaceId/usage` (UsageController.workspaceSummary,
@@ -190,22 +283,95 @@ export class WorkspaceService extends BaseService {
   }
 
   /**
-   * Start a Stripe Checkout session for a workspace-level credit top-up
-   * pack. Mirrors POST /workspaces/:workspaceId/billing/topups/checkout
-   * (WorkspaceController.createCreditTopupCheckout, server PR #349).
-   * Server validates that `credits` equals the configured TOPUP_PACK_SIZE
-   * (1000 by default); other quantities are rejected.
+   * Workspace credit-meter usage rollup grouped by ACTOR instead of by
+   * reason — "who spent the credits, and what the system spent on its
+   * own". Sibling of `getWorkspaceUsage` (same period/from/to window),
+   * grouped on `CreditLedger.actorType`/`createdBy`/`systemCause`/
+   * `machineLabel` (server `b99f86b0`, tickets/fable.md CREDITS-ATTR-1)
+   * instead of `reason`.
+   *
+   * CONTRACT, not yet verified live (tickets/sonnet.md CREDITS-ATTR-2 owns
+   * `GET /workspaces/:workspaceId/usage/by-actor` — the server route,
+   * final field names, and per-member cap enforcement). This wrapper
+   * defines the agreed shape from the CREDITS-ATTR-1 actor model so the
+   * CREDITS-ATTR-3 attribution page (workspace `admin/usage.js`) has a
+   * real named method to call today. Until CREDITS-ATTR-2 ships the
+   * route, this 404s — callers MUST treat that as an empty/missing state,
+   * never a hard error (see `_loadAll` in `admin/usage.js`, which already
+   * falls back to `{ error }` for every call in its `Promise.all`).
+   *
+   * Expected response shape:
+   *   {
+   *     period, from, to,
+   *     totalCredits: number,
+   *     members:  [{ userId, name, email, avatar, credits, eventCount }],
+   *     system:   [{ cause, credits, eventCount }],   // cause ∈ SYSTEM_CAUSES
+   *     machines: [{ machineLabel, credits, eventCount }],
+   *     unattributed: { credits, eventCount, before: ISODateString|null }
+   *   }
+   *
+   * `unattributed` is pre-feature history (`actorType` absent on the
+   * ledger row) — its own bucket, permanently un-attributable to any
+   * member. Never fold it into `members` (as someone's 0) or `system`.
+   *
+   * @param {string} workspaceId
+   * @param {{ period?: 'day'|'month', from?: string|Date, to?: string|Date }} [options]
+   * @returns {Promise<object>}
+   */
+  async getWorkspaceUsageByActor (workspaceId, { period, from, to } = {}) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    const params = new URLSearchParams()
+    if (period) params.set('period', String(period))
+    if (from) params.set('from', from instanceof Date ? from.toISOString() : String(from))
+    if (to) params.set('to', to instanceof Date ? to.toISOString() : String(to))
+    const qs = params.toString() ? `?${params}` : ''
+    return this._call('getWorkspaceUsageByActor', `/workspaces/${workspaceId}/usage/by-actor${qs}`)
+  }
+
+  /**
+   * Start a Stripe Checkout session for a workspace credit top-up.
+   * Mirrors POST /workspaces/:workspaceId/billing/topups/checkout
+   * (WorkspaceController.createCreditTopupCheckout).
+   *
+   * Top-ups are FREEFORM: name an AMOUNT and the server derives the credits
+   * at the flat retail rate. There are no packs — the fixed
+   * 1,000/6,000/36,000 table was retired (server `475b2c6b`).
+   *
+   * `amountCents` is integer cents, minimum **2000** ($20). The floor and the
+   * rate are also published on `GET /core/credits/rates`
+   * (`topupMinCents`, `topupMaxCents`, `centsPerCredit`) — read them from
+   * there rather than hardcoding, so a pricing change does not need an SDK
+   * release.
+   *
+   * The client-side checks below are for INSTANT FEEDBACK ONLY. The server
+   * re-validates and its 400 is the authority; never treat a passing local
+   * check as permission to charge.
    *
    * Owner/admin only on the workspace.
    *
    * @param {string} workspaceId
-   * @param {{ successUrl?: string, cancelUrl?: string, credits?: number }} [options]
+   * @param {{ amountCents: number, successUrl?: string, cancelUrl?: string }} [options]
    * @returns {Promise<{ type: 'checkout_required', url: string, sessionId: string }>}
    */
-  async createCreditTopupCheckout (workspaceId, { successUrl, cancelUrl, credits } = {}) {
+  async createCreditTopupCheckout (workspaceId, { amountCents, successUrl, cancelUrl, credits } = {}) {
     if (!workspaceId) throw new Error('workspaceId is required')
-    const body = {}
-    if (credits != null) body.credits = credits
+
+    // Fail loudly on the retired `credits` argument instead of translating it.
+    // Under the old pack table `credits: 6000` cost $100; mapping it onto the
+    // flat rate would silently charge $120 for the same call. The server
+    // rejects it too — this just turns a round-trip into an immediate,
+    // actionable error.
+    if (amountCents == null && credits != null) {
+      throw new Error(
+        'createCreditTopupCheckout: `credits` is no longer accepted — top-ups are freeform. ' +
+        'Pass `amountCents` (integer cents, minimum 2000).'
+      )
+    }
+    if (!Number.isInteger(Number(amountCents))) {
+      throw new Error('createCreditTopupCheckout: `amountCents` must be an integer number of cents')
+    }
+
+    const body = { amountCents: Number(amountCents) }
     if (successUrl) body.successUrl = successUrl
     if (cancelUrl) body.cancelUrl = cancelUrl
     return this._call(
@@ -354,6 +520,100 @@ export class WorkspaceService extends BaseService {
     )
   }
 
+  // ==================== APP INTERDEPENDENCIES (Manifest v2.1) ====================
+  // spec-app-dependencies.md §6 — distinct from the whole-array
+  // `updateWorkspaceSettings({workspaceApps})` writer above: this is the
+  // atomic, dependency-aware install/uninstall surface — transitive
+  // resolution, all-or-nothing multi-install, and an uninstall guard that
+  // blocks removing an app a `required` dependent still needs.
+
+  /**
+   * Resolve one app's full transitive dependency tree against this
+   * workspace's currently-installed apps. Any workspace member may read —
+   * informational, needed before a non-admin member even proposes an
+   * install.
+   *
+   * @param {string} workspaceId
+   * @param {string} appId - `owner/key` (or `owner--key`)
+   * @returns {Promise<{ resolved: Array<{ id, requirement:'required'|'optional', kind:string[], provides:string[], reason:string, status:'installed'|'missing', transitive:boolean }>, cycles: Array<{ path: string[] }> }>}
+   */
+  async getWorkspaceAppDependencies (workspaceId, appId) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!appId) throw new Error('appId is required')
+    // `raw: true` — this controller returns `{success, resolved, cycles}`
+    // flat (no `data` envelope), unlike most workspace routes, so the plain
+    // `_call` `.data` unwrap would silently resolve to `undefined`.
+    const response = await this._call(
+      'getWorkspaceAppDependencies',
+      `/workspaces/${workspaceId}/apps/${encodeURIComponent(appId)}/dependencies`,
+      { method: 'GET', raw: true },
+    )
+    return { resolved: response.resolved || [], cycles: response.cycles || [] }
+  }
+
+  /**
+   * Install an app plus an explicitly-approved set of sibling dependencies
+   * in ONE atomic write — every requested app installs, or none do. The
+   * server refuses the whole request (400 `missing_required_dependencies`)
+   * if a `required` dependency is neither already installed nor included in
+   * `alsoInstall`. A concurrent install of the same app(s) by another caller
+   * returns 409 `apps_install_conflict`.
+   *
+   * @param {string} workspaceId
+   * @param {{ appId: string, alsoInstall?: string[] }} args
+   * @returns {Promise<{ installed: string[], alreadyInstalled: string[], workspaceApps: object[] }>}
+   */
+  async installWorkspaceApps (workspaceId, { appId, alsoInstall } = {}) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!appId) throw new Error('appId is required')
+    // Same flat-envelope note as getWorkspaceAppDependencies above — this
+    // controller replies `{success, installed, alreadyInstalled,
+    // workspaceApps}`, not `{success, data}`.
+    const response = await this._call('installWorkspaceApps', `/workspaces/${workspaceId}/apps`, {
+      method: 'POST',
+      body: { appId, ...(alsoInstall ? { alsoInstall } : {}) },
+      raw: true,
+    })
+    return {
+      installed: response.installed || [],
+      alreadyInstalled: response.alreadyInstalled || [],
+      workspaceApps: response.workspaceApps || [],
+    }
+  }
+
+  /**
+   * Uninstall an app from a workspace. Returns 409 with a `dependents` list
+   * (`{id, requirement}[]`) when an installed `required` dependent still
+   * needs it — pass `force: true` to override (the UI must surface that
+   * choice explicitly, never default to it).
+   *
+   * @param {string} workspaceId
+   * @param {string} appId - `owner/key` (or `owner--key`)
+   * @param {{ force?: boolean }} [options]
+   * @returns {Promise<{ uninstalled: string, dependents: Array<{id,requirement}>, forced: boolean }>}
+   */
+  // A 409 `app_has_dependents` response is a THROWN Error here (`_request`
+  // throws on any non-2xx status) — never a resolved `{ok:false}` value.
+  // `err.status === 409` and `err.cause` carries the parsed body
+  // (`{error, dependents, message}`), so a caller does:
+  //   try { await sdk.removeWorkspaceApp(wsId, appId) }
+  //   catch (err) { if (err.status === 409) showDependentsDialog(err.cause.dependents) }
+  async removeWorkspaceApp (workspaceId, appId, { force } = {}) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!appId) throw new Error('appId is required')
+    const qs = force ? '?force=true' : ''
+    const response = await this._call(
+      'removeWorkspaceApp',
+      `/workspaces/${workspaceId}/apps/${encodeURIComponent(appId)}${qs}`,
+      { method: 'DELETE', raw: true },
+    )
+    return {
+      uninstalled: response.uninstalled,
+      dependents: response.dependents || [],
+      forced: !!response.forced,
+    }
+  }
+
   // ==================== PERMISSIONS ====================
 
   /**
@@ -410,9 +670,16 @@ export class WorkspaceService extends BaseService {
   /**
    * Send a workspace invitation by email.
    * @param {string} workspaceId
-   * @param {{email: string, role?: string, recipientName?: string}} args - role defaults to 'editor'
+   * @param {{email: string, role?: string, recipientName?: string, teams?: string[]}} args
+   *   role defaults to 'editor'; `teams` (GA-W2.1) is an optional list of
+   *   platform Team slugs or ids — resolved server-side against the
+   *   workspace's OWN org and attached on accept; unknown entries reject
+   *   the invite with `invalid_teams`.
    */
-  async createWorkspaceInvitation (workspaceId, { email, role = 'editor', recipientName } = {}) {
+  async createWorkspaceInvitation (
+    workspaceId,
+    { email, role = 'editor', recipientName, teams } = {}
+  ) {
     if (!workspaceId) throw new Error('workspaceId is required')
     if (!email) throw new Error('email is required')
     return this._call(
@@ -420,7 +687,12 @@ export class WorkspaceService extends BaseService {
       `/workspaces/${workspaceId}/invitations`,
       {
         method: 'POST',
-        body: { email, role, ...(recipientName ? { recipientName } : {}) },
+        body: {
+          email,
+          role,
+          ...(recipientName ? { recipientName } : {}),
+          ...(Array.isArray(teams) && teams.length ? { teams } : {})
+        },
       }
     )
   }
