@@ -4,18 +4,34 @@ import { logger } from '../utils/logger.js'
 export class PaymentService extends BaseService {
   // ==================== PAYMENT METHODS ====================
 
+  // tickets/opus.md PRICE-5 — body-shape defect fix. This used to send
+  // `{ projectId, seats, price, successUrl, cancelUrl }` to
+  // `POST /payments/checkout`, but the controller
+  // (`server/src/domains/billing/controllers/PaymentController.js
+  // createCheckout`) destructures `{ projectId, planId, pricingKey, seats,
+  // successUrl, cancelUrl }` and guards `if (!projectId || !planId ||
+  // !pricingKey) throw` — `price` was silently ignored and every call
+  // 400'd with "Project ID, Plan ID, and Pricing Key are required".
+  // Fixed to send `planId` (a real Mongo Plan `_id`, NOT a Stripe lookup
+  // key — see `checkoutForPlan`/`checkoutForTeam` below, which used to
+  // pass a lookup-key string here and needed the same correction) plus
+  // `pricingKey`, matching the controller's actual contract.
   async checkout (options = {}) {
     this._requireReady('checkout')
     const {
       projectId,
       seats = 1,
-      price = 'starter_monthly',
+      planId,
+      pricingKey = 'monthly',
       successUrl = `${window.location.origin}/success`,
       cancelUrl = `${window.location.origin}/pricing`
     } = options
 
     if (!projectId) {
       throw new Error('Project ID is required for checkout')
+    }
+    if (!planId) {
+      throw new Error('Plan ID is required for checkout')
     }
 
     try {
@@ -24,7 +40,8 @@ export class PaymentService extends BaseService {
         body: JSON.stringify({
           projectId,
           seats,
-          price,
+          planId,
+          pricingKey,
           successUrl,
           cancelUrl
         }),
@@ -70,7 +87,7 @@ export class PaymentService extends BaseService {
     const {
       projectId,
       seats,
-      price,
+      planId,
       successUrl,
       cancelUrl
     } = options
@@ -84,8 +101,8 @@ export class PaymentService extends BaseService {
       throw new Error('Seats must be a positive number')
     }
 
-    if (price && typeof price !== 'string') {
-      throw new Error('Price must be a string')
+    if (planId && typeof planId !== 'string') {
+      throw new Error('Plan ID must be a string')
     }
 
     // Validate URLs if provided
@@ -155,19 +172,22 @@ export class PaymentService extends BaseService {
   }
 
   /**
-   * Helper method to create checkout for specific plan
+   * Helper method to create checkout for a specific plan.
+   * `planId` must be a real Mongo `Plan._id` — the controller resolves the
+   * Stripe price server-side via `Plan.getPricingOption`, it no longer
+   * accepts a Stripe lookup key directly (PRICE-5 body-shape fix).
    */
-  async checkoutForPlan (projectId, planKey, options = {}) {
+  async checkoutForPlan (projectId, planId, options = {}) {
     if (!projectId) {
       throw new Error('Project ID is required')
     }
-    if (!planKey) {
-      throw new Error('Plan key is required')
+    if (!planId) {
+      throw new Error('Plan ID is required')
     }
 
     const checkoutOptions = {
       projectId,
-      price: planKey,
+      planId,
       ...options
     }
 
@@ -175,7 +195,12 @@ export class PaymentService extends BaseService {
   }
 
   /**
-   * Helper method to create checkout for team plan
+   * Helper method to create checkout for the Team plan. Previously
+   * hardcoded the Stripe lookup key `'team_monthly'` as `price` — that
+   * key is not a valid `planId` (a Mongo ObjectId varies per environment/
+   * seed), so this now requires the caller to resolve and pass the real
+   * Team `Plan._id` via `options.planId` (e.g. from
+   * `sdk.getPlansWithPricing()`) rather than guessing one.
    */
   async checkoutForTeam (projectId, seats, options = {}) {
     if (!projectId) {
@@ -184,11 +209,16 @@ export class PaymentService extends BaseService {
     if (!seats || seats < 1) {
       throw new Error('Seats must be a positive number')
     }
+    if (!options.planId) {
+      throw new Error(
+        'Plan ID is required — pass options.planId (a real Plan _id resolved via ' +
+        'sdk.getPlansWithPricing(); the old "team_monthly" Stripe lookup key is not a valid planId)'
+      )
+    }
 
     const checkoutOptions = {
       projectId,
       seats,
-      price: 'team_monthly',
       ...options
     }
 
