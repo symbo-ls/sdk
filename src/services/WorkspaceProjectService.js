@@ -1307,6 +1307,64 @@ export class WorkspaceProjectService extends BaseService {
       }).then((r) => r?.defaults ?? r)
   }
 
+  // ── AI-created home widgets (tickets/opus.md "Per-workspace AI-CREATED
+  // widgets") — /core/widget-defs/*.
+  //
+  // A widget def's `body` is DATA (a fixed block vocabulary), never code, and
+  // its `dataRecipe` is capability-checked server-side for the CREATING user on
+  // write and for the CALLING user on every read — each listed row carries a
+  // `viewerCapability: { allowed, reason }` the renderer degrades on. Nothing
+  // here interprets either field; this is transport only.
+  //
+  // `workspaceId` forwards as an explicit scope pin (query param on GET, body
+  // field on writes — the server's readExplicitWorkspaceId honors both,
+  // membership-gated) for the same reason homeDashboardPrefs does it: the home
+  // board reads/writes must not land under a different workspace's rows when
+  // the active-workspace claim flips mid-flight.
+  widgetDefs = {
+    list: async (opts) => {
+      const ws = opts?.workspaceId
+      const qs = ws ? `?workspaceId=${encodeURIComponent(ws)}` : ''
+      const r = await this._request(`/widget-defs${qs}`, {
+        method: 'GET',
+        methodName: 'widgetDefs.list'
+      })
+      return Array.isArray(r?.widgets) ? r.widgets : []
+    },
+    create: async (widget, opts) => {
+      const r = await this._request('/widget-defs', {
+        method: 'POST',
+        body: JSON.stringify({
+          widget,
+          ...(opts?.workspaceId ? { workspaceId: opts.workspaceId } : {})
+        }),
+        methodName: 'widgetDefs.create'
+      })
+      return r?.widget ?? r
+    },
+    update: async (id, widget, opts) => {
+      const ws = opts?.workspaceId
+      const qs = ws ? `?workspaceId=${encodeURIComponent(ws)}` : ''
+      const r = await this._request(`/widget-defs/${encodeURIComponent(id)}${qs}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          widget,
+          ...(ws ? { workspaceId: ws } : {})
+        }),
+        methodName: 'widgetDefs.update'
+      })
+      return r?.widget ?? r
+    },
+    remove: async (id, opts) => {
+      const ws = opts?.workspaceId
+      const qs = ws ? `?workspaceId=${encodeURIComponent(ws)}` : ''
+      return this._request(`/widget-defs/${encodeURIComponent(id)}${qs}`, {
+        method: 'DELETE',
+        methodName: 'widgetDefs.remove'
+      })
+    }
+  }
+
   // workspaceSettings entity removed 2026-07 — the workspace_settings table
   // dropped with the workspace-project Supabase org retirement. The canonical
   // writer is the merge-safe `workspace.settings` PATCH

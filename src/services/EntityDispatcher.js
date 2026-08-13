@@ -1558,6 +1558,40 @@ const ENTITY_ROUTES = {
     },
     argMap: { get: () => [], update: argMaps.payload }
   },
+  // AI-created home widgets (tickets/opus.md "Per-workspace AI-CREATED
+  // widgets"). Same explicit-workspace pin as homeDashboardPrefs above — the
+  // home board is workspace-scoped and its reads must not follow a claim that
+  // flipped mid-flight.
+  //
+  // The stored `body` is a fixed-vocabulary DATA tree and `dataRecipe` is one
+  // declarative fetch descriptor; the server validates both on write and
+  // re-checks the CALLING user's capability on every read (each row carries
+  // `viewerCapability`). This entity is transport — it interprets neither.
+  'workspaceProject.widgetDefs': {
+    service: 'workspaceProject',
+    methods: {
+      list: 'widgetDefs.list',
+      create: 'widgetDefs.create',
+      update: 'widgetDefs.update',
+      remove: 'widgetDefs.remove'
+    },
+    argMap: {
+      list: (a) => (a?.workspaceId != null ? [{ workspaceId: a.workspaceId }] : []),
+      create: (a) => [
+        a?.widget ?? a?.payload ?? a?.data ?? a,
+        ...(a?.workspaceId != null ? [{ workspaceId: a.workspaceId }] : [])
+      ],
+      update: (a) => [
+        a?.id,
+        a?.widget ?? a?.payload ?? a?.data ?? {},
+        ...(a?.workspaceId != null ? [{ workspaceId: a.workspaceId }] : [])
+      ],
+      remove: (a) => [
+        a?.id,
+        ...(a?.workspaceId != null ? [{ workspaceId: a.workspaceId }] : [])
+      ]
+    }
+  },
   // workspaceProject.workspaceSettings entity removed 2026-07 — table dropped
   // with the workspace-project Supabase org retirement. The canonical
   // settings writer is the merge-safe 'workspace.settings' PATCH route above
