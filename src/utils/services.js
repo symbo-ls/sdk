@@ -491,6 +491,10 @@ export const SERVICE_METHODS = {
   getBilling: 'workspace',
   getCreditBalance: 'workspace',
   getCreditLedger: 'workspace',
+  // CREDITS-CLAIM (tickets/sonnet.md) — existing-signed-in-free-user claim
+  // surface. See WorkspaceService.js for the full contract.
+  getSignupClaimStatus: 'workspace',
+  claimSignupCredits: 'workspace',
   getWorkspaceUsage: 'workspace',
   // Usage-by-actor (member/system/machine + unattributed-historical) —
   // tickets/fable.md CREDITS-ATTR-3 / tickets/sonnet.md CREDITS-ATTR-2.

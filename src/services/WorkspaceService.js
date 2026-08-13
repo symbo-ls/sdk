@@ -231,6 +231,34 @@ export class WorkspaceService extends BaseService {
     return this._call('getCreditLedger', `/workspaces/${workspaceId}/credits/ledger${qs}`)
   }
 
+  // CREDITS-CLAIM (tickets/sonnet.md "CREDITS-CLAIM client wiring") — the
+  // one-time "claim 100 free credits" signup grant, for surfaces OTHER than
+  // the signup form itself (which claims inline via `register({ claimCredits:
+  // true })` and reads `data.creditsClaim` off the register response). This
+  // pair backs the "existing signed-in free user who never claimed" surface
+  // (billing/settings): GET reports eligibility without mutating, POST
+  // performs the claim. Both idempotent server-side (CreditLedger.
+  // idempotencyKey keyed on the user id) — safe to call GET then POST, and
+  // safe to POST twice.
+  //
+  // GET resolves `{ claimed, claimableCredits }`.
+  async getSignupClaimStatus (workspaceId) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    return this._call('getSignupClaimStatus', `/workspaces/${workspaceId}/credits/claim-signup`)
+  }
+
+  // POST resolves `{ claimed, alreadyClaimed, grantRemaining, topupRemaining,
+  // total, scope }` — `claimed: true` on a fresh grant, `claimed: false,
+  // alreadyClaimed: true` on a re-claim (never an error).
+  async claimSignupCredits (workspaceId) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    return this._call(
+      'claimSignupCredits',
+      `/workspaces/${workspaceId}/credits/claim-signup`,
+      { method: 'POST' },
+    )
+  }
+
   /**
    * Workspace credit-meter usage rollup. Mirrors
    * `GET /workspaces/:workspaceId/usage` (UsageController.workspaceSummary,
