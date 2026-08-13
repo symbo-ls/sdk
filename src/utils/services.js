@@ -171,6 +171,10 @@ export const SERVICE_METHODS = {
 
   // Subscription methods (moved to subscription service)
   createSubscription: 'subscription',
+  // Workspace-scoped self-serve "Upgrade" checkout — CONTRACT-not-live route
+  // (tickets/fable.md PRICE-3 redesign / tickets/opus.md PRICE-5). See the
+  // docblock above SubscriptionService#createWorkspaceSubscriptionCheckout.
+  createWorkspaceSubscriptionCheckout: 'subscription',
   getProjectStatus: 'subscription',
   getUsage: 'subscription',
   cancelSubscription: 'subscription',
