@@ -255,6 +255,52 @@ export class WorkspaceService extends BaseService {
   }
 
   /**
+   * Workspace credit-meter usage rollup grouped by ACTOR instead of by
+   * reason — "who spent the credits, and what the system spent on its
+   * own". Sibling of `getWorkspaceUsage` (same period/from/to window),
+   * grouped on `CreditLedger.actorType`/`createdBy`/`systemCause`/
+   * `machineLabel` (server `b99f86b0`, tickets/fable.md CREDITS-ATTR-1)
+   * instead of `reason`.
+   *
+   * CONTRACT, not yet verified live (tickets/sonnet.md CREDITS-ATTR-2 owns
+   * `GET /workspaces/:workspaceId/usage/by-actor` — the server route,
+   * final field names, and per-member cap enforcement). This wrapper
+   * defines the agreed shape from the CREDITS-ATTR-1 actor model so the
+   * CREDITS-ATTR-3 attribution page (workspace `admin/usage.js`) has a
+   * real named method to call today. Until CREDITS-ATTR-2 ships the
+   * route, this 404s — callers MUST treat that as an empty/missing state,
+   * never a hard error (see `_loadAll` in `admin/usage.js`, which already
+   * falls back to `{ error }` for every call in its `Promise.all`).
+   *
+   * Expected response shape:
+   *   {
+   *     period, from, to,
+   *     totalCredits: number,
+   *     members:  [{ userId, name, email, avatar, credits, eventCount }],
+   *     system:   [{ cause, credits, eventCount }],   // cause ∈ SYSTEM_CAUSES
+   *     machines: [{ machineLabel, credits, eventCount }],
+   *     unattributed: { credits, eventCount, before: ISODateString|null }
+   *   }
+   *
+   * `unattributed` is pre-feature history (`actorType` absent on the
+   * ledger row) — its own bucket, permanently un-attributable to any
+   * member. Never fold it into `members` (as someone's 0) or `system`.
+   *
+   * @param {string} workspaceId
+   * @param {{ period?: 'day'|'month', from?: string|Date, to?: string|Date }} [options]
+   * @returns {Promise<object>}
+   */
+  async getWorkspaceUsageByActor (workspaceId, { period, from, to } = {}) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    const params = new URLSearchParams()
+    if (period) params.set('period', String(period))
+    if (from) params.set('from', from instanceof Date ? from.toISOString() : String(from))
+    if (to) params.set('to', to instanceof Date ? to.toISOString() : String(to))
+    const qs = params.toString() ? `?${params}` : ''
+    return this._call('getWorkspaceUsageByActor', `/workspaces/${workspaceId}/usage/by-actor${qs}`)
+  }
+
+  /**
    * Start a Stripe Checkout session for a workspace credit top-up.
    * Mirrors POST /workspaces/:workspaceId/billing/topups/checkout
    * (WorkspaceController.createCreditTopupCheckout).

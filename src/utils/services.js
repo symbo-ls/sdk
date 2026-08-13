@@ -492,6 +492,11 @@ export const SERVICE_METHODS = {
   getCreditBalance: 'workspace',
   getCreditLedger: 'workspace',
   getWorkspaceUsage: 'workspace',
+  // Usage-by-actor (member/system/machine + unattributed-historical) —
+  // tickets/fable.md CREDITS-ATTR-3 / tickets/sonnet.md CREDITS-ATTR-2.
+  // See the docblock on WorkspaceService#getWorkspaceUsageByActor for the
+  // contract-vs-live-route status.
+  getWorkspaceUsageByActor: 'workspace',
   createCreditTopupCheckout: 'workspace',
   getSpendControls: 'workspace',
   updateSpendControls: 'workspace',
