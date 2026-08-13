@@ -261,7 +261,18 @@ export class AiService extends BaseService {
             messageId: donePayload?.messageId || null,
             // Follow-up suggestions (server-validated) — rendered as
             // tappable pills under the reply.
-            suggestions: Array.isArray(donePayload?.suggestions) ? donePayload.suggestions : []
+            suggestions: Array.isArray(donePayload?.suggestions) ? donePayload.suggestions : [],
+            // The assistant message's own metadata (tickets/opus.md
+            // "credits-exhausted UX") — carries `{ kind:'error', errorCode,
+            // errorMessage, retryable, creditsExhausted }` when
+            // failWorkspaceLoop synthesized this answer after a loop
+            // failure. Passed through VERBATIM (never re-derived here) so
+            // the consumer's metadata-key check matches byte-for-byte what
+            // the server persisted. Previously dropped entirely — every
+            // live turn lost the structured signal and only history reloads
+            // (which don't restore it either — see sessions.js) could have
+            // recovered it.
+            metadata: donePayload?.metadata || null
           }
           callbacks.onDone?.(result)
           resolve(result)
@@ -482,7 +493,7 @@ export class AiService extends BaseService {
     const blocksToText = (content) =>
       (content || []).filter((p) => p && p.type === 'text').map((p) => p.text).join('')
 
-    const finishAnswer = (txt, messageId, suggestions) => {
+    const finishAnswer = (txt, messageId, suggestions, metadata) => {
       if (answered || cancelled) return
       answered = true
       clearFallback()
@@ -498,11 +509,17 @@ export class AiService extends BaseService {
       // `suggestions` = the server-validated follow-up actions from the
       // assistant message's metadata (buttons the surface renders under the
       // reply); [] when the answer carries none.
+      // `metadata` = the assistant message's raw metadata object (tickets/
+      // opus.md "credits-exhausted UX") — carries `{ kind:'error',
+      // errorCode, errorMessage, retryable, creditsExhausted }` when
+      // failWorkspaceLoop synthesized this answer; null otherwise. Passed
+      // through untouched — see `messageMetadata` below.
       onDone?.({
         text: txt,
         conversationId: resolvedConvId,
         messageId: messageId || null,
-        suggestions: Array.isArray(suggestions) ? suggestions : []
+        suggestions: Array.isArray(suggestions) ? suggestions : [],
+        metadata: metadata || null
       })
       stopStream()
     }
@@ -512,6 +529,10 @@ export class AiService extends BaseService {
       const list = msg && msg.metadata && msg.metadata.suggestions
       return Array.isArray(list) ? list : []
     }
+
+    // Pull the raw metadata object off a serialized assistant message — see
+    // finishAnswer's `metadata` param above.
+    const messageMetadata = (msg) => (msg && msg.metadata) || null
 
     const fail = (err) => {
       if (answered || cancelled) return
@@ -568,7 +589,8 @@ export class AiService extends BaseService {
             finishAnswer(
               txt,
               resume.assistantMessage?._id || resume.assistantMessage?.id || null,
-              messageSuggestions(resume.assistantMessage)
+              messageSuggestions(resume.assistantMessage),
+              messageMetadata(resume.assistantMessage)
             )
           }
         })
@@ -650,7 +672,14 @@ export class AiService extends BaseService {
             // the turn on an empty message. Only the final, text-bearing
             // assistant message ends the turn.
             const txt = blocksToText(data.content)
-            if (txt) finishAnswer(txt, data.id || data._id || null, messageSuggestions(data))
+            if (txt) {
+              finishAnswer(
+                txt,
+                data.id || data._id || null,
+                messageSuggestions(data),
+                messageMetadata(data)
+              )
+            }
           }
         },
         onError: (err) => fail(err)
@@ -685,7 +714,8 @@ export class AiService extends BaseService {
           finishAnswer(
             finalTxt,
             outcome?.assistantMessage?._id || outcome?.assistantMessage?.id || null,
-            messageSuggestions(outcome?.assistantMessage)
+            messageSuggestions(outcome?.assistantMessage),
+            messageMetadata(outcome?.assistantMessage)
           )
           return
         }
@@ -764,7 +794,8 @@ export class AiService extends BaseService {
       const sg = assistant && assistant.metadata && Array.isArray(assistant.metadata.suggestions)
         ? assistant.metadata.suggestions
         : []
-      if (txt) finishAnswer(txt, (assistant && (assistant.id || assistant._id)) || null, sg)
+      const meta = (assistant && assistant.metadata) || null
+      if (txt) finishAnswer(txt, (assistant && (assistant.id || assistant._id)) || null, sg, meta)
       else fail(new Error('[sdk.ai] no assistant response'))
     } catch (err) {
       fail(err)
