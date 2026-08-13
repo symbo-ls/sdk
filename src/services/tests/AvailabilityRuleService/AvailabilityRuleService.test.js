@@ -99,3 +99,96 @@ test('availabilityRules threads workspaceId across reads + writes', async t => {
   sandbox.restore()
   t.end()
 })
+
+// ─── intersect ──────────────────────────────────────────────────────────────
+// Regression coverage for PR #11 review: (1) day-of-week mapping, (2) DST
+// resolved against the current date rather than a fixed Jan-2000 reference,
+// (3) empty-overlap never throws, (4) concurrent (not sequential) fetch,
+// (5) [] — not {} — on every empty-result path, and (6) the whole
+// conversion must be independent of the EXECUTING MACHINE's own local
+// timezone (a machine-local re-parse silently shifted every computed
+// instant by the runner's own offset — invisible on a UTC CI box, wrong
+// for a real user's non-UTC browser).
+
+test('availabilityRules.intersect returns [] for an empty userIDs list', async t => {
+  t.plan(1)
+  const svc = makeService()
+  const result = await svc.intersect([], 'ws1')
+  t.deepEqual(result, [], 'empty input short-circuits to []')
+  t.end()
+})
+
+test('availabilityRules.intersect fetches every user concurrently via list()', async t => {
+  t.plan(3)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, 'list').resolves([
+    { tz: 'UTC', weekly: [{ dow: 1, from: '09:00', to: '17:00' }] }
+  ])
+  await svc.intersect(['u1', 'u2', 'u3'], 'ws1')
+  t.equal(stub.callCount, 3, 'one list() call per userID')
+  t.deepEqual(stub.getCall(0).args[0], { user: 'u1', workspaceId: 'ws1' }, 'first call filters by u1')
+  t.deepEqual(stub.getCall(2).args[0], { user: 'u3', workspaceId: 'ws1' }, 'third call filters by u3')
+  sandbox.restore()
+  t.end()
+})
+
+test('availabilityRules.intersect returns [] (not {}) when a user has no availability', async t => {
+  t.plan(2)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, 'list')
+  stub.onCall(0).resolves([{ tz: 'UTC', weekly: [{ dow: 1, from: '09:00', to: '17:00' }] }])
+  stub.onCall(1).resolves([])
+  const result = await svc.intersect(['u1', 'u2'], 'ws1')
+  t.ok(Array.isArray(result), 'result is an array')
+  t.equal(result.length, 0, 'no-availability path serializes to [] not {}')
+  sandbox.restore()
+  t.end()
+})
+
+test('availabilityRules.intersect never throws on fully disjoint schedules', async t => {
+  t.plan(2)
+  const svc = makeService()
+  const clock = sandbox.useFakeTimers(new Date('2026-08-13T12:00:00Z')) // a Thursday
+  const stub = sandbox.stub(svc, 'list')
+  stub.onCall(0).resolves([{ tz: 'UTC', weekly: [{ dow: 1, from: '09:00', to: '10:00' }] }])
+  stub.onCall(1).resolves([{ tz: 'UTC', weekly: [{ dow: 2, from: '09:00', to: '10:00' }] }])
+  const result = await svc.intersect(['u1', 'u2'], 'ws1')
+  t.ok(Array.isArray(result), 'does not throw indexing an empty timeBlocks[0]')
+  t.equal(result.length, 0, 'disjoint days produce no overlap')
+  clock.restore()
+  sandbox.restore()
+  t.end()
+})
+
+test('availabilityRules.intersect computes the overlap in the first user\'s timezone', async t => {
+  t.plan(3)
+  const svc = makeService()
+  const clock = sandbox.useFakeTimers(new Date('2026-08-13T12:00:00Z'))
+  const stub = sandbox.stub(svc, 'list')
+  stub.onCall(0).resolves([{ tz: 'America/New_York', weekly: [{ dow: 3, from: '09:00', to: '17:00' }] }])
+  stub.onCall(1).resolves([{ tz: 'America/New_York', weekly: [{ dow: 3, from: '13:00', to: '20:00' }] }])
+  const result = await svc.intersect(['u1', 'u2'], 'ws1')
+  t.equal(result.length, 1, 'one overlapping block')
+  t.equal(result[0].from, '13:00', 'overlap starts at the later start')
+  t.equal(result[0].to, '17:00', 'overlap ends at the earlier end')
+  clock.restore()
+  sandbox.restore()
+  t.end()
+})
+
+test('availabilityRules.intersect day-of-week mapping does not roll dow=0 back a day', async t => {
+  // Regression for the `new Date(2000, 0, dow, ...)` bug: dow is a day of
+  // the WEEK, not a day of the MONTH — `new Date(2000, 0, 0)` silently
+  // resolved to Dec 31 1999 (a Friday), corrupting every Sunday rule.
+  t.plan(1)
+  const svc = makeService()
+  const clock = sandbox.useFakeTimers(new Date('2026-08-13T12:00:00Z'))
+  const stub = sandbox.stub(svc, 'list')
+  stub.onCall(0).resolves([{ tz: 'UTC', weekly: [{ dow: 0, from: '09:00', to: '10:00' }] }])
+  stub.onCall(1).resolves([{ tz: 'UTC', weekly: [{ dow: 0, from: '09:00', to: '10:00' }] }])
+  const result = await svc.intersect(['u1', 'u2'], 'ws1')
+  t.equal(result[0]?.dow, 0, 'Sunday (dow=0) survives the round trip as dow=0')
+  clock.restore()
+  sandbox.restore()
+  t.end()
+})
