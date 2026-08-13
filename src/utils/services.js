@@ -681,6 +681,15 @@ export const SERVICE_METHODS = {
   startPersona: 'persona',
   endPersona: 'persona',
   getPersona: 'persona',
+  // Server-truth oracle (PERSONA-3): GET <workspace-project>/persona via the
+  // worker's persona-LENIENT route — 200 from ANY persona state, including a
+  // dead session ({ active: false, stale: true }). The persona pill re-renders
+  // from THIS on boot; getPersona above stays the zero-network local decode.
+  // On workspaceProject (not persona) so the request rides _ws →
+  // _resolveAuthHeader — the provider-aware header pipeline that carries the
+  // per-tab persona token; a TokenManager-only transport would show the
+  // oracle a base token and mis-report a live persona as inactive.
+  getPersonaSession: 'workspaceProject',
 
   // Storefront customer identity (tickets/server.md "storefront customer
   // identity layer", NAT-V1-25/27/28) — register/login/OTP/reset are

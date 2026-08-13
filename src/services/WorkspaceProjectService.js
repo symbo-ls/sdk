@@ -755,6 +755,31 @@ export class WorkspaceProjectService extends BaseService {
     featureFlags: () => this._ws('system.featureFlags', '/system/feature-flags')
   }
 
+  // --- Persona oracle (escape hatch — tickets/opus.md PERSONA-3) --------------
+  // SERVER truth for the presented token's persona state — the reload oracle
+  // ("reload must re-render the pill from server truth, not client state").
+  //
+  // GET /persona is a persona-LENIENT worker route: it classifies the token's
+  // claim through the server's own `resolvePersonaScope` choke point and
+  // ALWAYS answers 200 — even when the session is dead (a 401 would lock a
+  // stale tab out of the very endpoint that tells it to recover). Resolves to:
+  //   { active: true, role, sid, startedAt, actorWorkspaceRole } — live
+  //     session, verified against the revocable store this instant;
+  //   { active: false } — the presented token carries no persona claim;
+  //   { active: false, stale: true, reason } — the token carries a claim the
+  //     server no longer honors (ended remotely, expired, demoted actor…):
+  //     shed the persona token and restore the base session.
+  //
+  // Lives HERE (not on PersonaService) so the request rides `_ws` →
+  // `_resolveAuthHeader` — the exact header pipeline every other
+  // workspace-project call uses, including the `workspaceProjectTokenProvider`
+  // that supplies the per-tab persona token. The oracle must see the SAME
+  // token the data routes see, or its answer describes the wrong session.
+  // Flat access: `sdk.getPersonaSession()` (SERVICE_METHODS).
+  getPersonaSession() {
+    return this._ws('getPersonaSession', '/persona')
+  }
+
   // --- People -----------------------------------------------------------------
   people = {
     list: (workspaceId) => {

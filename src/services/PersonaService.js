@@ -262,6 +262,16 @@ export class PersonaService extends BaseService {
     return this._decodePersonaClaim()
   }
 
+  // getPersonaSession — the SERVER-truth reload oracle — lives on
+  // WorkspaceProjectService, NOT here: the oracle must present the SAME
+  // Authorization header every other workspace-project call presents (the
+  // `workspaceProjectTokenProvider` supplies the per-tab persona token in the
+  // sessionStorage session model; TokenManager supplies it in the
+  // adopted-token model). This service's plain TokenManager transport would
+  // show the oracle a base token whenever the persona rides the provider —
+  // reporting `active: false` for a live persona. See
+  // WorkspaceProjectService.getPersonaSession.
+
   // A workspace/org switch mid-persona cannot carry the lens across: the
   // session row is bound to (actor, workspace, role) and the resolver
   // rejects cross-tenant sid reuse (886a9b27), so a carried claim would
