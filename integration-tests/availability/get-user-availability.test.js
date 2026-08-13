@@ -10,7 +10,7 @@ test('list user availability', async tape => {
   tape.ok(availability, 'availability rules returned')
 })
 
-test.only('intersect availability', async tape => {
+test('intersect availability', async tape => {
   const user1 = await global.globalSdk.getUserByEmail('zachary@symbols.app')
   const user2 = await global.globalSdk.getUserByEmail('nika@symbols.app')
   const availability = await global.globalSdk.getService('availabilityRules').intersect(
