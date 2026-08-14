@@ -43,8 +43,14 @@ export class TokenManager {
     this.refreshTimeout = null
     this.retryCount = 0
 
+    // The PER-TAB persona overlay (see the block comment on setPersonaToken).
+    // Held separately from `this.tokens` so the admin's real session is never
+    // overwritten, only shadowed.
+    this._personaToken = null
+
     // Load tokens from storage on initialization
     this.loadTokens()
+    this.loadPersonaToken()
   }
 
   /**
@@ -56,6 +62,36 @@ export class TokenManager {
       refreshToken: `${this.config.storagePrefix}refresh_token`,
       expiresAt: `${this.config.storagePrefix}expires_at`,
       expiresIn: `${this.config.storagePrefix}expires_in`
+    }
+  }
+
+  /**
+   * Storage key for the per-tab persona overlay. Deliberately NOT one of
+   * `storageKeys` — nothing that walks that map may touch the overlay.
+   */
+  get personaStorageKey () {
+    return `${this.config.storagePrefix}persona_access_token`
+  }
+
+  /**
+   * The overlay's storage is ALWAYS sessionStorage when one exists, whatever
+   * `config.storageType` says. That is the whole isolation guarantee, and it
+   * must not be configurable away: sessionStorage is per-tab by construction,
+   * so a persona started in one tab cannot reach the admin's other tabs.
+   *
+   * Falls back to the in-memory store (SSR, Node, opaque origins, storage
+   * disabled) — where "per tab" is trivially satisfied by "per process".
+   */
+  get _tabStorage () {
+    if (typeof window === 'undefined') return this._memoryStorage
+    try {
+      const storage = window.sessionStorage
+      const testKey = `${this.config.storagePrefix}__tm_persona_test__`
+      storage.setItem(testKey, '1')
+      storage.removeItem(testKey)
+      return storage
+    } catch {
+      return this._memoryStorage
     }
   }
 
@@ -149,10 +185,95 @@ export class TokenManager {
   }
 
   /**
-   * Get current access token
+   * Get current access token — the persona overlay when one is active in
+   * THIS tab, otherwise the admin's own token.
+   *
+   * Every outbound call resolves its credential through here (getAuthHeader
+   * → getAccessToken), so overlaying at this single point is what makes a
+   * persona cover the whole SDK surface rather than one route family.
    */
   getAccessToken () {
-    return this.tokens.accessToken
+    return this._personaToken || this.tokens.accessToken
+  }
+
+  /**
+   * Install a persona token over this tab's session.
+   *
+   * ── Why an overlay instead of setTokens() ──────────────────────────────
+   * `setTokens()` writes `symbols_access_token` in localStorage — the admin's
+   * OWN session key, shared by every tab on the origin. Adopting a persona
+   * that way silently downgrades the admin's other tabs to the persona's
+   * permissions, and the only way back is a token refresh that can fail.
+   * The overlay instead SHADOWS the base token, per tab:
+   *   - the admin's localStorage session is never written and never lost;
+   *   - other tabs keep reading their own base token and stay admin;
+   *   - exiting is a delete (clearPersonaToken), not a recovery operation
+   *     that can leave the lens stuck on when the network is down.
+   *
+   * The overlay is STICKY until explicitly cleared — including when the
+   * persona token expires. Silently falling back to the base token would
+   * restore full admin power underneath a UI still showing the persona,
+   * which is the exact "confident wrong answer" this feature exists to
+   * prevent; an expired persona must 401 honestly instead.
+   *
+   * @param {string} token persona-claimed JWT from POST /core/persona/start
+   * @returns {boolean} whether the overlay is now installed
+   */
+  setPersonaToken (token) {
+    if (typeof token !== 'string' || !token) {
+      logger.warn('[TokenManager] refusing to install an empty persona token')
+      return false
+    }
+    this._personaToken = token
+    try {
+      this._tabStorage.setItem(this.personaStorageKey, token)
+    } catch (error) {
+      // In-memory overlay still holds for this page's lifetime; it just will
+      // not survive a reload. Say so rather than reporting success.
+      logger.warn('[TokenManager] persona overlay not persisted to sessionStorage:', error)
+    }
+    return true
+  }
+
+  /**
+   * The active persona token for this tab, or null.
+   */
+  getPersonaToken () {
+    return this._personaToken
+  }
+
+  /**
+   * Whether this tab is currently viewing through a persona.
+   */
+  hasPersonaToken () {
+    return !!this._personaToken
+  }
+
+  /**
+   * Remove the overlay — the admin's own token becomes current again with no
+   * refresh, no network call, and no chance of being left half-applied.
+   */
+  clearPersonaToken () {
+    this._personaToken = null
+    try {
+      this._tabStorage.removeItem(this.personaStorageKey)
+    } catch {
+      /* locked storage — the in-memory overlay is already gone */
+    }
+  }
+
+  /**
+   * Restore this tab's overlay at boot. sessionStorage survives a reload of
+   * its own tab, so a persona stays in force across F5 — matching the
+   * server-side session, which outlives the page.
+   */
+  loadPersonaToken () {
+    try {
+      const stored = this._tabStorage.getItem(this.personaStorageKey)
+      this._personaToken = typeof stored === 'string' && stored ? stored : null
+    } catch {
+      this._personaToken = null
+    }
   }
 
   /**
@@ -486,6 +607,11 @@ export class TokenManager {
       expiresAt: null,
       expiresIn: null
     }
+
+    // A sign-out drops the persona with the session it was layered over —
+    // leaving the overlay behind would present a persona token as the only
+    // credential of a signed-out tab.
+    this.clearPersonaToken()
 
     // Clear storage
     const {storage} = this
