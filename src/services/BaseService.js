@@ -861,14 +861,40 @@ export class BaseService {
   // travels in an Authorization header and the read loop is identical to
   // `_streamPost` — only the framing (event+data) and method (GET) differ.
   //
+  // Reconnect (tickets/opus2 "SSE-first moved the fragile link to the
+  // stream, and the stream had no reconnect" — 2026-08-14 audit): this
+  // stream is long-lived by server design (the AI-turn conversation
+  // stream stays open until the CLIENT disconnects — see
+  // AgentConversationController/AgentWorkspaceConversationController's
+  // `streamConversation`, which only tears down on `req.on('close')`). So
+  // when the read loop ends any other way — a thrown transport error OR a
+  // clean `done` from `reader.read()` (a dropped connection reads
+  // identically to a graceful close at the fetch layer: LB idle-timeout,
+  // proxy cut, network blip, server restart) — that is the connection
+  // dying, not the server finishing, and we reconnect with the same
+  // 1s→8s exponential backoff `_sseSubscribe` uses. An explicit HTTP
+  // error response (4xx/5xx on the initial connect) is NOT retried here —
+  // that is a real rejection (bad conversation id, auth), not a dropped
+  // connection, and is surfaced once via onError.
+  //
+  // No Last-Event-ID: this endpoint's SSE frames carry no `id:` field
+  // (server never sets one — verified against both
+  // `AgentConversationController` and `AgentWorkspaceConversationController`
+  // in server/), so a Last-Event-ID resume header would be a no-op even if
+  // sent. Resume instead relies on what the server DOES already do on every
+  // connect: emit a `conversation.snapshot` frame with the latest messages.
+  // A reconnect after a mid-turn drop re-requests the same URL and gets a
+  // fresh snapshot — callers that want to recover an answer persisted while
+  // disconnected should read it off `conversation.snapshot`, not assume a
+  // resume picks up exactly where the old connection left off.
+  //
   // Callbacks:
   //   onEvent({ event, data })  — once per complete frame; `data` is parsed JSON
-  //   onError(err)              — on transport / parse error
+  //   onError(err)              — on a non-retryable transport / HTTP error
   //
-  // Returns a cancel() function that aborts the in-flight request.
+  // Returns a cancel() function that aborts the in-flight request and stops
+  // any pending reconnect.
   _streamSSE (fullUrl, { onEvent, onError } = {}) {
-    const controller = new AbortController()
-
     const headers = { Accept: 'text/event-stream' }
     if (this._tokenManager) {
       const token = this._tokenManager.getAccessToken?.()
@@ -902,60 +928,108 @@ export class BaseService {
       return { event, data }
     }
 
-    ;(async () => {
-      let res
-      try {
-        res = await fetch(fullUrl, { method: 'GET', headers, signal: controller.signal })
-      } catch (err) {
-        if (err?.name !== 'AbortError') safe(onError, _wrapRequestError(err, fullUrl))
-        return
-      }
-      if (!res.ok || !res.body) {
-        const text = await res.text().catch(() => '')
-        // Friendly message — the raw `stream HTTP <code>: <body>` string used
-        // to bypass every client-side sanitizer and land verbatim in the
-        // assistant bubble. Detail stays on the error object for debugging.
-        const err = new Error(
-          res.status >= 500
-            ? 'The AI service is temporarily unavailable — please try again.'
-            : `The AI request was rejected (HTTP ${res.status}).`
-        )
-        err.status = res.status
-        err.code = `STREAM_HTTP_${res.status}`
-        err.detail = text.slice(0, 300)
-        safe(onError, err)
-        return
-      }
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      try {
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          buffer += decoder.decode(value, { stream: true })
-          // Frames are delimited by a blank line (\n\n). Keep the trailing
-          // partial frame in the buffer until its terminator arrives.
-          const frames = buffer.split('\n\n')
-          buffer = frames.pop() || ''
-          for (const frame of frames) {
-            const parsed = parseFrame(frame)
-            if (parsed) safe(onEvent, parsed)
-          }
-        }
-      } catch (err) {
-        if (err?.name !== 'AbortError') safe(onError, err)
-      } finally {
-        // reader.cancel() returns a PROMISE that rejects with AbortError
-        // ("BodyStreamBuffer was aborted") when the stream was already
-        // aborted — a bare try/catch only stops the sync throw, leaving an
-        // unhandled rejection in the console on every completed turn.
-        try { reader.cancel()?.catch?.(() => {}) } catch {}
-      }
-    })()
+    let controller = null
+    let destroyed = false
+    let attempt = 0
+    let reconnectTimer = null
+    const MAX_BACKOFF_MS = 8000
 
-    return () => {
-      try { controller.abort() } catch {}
+    const scheduleReconnect = () => {
+      if (destroyed) return
+      attempt += 1
+      const delay = Math.min(1000 * Math.pow(2, attempt - 1), MAX_BACKOFF_MS)
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null
+        if (!destroyed) _connect()
+      }, delay)
+    }
+
+    const _connect = () => {
+      if (destroyed) return
+      controller = new AbortController()
+
+      ;(async () => {
+        let res
+        try {
+          res = await fetch(fullUrl, { method: 'GET', headers, signal: controller.signal })
+        } catch (err) {
+          if (destroyed || err?.name === 'AbortError') return
+          // Pre-connect transport failure — indistinguishable from a
+          // mid-stream drop from the caller's POV; retry with backoff
+          // instead of surfacing a terminal error for what may be a
+          // momentary blip (nodemon restart, brief network loss).
+          scheduleReconnect()
+          return
+        }
+        if (destroyed) return
+        if (!res.ok || !res.body) {
+          const text = await res.text().catch(() => '')
+          // Friendly message — the raw `stream HTTP <code>: <body>` string
+          // used to bypass every client-side sanitizer and land verbatim in
+          // the assistant bubble. Detail stays on the error object for
+          // debugging. Not retried: a real HTTP rejection (bad conversation
+          // id, expired auth) will not self-heal by reconnecting.
+          const err = new Error(
+            res.status >= 500
+              ? 'The AI service is temporarily unavailable — please try again.'
+              : `The AI request was rejected (HTTP ${res.status}).`
+          )
+          err.status = res.status
+          err.code = `STREAM_HTTP_${res.status}`
+          err.detail = text.slice(0, 300)
+          safe(onError, err)
+          return
+        }
+        // Connection established — reset backoff for the NEXT drop.
+        attempt = 0
+        const reader = res.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+        let readErr = null
+        try {
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            buffer += decoder.decode(value, { stream: true })
+            // Frames are delimited by a blank line (\n\n). Keep the trailing
+            // partial frame in the buffer until its terminator arrives.
+            const frames = buffer.split('\n\n')
+            buffer = frames.pop() || ''
+            for (const frame of frames) {
+              const parsed = parseFrame(frame)
+              if (parsed) safe(onEvent, parsed)
+            }
+          }
+        } catch (err) {
+          readErr = err
+        } finally {
+          // reader.cancel() returns a PROMISE that rejects with AbortError
+          // ("BodyStreamBuffer was aborted") when the stream was already
+          // aborted — a bare try/catch only stops the sync throw, leaving an
+          // unhandled rejection in the console on every completed turn.
+          try { reader.cancel()?.catch?.(() => {}) } catch {}
+        }
+        if (destroyed) return
+        if (readErr && readErr.name === 'AbortError') return
+        // Either a thrown (non-abort) read error, or the loop ended via a
+        // clean `done` — both mean the connection is gone while the caller
+        // never asked us to stop. Reconnect; see the doc comment above.
+        scheduleReconnect()
+      })()
+    }
+
+    _connect()
+
+    return function cancel () {
+      destroyed = true
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer)
+        reconnectTimer = null
+      }
+      if (controller) {
+        try { controller.abort() } catch {}
+        controller = null
+      }
     }
   }
 

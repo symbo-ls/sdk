@@ -445,7 +445,14 @@ export class AiService extends BaseService {
   //      with `{ accepted: true }` and keeps running server-side, so the
   //      SAME subscription is what delivers its answer too — there is no
   //      separate "slow path" transport, only a POST that may resolve
-  //      before or after the loop finishes.
+  //      before or after the loop finishes. This subscription is durable:
+  //      `_streamSSE` reconnects with backoff if the connection drops
+  //      mid-turn, and a reconnect's `conversation.snapshot` frame is
+  //      checked for an answer the server persisted while disconnected
+  //      (see the `conversation.snapshot` handler below) — without this the
+  //      SSE-first move would have merely relocated the ">30s POST death"
+  //      onto the stream instead of fixing it (tickets/opus2 audit,
+  //      2026-08-14).
   //   4. POST the message ({ content, modelMode }).
   //   5. If the POST resolves with a final answer/suspension, use it
   //      directly. If it resolves with `{ accepted: true }` (turn still
@@ -684,6 +691,38 @@ export class AiService extends BaseService {
           // "who's working on what" panel + lights up the canvas.
           if (event === 'agent.started' || event === 'agent.completed') {
             onProcessActive?.({ event, ...(data || {}) })
+            return
+          }
+          // Fires on every (re)connect of the stream above — including a
+          // RECOVERY reconnect after the connection dropped mid-turn
+          // (tickets/opus2 "SSE-first moved the fragile link to the stream,
+          // and the stream had no reconnect", 2026-08-14 audit). `_streamSSE`
+          // now reconnects with backoff on a dropped connection, but this
+          // endpoint assigns no per-event id (no Last-Event-ID resume is
+          // possible), so the server's actual resume contract is: every
+          // connect gets a fresh `conversation.snapshot` of the latest
+          // messages. If this turn's answer was persisted by the server
+          // while we were disconnected, it is in here — recover it the same
+          // way `_fallbackToLatestAssistant` does (bounded to THIS turn via
+          // `turnStartedAt`, 5s clock-skew slack), so a mid-turn drop no
+          // longer strands an already-finished answer client-side.
+          if (event === 'conversation.snapshot') {
+            const messages = Array.isArray(data?.messages) ? data.messages : []
+            const freshEnough = (m) => {
+              const ts = Date.parse(m?.createdAt || m?.created_at || '') || 0
+              return ts >= turnStartedAt - 5000
+            }
+            const assistant = [...messages]
+              .reverse()
+              .find((m) => m?.role === 'assistant' && blocksToText(m.content) && freshEnough(m))
+            if (assistant) {
+              finishAnswer(
+                blocksToText(assistant.content),
+                assistant.id || assistant._id || null,
+                messageSuggestions(assistant),
+                messageMetadata(assistant)
+              )
+            }
             return
           }
           if (event === 'message.created' && data?.role === 'assistant') {
