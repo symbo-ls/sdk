@@ -1470,6 +1470,22 @@ const ENTITY_ROUTES = {
   // workspace-project Supabase org retirement; the shell derives birthdays
   // from the roster.
   // workspaceProject.stories entity removed — stories table dropped in migration 0162 (feature retired 2026-06-02; no Mongo successor).
+  // WS_CRUD_ARG_MAP, not CRUD_ARG_MAP — fileCanvas.{get,create,update,remove}
+  // share the SAME uniform `(…, { workspaceId })` trailing-options signature
+  // as the other Phase-2/3/4 workspace-scoped services (see WS_CRUD_ARG_MAP's
+  // own header). Under plain CRUD_ARG_MAP, `sdk.execute('workspaceProject.
+  // fileCanvas', 'update', { id, payload })` never had a channel to carry an
+  // explicit workspaceId at all (`argMaps.idPayload` returns exactly
+  // `[id, payload]` — no third positional), so every write fell back SOLELY
+  // to `this._context?.activeWorkspaceId` — which is unset unless MWT is on
+  // AND `bootShell`'s `sdk.updateContext` has already landed for this tab. A
+  // stale/missing ambient context makes the server's G1 workspace-pin guard
+  // 404 ("not found") for a real, visible row — reproduced directly against
+  // the dev API (workspace/tickets/sonnet.md, FILES-RENAME-1: a folder rename
+  // silently reverts on Enter with no toast, only a console.error). `list`
+  // is untouched (`argMaps.filterOptions`, unchanged from CRUD_ARG_MAP) —
+  // fileCanvas.list already reads `filter.workspaceId` itself and callers
+  // that pass one keep working identically.
   'workspaceProject.fileCanvas': {
     service: 'workspaceProject',
     methods: {
@@ -1479,7 +1495,7 @@ const ENTITY_ROUTES = {
       update: 'fileCanvas.update',
       remove: 'fileCanvas.remove'
     },
-    argMap: CRUD_ARG_MAP
+    argMap: WS_CRUD_ARG_MAP
   },
   // Generic record store backing AI-generated extensions (migration 0163,
   // table workspace_records). Standard CRUD; the `collection` namespace rides
