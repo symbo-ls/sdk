@@ -203,6 +203,9 @@ export const SERVICE_METHODS = {
   // companion to getFileUrl, which serves only the PUBLIC route and 404s on
   // private uploads.
   downloadFileContent: 'file',
+  // Server-side text extraction (GET /core/files/:id/extract-text) — docx/pdf
+  // -> plain text via the same auth-checked read as downloadFileContent.
+  extractFileText: 'file',
   validateFile: 'file',
   createFileFormData: 'file',
   uploadMultipleFiles: 'file',

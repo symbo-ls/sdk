@@ -372,6 +372,36 @@ export class FileService extends BaseService {
   }
 
   /**
+   * Extract real text from an uploaded document, server-side (docx/pdf).
+   * `GET /core/files/:fileId/extract-text` reuses the SAME auth-checked
+   * `FileService.downloadFile` read `downloadFileContent()` above uses, then
+   * runs `FileTextExtractionService` (mammoth for docx, pdf-parse for pdf).
+   *
+   * Unlike `downloadFileContent()`, this endpoint always replies with the
+   * standard `{success, data}` envelope — no raw/text-vs-object ambiguity —
+   * so this uses the plain (non-`raw`) `_call` shape (same as `getFile()`)
+   * and returns the unwrapped `data` object directly.
+   *
+   * On success, `data` is
+   * `{fileId, name, mimeType, text, truncated, wordCount, pageCount, format}`.
+   * `truncated: true` means the extracted text was capped at ~500k chars.
+   *
+   * Failure modes surface as a thrown `Error` (message from the server,
+   * `.status` set by `_request`) rather than being swallowed — the server
+   * distinguishes: unsupported file type (415, `unsupported_type`), input
+   * too large (413, `file_too_large`), corrupt/unparseable document (422,
+   * `extraction_failed`), and extraction taking too long (504,
+   * `extraction_timeout`).
+   *
+   * @param {string} fileId
+   * @returns {Promise<{fileId: string, name: string, mimeType: string, text: string, truncated: boolean, wordCount: number, pageCount: number|null, format: 'pdf'|'docx'}>}
+   */
+  async extractFileText(fileId) {
+    if (!fileId) throw new Error('fileId is required')
+    return this._call('extractFileText', `/files/${fileId}/extract-text`)
+  }
+
+  /**
    * Patch file metadata (tags, visibility, metadata). Not for binary
    * content — replace by re-uploading.
    * @param {string} fileId
