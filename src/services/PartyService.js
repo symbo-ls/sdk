@@ -124,6 +124,34 @@ export class PartyService extends BaseService {
       { method: 'DELETE' }
     )
   }
+
+  // ── Bulk (org chart — tickets/sonnet.md "bulk-read route + admin bulk
+  // editor + minimal chart view") ────────────────────────────────────────
+
+  // GET /core/parties/relationships (member). EVERY edge in the workspace,
+  // one call — the whole-team read `listRelationships` above cannot do (it
+  // is per-party, both directions; a chart view fanning that out per person
+  // is an N+1 that does not scale). filter: { kind? }
+  listAllRelationships (filter = {}, { workspaceId } = {}) {
+    const extra = {}
+    if (filter.kind) extra.kind = filter.kind
+    const ws = filter.workspaceId || workspaceId
+    return this._call('parties.listAllRelationships', `/parties/relationships${_qs(ws, extra)}`)
+  }
+
+  // POST /core/parties/relationships/reports-to (admin). Bulk set/clear the
+  // `reports_to` manager for many parties in one admin submission.
+  // assignments: [{ partyId, managerId }] — managerId: null clears. The
+  // whole batch validates (self-reference, cross-tenant existence, and
+  // reporting-cycle freedom of the RESULTING graph) before anything is
+  // written — a bad row 400/404/409s the whole call, never a partial chart.
+  setManagers (assignments = [], { workspaceId } = {}) {
+    return this._call(
+      'parties.setManagers',
+      `/parties/relationships/reports-to${_qs(workspaceId)}`,
+      { method: 'POST', body: { assignments } }
+    )
+  }
 }
 
 export const createPartyService = config => new PartyService(config)
