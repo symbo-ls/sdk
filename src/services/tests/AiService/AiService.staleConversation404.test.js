@@ -28,8 +28,14 @@ const flush = async () => {
 
 const makeService = (storageOverrides = {}) => {
   const svc = new AiService()
+  sandbox.stub(svc, '_activeWorkspaceId').returns('ws-1')
+  // Cache key is scoped by API plane as well as workspace id (see
+  // AiService._planeTag) — compute it the same way the service does rather
+  // than hardcoding the hash, so this test tracks the real key shape
+  // regardless of the fingerprint algorithm.
+  const cacheKey = `symbols_ai_conversation_ws-1_${svc._planeTag()}`
   const store = {
-    'symbols_ai_conversation_ws-1': 'stale-conv-id',
+    [cacheKey]: 'stale-conv-id',
     ...storageOverrides
   }
   global.localStorage = {
@@ -41,8 +47,7 @@ const makeService = (storageOverrides = {}) => {
       delete store[k]
     }
   }
-  sandbox.stub(svc, '_activeWorkspaceId').returns('ws-1')
-  return { svc, store }
+  return { svc, store, cacheKey }
 }
 
 const err404 = () => {
@@ -53,7 +58,7 @@ const err404 = () => {
 
 test('a 404 on the message POST clears the stale cache key and retries once with a fresh conversation', async (t) => {
   t.plan(5)
-  const { svc, store } = makeService()
+  const { svc, store, cacheKey } = makeService()
 
   let streamCalls = 0
   const streamUrls = []
@@ -104,7 +109,7 @@ test('a 404 on the message POST clears the stale cache key and retries once with
     'the retry stream targets the freshly-created conversation, not the stale id'
   )
   t.equal(
-    store['symbols_ai_conversation_ws-1'],
+    store[cacheKey],
     'fresh-conv-id',
     'the cache key was overwritten with the fresh id, not left pointing at the dead one'
   )

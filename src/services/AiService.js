@@ -63,6 +63,25 @@ const MODEL_MODES = [
 // synchronously during the POST, so the SSE frame normally beats this.
 const ASSISTANT_FALLBACK_MS = 1000
 
+// Deterministic short fingerprint of a string — used below to scope the
+// conversation cache key by API plane, not just workspace id (tickets/
+// sonnet.md "stale cached conversation id permanently bricks the workspace
+// AI", the "widens the fix" follow-up: two dev origins on one machine can
+// resolve to DIFFERENT backends for the SAME workspace id — e.g.
+// `localhost:4506` -> dev.api.symbols.app while `workspace.localhost:1355`
+// -> localhost:8080 — and without the plane in the key they fight over one
+// localStorage slot). Not cryptographic: it only needs to differ across
+// API origins and stay identical for the same one. FNV-1a, 32-bit,
+// hex-encoded to 8 chars.
+const _fnv1aHex = (str) => {
+  let h = 0x811c9dc5
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i)
+    h = (h * 0x01000193) >>> 0
+  }
+  return h.toString(16).padStart(8, '0')
+}
+
 // Intent contract — every prompt the user submits to sdk.ai.dispatch
 // classifies into exactly one of these three intents. The workspace agent
 // transport is answer-only, so dispatch resolves ANSWER for everything
@@ -531,10 +550,14 @@ export class AiService extends BaseService {
     // Both hit /core/agents/<scope>/conversations (note the /core prefix —
     // _requestExternal/_streamSSE take a full URL, so we add it here).
     const projectId = payload?.projectId || this._context?.activeProjectId
+    // Plane fingerprint — see `_fnv1aHex` above. Included in the cache key
+    // so an id minted against one API base can never be retrieved (or
+    // overwritten) by a different one for the same workspace/project.
+    const plane = this._planeTag()
     let base, cacheKey
     if (projectId) {
       base = `${this._apiUrl}/core/agents/projects/${encodeURIComponent(projectId)}/conversations`
-      cacheKey = `symbols_ai_conversation_project_${projectId}`
+      cacheKey = `symbols_ai_conversation_project_${projectId}_${plane}`
     } else {
       const wsId = this._activeWorkspaceId()
       if (!wsId) {
@@ -542,7 +565,7 @@ export class AiService extends BaseService {
         return () => {}
       }
       base = `${this._apiUrl}/core/agents/workspaces/${encodeURIComponent(wsId)}/conversations`
-      cacheKey = `symbols_ai_conversation_${wsId}`
+      cacheKey = `symbols_ai_conversation_${wsId}_${plane}`
     }
 
     let answered = false
@@ -552,14 +575,21 @@ export class AiService extends BaseService {
     let clientToolPending = false
     let cancelStream = () => {}
     let fallbackTimer = null
-    // A cached/selected conversation id can go stale (deleted server-side,
-    // or minted against a different API plane than the one now in use —
-    // tickets/sonnet.md "stale cached conversation id permanently bricks
-    // the workspace AI", 2026-08-15). Both the stream GET and the message
-    // POST 404 instantly in that case, and nothing ever cleared the cache
-    // key on that error — every subsequent turn 404s forever. One bounded
-    // retry with a freshly-created conversation self-heals it; the flag
-    // caps this to exactly once so a genuinely broken backend can't loop.
+    // A cached conversation id can still go stale (deleted server-side, or
+    // the backend was reseeded / repointed at a different Mongo) — tickets/
+    // sonnet.md "stale cached conversation id permanently bricks the
+    // workspace AI", 2026-08-15. Both the stream GET and the message POST
+    // 404 instantly in that case, and nothing ever cleared the cache key on
+    // that error — every subsequent turn 404s forever. One bounded retry
+    // with a freshly-created conversation self-heals it; the flag caps this
+    // to exactly once so a genuinely broken backend can't loop.
+    //
+    // Note this is now ONLY the genuine-staleness case: the cross-plane
+    // collision this ticket also described (two dev origins fighting over
+    // one cache slot for the same workspace id) is prevented structurally
+    // by `plane` above — a different API base resolves a different cache
+    // key, so it can never read or clobber another plane's id in the first
+    // place, and never pays this 404 round-trip to find out.
     let retriedStaleConversation404 = false
     // Turn boundary for the assistant fallback read — see
     // _fallbackToLatestAssistant: only messages from THIS turn may be
@@ -968,12 +998,15 @@ export class AiService extends BaseService {
   }
 
   // Resolve the conversation id for a workspace, creating + caching one on
-  // first use. Cached per-workspace in localStorage so a surface reopened
-  // later resumes the same conversation. `forceNew` skips the cache READ and
-  // creates a fresh conversation (still write-through cached): the "new
-  // thread" path — a local placeholder session has no server id yet, and
-  // falling back to the cached id silently appended the "new" thread's
-  // messages (and their full model context) onto the previous conversation.
+  // first use. Cached per-workspace-AND-PLANE in localStorage (see `_planeTag`
+  // and the `cacheKey` construction in `_streamWorkspaceTurn`) so a surface
+  // reopened later resumes the same conversation, and so two API backends
+  // sharing the same workspace id never read or overwrite each other's
+  // cached id. `forceNew` skips the cache READ and creates a fresh
+  // conversation (still write-through cached): the "new thread" path — a
+  // local placeholder session has no server id yet, and falling back to the
+  // cached id silently appended the "new" thread's messages (and their full
+  // model context) onto the previous conversation.
   async _resolveConversationId(cacheKey, base, { forceNew = false } = {}) {
     const cached = forceNew ? null : this._readStorage(cacheKey)
     if (cached) return cached
@@ -1322,6 +1355,15 @@ export class AiService extends BaseService {
   // BaseService._readActiveWorkspaceStorage for the precedence rationale).
   _activeWorkspaceId(explicit) {
     return this._resolveWorkspaceId(explicit, { fallbackToStorage: true })
+  }
+
+  // Short fingerprint of the API plane (base URL) this instance is bound
+  // to — folded into the conversation cache key so ids minted against one
+  // backend can never collide with another (see `_fnv1aHex` at the top of
+  // this file). `_apiUrl` is set once by `BaseService.init` and stable for
+  // the lifetime of the instance, so this needs no memoization.
+  _planeTag() {
+    return _fnv1aHex(String(this._apiUrl || ''))
   }
 
   _readStorage(key) {
