@@ -1277,6 +1277,27 @@ export class AiService extends BaseService {
     return this._unwrap(res)
   }
 
+  // Per-day tool-turn success rates for the active (or given) workspace —
+  // the reader for the server's turn telemetry (AI-210): GET
+  // /core/agents/workspaces/:id/ai-turn-stats?days=N → { sinceDay, days,
+  // rows: [{ day, turns, toolTurns, okToolTurns, successRate|null,
+  // textLeakTurns, dedupedWrites }] }. Same member-readable audience as
+  // `usage()` (route-level parity is pinned server-side). `rows` is `[]` for
+  // a workspace with no recorded turns — an asserted contract, so consumers
+  // must render "no turns yet" from an empty ARRAY, never from a missing key.
+  // `days` clamps server-side to [1, 90], default 14 (UTC days).
+  async turnStats(opts = {}) {
+    const wsId = this._activeWorkspaceId(opts?.workspaceId)
+    if (!wsId) throw new Error('[sdk.ai] no active workspace selected')
+    const days = Number(opts?.days)
+    const qs = Number.isFinite(days) && days > 0 ? `?days=${Math.trunc(days)}` : ''
+    const res = await this._requestExternal(
+      `${this._apiUrl}/core/agents/workspaces/${encodeURIComponent(wsId)}/ai-turn-stats${qs}`,
+      { method: 'GET', methodName: 'ai.turnStats' }
+    )
+    return this._unwrap(res)
+  }
+
   async createConversation(opts = {}) {
     const targetAgentId =
       (opts &&
