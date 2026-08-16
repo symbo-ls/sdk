@@ -1249,10 +1249,16 @@ export class AiService extends BaseService {
       ...(payload.allowTools === false ? { allowTools: false } : {}),
       modelMode: payload.modelMode || this.getModelMode() || 'auto'
     }
+    // Bellforge B10 — `opts.signal` (an AbortSignal) rides straight into
+    // fetch via _requestExternal (which spreads init). A caller Cancel then
+    // closes the request, and the server's ephemeral /turn maps that close to
+    // an abort of the UPSTREAM model call (server 45cb40a6) — the run stops,
+    // not just the UI.
     const res = await this._requestExternal(url, {
       method: 'POST',
       body,
-      methodName: 'ai.turn'
+      methodName: 'ai.turn',
+      ...(opts && opts.signal ? { signal: opts.signal } : {})
     })
     const data = this._unwrap(res)
     // usage {inputTokens, outputTokens} surfaces top-level so bridge callers
