@@ -1,5 +1,19 @@
 import { BaseService } from './BaseService.js'
 
+// `workspaceId` is a ROUTING param (the multi-tab contract — see
+// EntityDispatcher's FLAT-ARGS note and server/src/core/middleware/
+// workspaceScope.js `attachExplicitWorkspaceIfMember`): the tab says which
+// workspace it views; the server honours it ONLY when the caller is a
+// member, else falls back to the caller's active claim. Every read below
+// forwards it from `filter.workspaceId || options.workspaceId`. Before this
+// (ANALYTICS-WS-SCOPE-1) the whitelist DROPPED it, so a dashboard whose URL
+// named workspace B, viewed by a user whose Mongo claim was org A, got a
+// clean 200 with zero rows — "no data" that was really "wrong scope".
+const _setWorkspace = (params, filter, options) => {
+  const ws = filter?.workspaceId ?? options?.workspaceId
+  if (ws != null && ws !== '') params.set('workspaceId', String(ws))
+}
+
 // AnalyzedService wraps the main server's /core/analyzed/* routes (Mongo-
 // backed). First-class main-server surface, NOT workspace-project worker
 // routes — all calls go through _call() which routes to ${apiUrl}/core/
@@ -33,6 +47,7 @@ export class AnalyzedService extends BaseService {
   // GET /core/analyzed/sessions?userId=&projectId=&since=&country=&limit=&offset=
   listSessions (filter = {}, options = {}) {
     const params = new URLSearchParams()
+    _setWorkspace(params, filter, options)
     if (filter.userId) params.set('userId', filter.userId)
     if (filter.projectId) params.set('projectId', filter.projectId)
     if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
@@ -47,17 +62,21 @@ export class AnalyzedService extends BaseService {
     )
   }
 
-  // GET /core/analyzed/sessions/:id
-  getSession (id) {
+  // GET /core/analyzed/sessions/:id?workspaceId=
+  getSession (id, options = {}) {
+    const params = new URLSearchParams()
+    _setWorkspace(params, null, options)
+    const qs = params.toString()
     return this._call(
       'analyzed.getSession',
-      `/analyzed/sessions/${encodeURIComponent(id)}`
+      `/analyzed/sessions/${encodeURIComponent(id)}${qs ? `?${qs}` : ''}`
     )
   }
 
   // GET /core/analyzed/events?sessionId=&logType=&projectId=&since=&order=&limit=&offset=
   listEvents (filter = {}, options = {}) {
     const params = new URLSearchParams()
+    _setWorkspace(params, filter, options)
     if (filter.sessionId) params.set('sessionId', filter.sessionId)
     if (filter.logType) params.set('logType', filter.logType)
     if (filter.projectId) params.set('projectId', filter.projectId)
@@ -74,6 +93,7 @@ export class AnalyzedService extends BaseService {
   // Server-side aggregation (legacy analyzed_user_summaries shape).
   listUsers (filter = {}, options = {}) {
     const params = new URLSearchParams()
+    _setWorkspace(params, filter, options)
     if (filter.projectId) params.set('projectId', filter.projectId)
     if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
     if (filter.since) params.set('since', filter.since)
@@ -87,6 +107,7 @@ export class AnalyzedService extends BaseService {
   // Org-scoped active users — returns [{userId, userName, userEmail, lastSeenAt}].
   activeUsers (filter = {}, options = {}) {
     const params = new URLSearchParams()
+    _setWorkspace(params, filter, options)
     if (filter.projectId) params.set('projectId', filter.projectId)
     if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
     if (options.limit != null) params.set('limit', String(options.limit))
@@ -100,6 +121,7 @@ export class AnalyzedService extends BaseService {
   // Returns { monthly: [{label, count}] }.
   changes (filter = {}) {
     const params = new URLSearchParams()
+    _setWorkspace(params, filter)
     if (filter.range) params.set('range', filter.range)
     if (filter.projectId) params.set('projectId', filter.projectId)
     if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
@@ -111,6 +133,7 @@ export class AnalyzedService extends BaseService {
   // Country-level visitor breakdown. Returns { countries: [{country, count, code}] }.
   demographics (filter = {}) {
     const params = new URLSearchParams()
+    _setWorkspace(params, filter)
     if (filter.projectId) params.set('projectId', filter.projectId)
     if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
     if (filter.since) params.set('since', filter.since)
@@ -124,6 +147,7 @@ export class AnalyzedService extends BaseService {
   // duration, sessionCount, path, updates, ip, referrer}] }.
   now (filter = {}) {
     const params = new URLSearchParams()
+    _setWorkspace(params, filter)
     if (filter.projectId) params.set('projectId', filter.projectId)
     if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
     const qs = params.toString()
@@ -134,6 +158,7 @@ export class AnalyzedService extends BaseService {
   // Week-over-week comparison. Returns { pastWeek: [{label, count}], thisWeek: [{label, count}] }.
   weekly (filter = {}) {
     const params = new URLSearchParams()
+    _setWorkspace(params, filter)
     if (filter.projectId) params.set('projectId', filter.projectId)
     if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
     const qs = params.toString()
@@ -144,6 +169,7 @@ export class AnalyzedService extends BaseService {
   // Bug clusters — $group by message, sorted by frequency desc.
   listBugs (filter = {}, options = {}) {
     const params = new URLSearchParams()
+    _setWorkspace(params, filter, options)
     if (filter.projectId) params.set('projectId', filter.projectId)
     if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
     if (filter.since) params.set('since', filter.since)

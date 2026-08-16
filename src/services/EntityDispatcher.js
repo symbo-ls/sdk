@@ -1011,7 +1011,9 @@ const ENTITY_ROUTES = {
       ingest: (a) => [a],
       ingestPublic: (a) => [a?.envelope ?? a, a?.signature],
       listSessions: (a) => [a?.filter ?? {}, a?.options ?? {}],
-      getSession: argMaps.id,
+      // wsArgMaps.id: `[id]` alone, or `[id, { workspaceId }]` when the
+      // caller scopes the tab (ANALYTICS-WS-SCOPE-1).
+      getSession: wsArgMaps.id,
       listEvents: (a) => [a?.filter ?? {}, a?.options ?? {}],
       listUsers: (a) => [a?.filter ?? {}, a?.options ?? {}],
       listBugs: (a) => [a?.filter ?? {}, a?.options ?? {}],
