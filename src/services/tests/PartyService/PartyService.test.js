@@ -157,10 +157,39 @@ test('parties.removeRelationship DELETEs the collection-level /parties/relations
   t.end()
 })
 
+// ─── Bulk (org chart) ──────────────────────────────────────────────────────
+
+test('parties.listAllRelationships GETs the collection-level /parties/relationships, ?kind= optional', async t => {
+  t.plan(4)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves([])
+  await svc.listAllRelationships()
+  t.equal(stub.firstCall.args[0], 'parties.listAllRelationships', 'name')
+  t.equal(stub.firstCall.args[1], '/parties/relationships', 'no filter — bare path')
+  await svc.listAllRelationships({ kind: 'reports_to' })
+  t.ok(stub.secondCall.args[1].includes('kind=reports_to'), 'kind threaded')
+  t.ok(!stub.firstCall.args[1].includes('kind='), 'first call carried no kind')
+  sandbox.restore()
+  t.end()
+})
+
+test('parties.setManagers POSTs {assignments} to /parties/relationships/reports-to', async t => {
+  t.plan(3)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({})
+  const assignments = [{ partyId: 'p1', managerId: 'p2' }, { partyId: 'p3', managerId: null }]
+  await svc.setManagers(assignments)
+  t.equal(stub.firstCall.args[1], '/parties/relationships/reports-to', 'path')
+  t.equal(stub.firstCall.args[2].method, 'POST', 'POST')
+  t.deepEqual(stub.firstCall.args[2].body, { assignments }, 'body wraps the array under assignments')
+  sandbox.restore()
+  t.end()
+})
+
 // ─── workspaceId threading ───────────────────────────────────────────────────
 
 test('parties threads workspaceId as a query param across reads, writes + sub-resources', async t => {
-  t.plan(6)
+  t.plan(8)
   const svc = makeService()
   const stub = sandbox.stub(svc, '_call').resolves({})
   await svc.list({}, { workspaceId: 'ws1' })
@@ -175,6 +204,10 @@ test('parties threads workspaceId as a query param across reads, writes + sub-re
   t.ok(stub.getCall(4).args[1].includes('workspaceId=ws1'), 'removeRole threads ws')
   await svc.removeRelationship('rel1', { workspaceId: 'ws1' })
   t.ok(stub.getCall(5).args[1].includes('workspaceId=ws1'), 'removeRelationship threads ws')
+  await svc.listAllRelationships({}, { workspaceId: 'ws1' })
+  t.ok(stub.getCall(6).args[1].includes('workspaceId=ws1'), 'listAllRelationships threads ws')
+  await svc.setManagers([], { workspaceId: 'ws1' })
+  t.ok(stub.getCall(7).args[1].includes('workspaceId=ws1'), 'setManagers threads ws')
   sandbox.restore()
   t.end()
 })

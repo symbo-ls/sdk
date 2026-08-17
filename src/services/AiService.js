@@ -63,6 +63,25 @@ const MODEL_MODES = [
 // synchronously during the POST, so the SSE frame normally beats this.
 const ASSISTANT_FALLBACK_MS = 1000
 
+// Deterministic short fingerprint of a string — used below to scope the
+// conversation cache key by API plane, not just workspace id (tickets/
+// sonnet.md "stale cached conversation id permanently bricks the workspace
+// AI", the "widens the fix" follow-up: two dev origins on one machine can
+// resolve to DIFFERENT backends for the SAME workspace id — e.g.
+// `localhost:4506` -> dev.api.symbols.app while `workspace.localhost:1355`
+// -> localhost:8080 — and without the plane in the key they fight over one
+// localStorage slot). Not cryptographic: it only needs to differ across
+// API origins and stay identical for the same one. FNV-1a, 32-bit,
+// hex-encoded to 8 chars.
+const _fnv1aHex = (str) => {
+  let h = 0x811c9dc5
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i)
+    h = (h * 0x01000193) >>> 0
+  }
+  return h.toString(16).padStart(8, '0')
+}
+
 // Intent contract — every prompt the user submits to sdk.ai.dispatch
 // classifies into exactly one of these three intents. The workspace agent
 // transport is answer-only, so dispatch resolves ANSWER for everything
@@ -103,7 +122,7 @@ export class AiService extends BaseService {
 
   // Which upstream provider the workspace agent routes a turn through.
   // Persisted in localStorage and sent as `modelMode` on every message.
-  getModelMode () {
+  getModelMode() {
     try {
       return localStorage.getItem(STORAGE_KEY_MODEL_MODE) || DEFAULT_MODEL_MODE
     } catch (_) {
@@ -111,20 +130,25 @@ export class AiService extends BaseService {
     }
   }
 
-  setModelMode (mode) {
+  setModelMode(mode) {
     if (!MODEL_MODES.includes(mode)) {
-      throw new Error(`[sdk.ai] unknown modelMode "${mode}". Valid: ${MODEL_MODES.join(', ')}`)
+      throw new Error(
+        `[sdk.ai] unknown modelMode "${mode}". Valid: ${MODEL_MODES.join(', ')}`
+      )
     }
-    try { localStorage.setItem(STORAGE_KEY_MODEL_MODE, mode) } catch (_) {}
+    try {
+      localStorage.setItem(STORAGE_KEY_MODEL_MODE, mode)
+    } catch (_) {}
   }
 
   // The picker UI reads this via sdk.ai.modes() to render the model-mode
   // dropdown. Returns [{ key, label }] with the active mode flagged.
-  modes () {
+  modes() {
     const current = this.getModelMode()
     return MODEL_MODES.map((key) => ({
       key,
-      label: key === 'auto' ? 'Auto' : key.charAt(0).toUpperCase() + key.slice(1),
+      label:
+        key === 'auto' ? 'Auto' : key.charAt(0).toUpperCase() + key.slice(1),
       active: key === current
     }))
   }
@@ -140,12 +164,19 @@ export class AiService extends BaseService {
   // picker with plain mode labels (no reason badges) on failure rather than
   // losing the picker entirely — this is a diagnostics enhancement, not a
   // hard dependency of picking a mode.
-  async describeProviders () {
+  async describeProviders() {
     try {
-      return await this._request('/ai/providers', { method: 'GET', methodName: 'ai.describeProviders' })
+      return await this._request('/ai/providers', {
+        method: 'GET',
+        methodName: 'ai.describeProviders'
+      })
     } catch (error) {
       logger.warn('[sdk.ai] describeProviders failed:', error)
-      return { defaultMode: DEFAULT_MODEL_MODE, providers: [], demotedProviders: [] }
+      return {
+        defaultMode: DEFAULT_MODEL_MODE,
+        providers: [],
+        demotedProviders: []
+      }
     }
   }
 
@@ -154,11 +185,11 @@ export class AiService extends BaseService {
   // Provider/transport mode-switching is gone — every turn flows through
   // the workspace agent. These shims stay so any straggler consumer that
   // still calls setMode/getMode keeps working without throwing.
-  getMode () {
+  getMode() {
     return 'workspace'
   }
 
-  setMode () {
+  setMode() {
     console.warn('[sdk.ai] setMode is deprecated; use setModelMode')
   }
 
@@ -178,7 +209,7 @@ export class AiService extends BaseService {
   //
   // build + answer intents are unaffected — build always confirms via the
   // freestyler preview pane, and answer is read-only.
-  getAuthMode () {
+  getAuthMode() {
     try {
       return localStorage.getItem(STORAGE_KEY_AUTH_MODE) || DEFAULT_AUTH_MODE
     } catch (_) {
@@ -186,11 +217,15 @@ export class AiService extends BaseService {
     }
   }
 
-  setAuthMode (authMode) {
+  setAuthMode(authMode) {
     if (authMode !== 'ask' && authMode !== 'auto') {
-      throw new Error(`[sdk.ai] unknown authMode "${authMode}". Valid: 'ask', 'auto'`)
+      throw new Error(
+        `[sdk.ai] unknown authMode "${authMode}". Valid: 'ask', 'auto'`
+      )
     }
-    try { localStorage.setItem(STORAGE_KEY_AUTH_MODE, authMode) } catch (_) {}
+    try {
+      localStorage.setItem(STORAGE_KEY_AUTH_MODE, authMode)
+    } catch (_) {}
   }
 
   // ==================== DISPATCH (intent-classified turn) ====================
@@ -230,7 +265,7 @@ export class AiService extends BaseService {
   // Everything else (ANSWER / ACTION — the shared chat backbone) takes the
   // UNCHANGED workspace-agent streaming path below. authMode is still read for
   // forward-compat but currently unused.
-  async dispatch (payload = {}, callbacks = {}) {
+  async dispatch(payload = {}, callbacks = {}) {
     const text = String(payload.text || payload.content || '').trim()
     const forcedBuild = /^\/new(\s|$)/i.test(text) || payload.build === true
 
@@ -239,63 +274,75 @@ export class AiService extends BaseService {
     // description, not the routing prefix.
     if (forcedBuild) {
       const description = text.replace(/^\/new\s*/i, '')
-      return this._dispatchBuild({ ...payload, text: description, content: description }, callbacks)
+      return this._dispatchBuild(
+        { ...payload, text: description, content: description },
+        callbacks
+      )
     }
 
     // Everything else is an ANSWER streamed from the workspace agent. We
     // buffer the streamed text and resolve once the turn completes.
     return new Promise((resolve) => {
       let buffered = ''
-      this._streamWorkspaceTurn({ ...payload, content: text || payload.content, text }, {
-        onChunk: (delta) => {
-          buffered += delta
-          callbacks.onChunk?.(delta)
-        },
-        onDone: (donePayload) => {
-          const result = {
-            intent: INTENT_ANSWER,
-            text: donePayload?.text || buffered,
-            conversationId: donePayload?.conversationId || null,
-            // Server assistant-message id — the transport re-keys its
-            // optimistic message into the server id-space with this.
-            messageId: donePayload?.messageId || null,
-            // Follow-up suggestions (server-validated) — rendered as
-            // tappable pills under the reply.
-            suggestions: Array.isArray(donePayload?.suggestions) ? donePayload.suggestions : [],
-            // The assistant message's own metadata (tickets/opus.md
-            // "credits-exhausted UX") — carries `{ kind:'error', errorCode,
-            // errorMessage, retryable, creditsExhausted }` when
-            // failWorkspaceLoop synthesized this answer after a loop
-            // failure. Passed through VERBATIM (never re-derived here) so
-            // the consumer's metadata-key check matches byte-for-byte what
-            // the server persisted. Previously dropped entirely — every
-            // live turn lost the structured signal and only history reloads
-            // (which don't restore it either — see sessions.js) could have
-            // recovered it.
-            metadata: donePayload?.metadata || null
-          }
-          callbacks.onDone?.(result)
-          resolve(result)
-        },
-        onError: (err) => {
-          callbacks.onError?.(err)
-          resolve({ intent: INTENT_ANSWER, text: buffered, error: err?.message || String(err) })
-        },
-        // Browser-run platform actions (navigate / theme / search / confirm).
-        // The consumer resolves (callId, tool, args) → result; the SDK submits
-        // it to resume the loop. Without a handler, the server gets an error
-        // result and the model adapts.
-        onToolCall: callbacks.onToolCall,
-        // Structured tool-activity frames ({ phase:'started'|'completed',
-        // callId, tool, args?, ok?, summary? }) for EVERY tool the loop runs —
-        // the consumer renders these as the live agentic timeline instead of
-        // any tool traffic ever appearing as message text.
-        onToolEvent: callbacks.onToolEvent,
-        // Live active-process events (delegated/chained sub-agents starting +
-        // finishing) — informational; the consumer renders the process panel +
-        // canvas activity from these.
-        onProcessActive: callbacks.onProcessActive
-      })
+      this._streamWorkspaceTurn(
+        { ...payload, content: text || payload.content, text },
+        {
+          onChunk: (delta) => {
+            buffered += delta
+            callbacks.onChunk?.(delta)
+          },
+          onDone: (donePayload) => {
+            const result = {
+              intent: INTENT_ANSWER,
+              text: donePayload?.text || buffered,
+              conversationId: donePayload?.conversationId || null,
+              // Server assistant-message id — the transport re-keys its
+              // optimistic message into the server id-space with this.
+              messageId: donePayload?.messageId || null,
+              // Follow-up suggestions (server-validated) — rendered as
+              // tappable pills under the reply.
+              suggestions: Array.isArray(donePayload?.suggestions)
+                ? donePayload.suggestions
+                : [],
+              // The assistant message's own metadata (tickets/opus.md
+              // "credits-exhausted UX") — carries `{ kind:'error', errorCode,
+              // errorMessage, retryable, creditsExhausted }` when
+              // failWorkspaceLoop synthesized this answer after a loop
+              // failure. Passed through VERBATIM (never re-derived here) so
+              // the consumer's metadata-key check matches byte-for-byte what
+              // the server persisted. Previously dropped entirely — every
+              // live turn lost the structured signal and only history reloads
+              // (which don't restore it either — see sessions.js) could have
+              // recovered it.
+              metadata: donePayload?.metadata || null
+            }
+            callbacks.onDone?.(result)
+            resolve(result)
+          },
+          onError: (err) => {
+            callbacks.onError?.(err)
+            resolve({
+              intent: INTENT_ANSWER,
+              text: buffered,
+              error: err?.message || String(err)
+            })
+          },
+          // Browser-run platform actions (navigate / theme / search / confirm).
+          // The consumer resolves (callId, tool, args) → result; the SDK submits
+          // it to resume the loop. Without a handler, the server gets an error
+          // result and the model adapts.
+          onToolCall: callbacks.onToolCall,
+          // Structured tool-activity frames ({ phase:'started'|'completed',
+          // callId, tool, args?, ok?, summary? }) for EVERY tool the loop runs —
+          // the consumer renders these as the live agentic timeline instead of
+          // any tool traffic ever appearing as message text.
+          onToolEvent: callbacks.onToolEvent,
+          // Live active-process events (delegated/chained sub-agents starting +
+          // finishing) — informational; the consumer renders the process panel +
+          // canvas activity from these.
+          onProcessActive: callbacks.onProcessActive
+        }
+      )
     })
   }
 
@@ -321,7 +368,7 @@ export class AiService extends BaseService {
   // resolves to a build result with NO spec + an `error` field — the caller
   // (aiGeneratePages Phase-4 error handling) clears its loader and leaves the
   // overlay empty rather than throwing. This Promise NEVER rejects.
-  _dispatchBuild (payload, callbacks = {}) {
+  _dispatchBuild(payload, callbacks = {}) {
     const { onChunk, onDone, onError } = callbacks
     return new Promise((resolve) => {
       let settled = false
@@ -331,40 +378,59 @@ export class AiService extends BaseService {
         resolve(result)
       }
       try {
-        this._streamPost('/ai-chat/dispatch', {
-          text: payload.text || payload.content || '',
-          mode: 'simone',
-          authMode: this.getAuthMode(),
-          model: payload.model || null,
-          projectId: payload.projectId || (payload.context && payload.context.projectId) || null,
-          context: payload.context || null
-        }, {
-          onChunk: (delta) => { onChunk?.(delta) },
-          onDone: (donePayload) => {
-            // Pass the server envelope through as-is. Default the intent to
-            // build (this path is only entered for build turns) but DO NOT
-            // synthesize or drop the spec.
-            const result = {
-              intent: donePayload?.intent || INTENT_BUILD,
-              spec: donePayload?.spec,
-              ...(donePayload?.text ? { text: donePayload.text } : {}),
-              ...(donePayload?.actions ? { actions: donePayload.actions } : {})
-            }
-            onDone?.(result)
-            finish(result)
+        this._streamPost(
+          '/ai-chat/dispatch',
+          {
+            text: payload.text || payload.content || '',
+            mode: 'simone',
+            authMode: this.getAuthMode(),
+            model: payload.model || null,
+            projectId:
+              payload.projectId ||
+              (payload.context && payload.context.projectId) ||
+              null,
+            context: payload.context || null
           },
-          onError: (err) => {
-            onError?.(err)
-            // Degrade gracefully — a build with no spec; the caller clears
-            // loading and leaves the overlay empty.
-            finish({ intent: INTENT_BUILD, spec: null, error: err?.message || String(err) })
+          {
+            onChunk: (delta) => {
+              onChunk?.(delta)
+            },
+            onDone: (donePayload) => {
+              // Pass the server envelope through as-is. Default the intent to
+              // build (this path is only entered for build turns) but DO NOT
+              // synthesize or drop the spec.
+              const result = {
+                intent: donePayload?.intent || INTENT_BUILD,
+                spec: donePayload?.spec,
+                ...(donePayload?.text ? { text: donePayload.text } : {}),
+                ...(donePayload?.actions
+                  ? { actions: donePayload.actions }
+                  : {})
+              }
+              onDone?.(result)
+              finish(result)
+            },
+            onError: (err) => {
+              onError?.(err)
+              // Degrade gracefully — a build with no spec; the caller clears
+              // loading and leaves the overlay empty.
+              finish({
+                intent: INTENT_BUILD,
+                spec: null,
+                error: err?.message || String(err)
+              })
+            }
           }
-        })
+        )
       } catch (err) {
         // Synchronous throw out of _streamPost (e.g. service not ready) —
         // surface to onError and degrade to a spec-less build. Never reject.
         onError?.(err)
-        finish({ intent: INTENT_BUILD, spec: null, error: err?.message || String(err) })
+        finish({
+          intent: INTENT_BUILD,
+          spec: null,
+          error: err?.message || String(err)
+        })
       }
     })
   }
@@ -377,12 +443,15 @@ export class AiService extends BaseService {
   //   { sdkCall: { service:'tickets', method:'create', args:[{…}] } }
   //
   // Returns an array of { action, result?, error? } in input order.
-  async _executeActions (actions) {
+  async _executeActions(actions) {
     const out = []
     for (const action of actions) {
       const call = action?.sdkCall
       if (!call?.service || !call?.method) {
-        out.push({ action, error: new Error('[sdk.ai] action missing sdkCall.service/method') })
+        out.push({
+          action,
+          error: new Error('[sdk.ai] action missing sdkCall.service/method')
+        })
         continue
       }
       try {
@@ -393,7 +462,9 @@ export class AiService extends BaseService {
         const sdk = this._context?.services || this._sdk
         const target = sdk?.[call.service]
         if (!target || typeof target[call.method] !== 'function') {
-          throw new Error(`[sdk.ai] unknown action ${call.service}.${call.method}`)
+          throw new Error(
+            `[sdk.ai] unknown action ${call.service}.${call.method}`
+          )
         }
         const result = await target[call.method](...(call.args || []))
         out.push({ action, result })
@@ -409,7 +480,7 @@ export class AiService extends BaseService {
   //   1. dispatch() returns actions + requiresConfirmation
   //   2. UI shows AiActionConfirmCard
   //   3. user clicks Confirm → UI calls sdk.ai.executeActions(actions)
-  executeActions (actions) {
+  executeActions(actions) {
     return this._executeActions(actions)
   }
 
@@ -424,11 +495,11 @@ export class AiService extends BaseService {
   // callbacks:
   //   onChunk(deltaText), onDone({ text, … }), onError(err)
   // returns: cancel() — abort the in-flight turn
-  stream (payload = {}, callbacks = {}) {
+  stream(payload = {}, callbacks = {}) {
     return this._streamHttp(payload, callbacks)
   }
 
-  _streamHttp (payload, callbacks) {
+  _streamHttp(payload, callbacks) {
     return this._streamWorkspaceTurn(payload, callbacks)
   }
 
@@ -445,7 +516,14 @@ export class AiService extends BaseService {
   //      with `{ accepted: true }` and keeps running server-side, so the
   //      SAME subscription is what delivers its answer too — there is no
   //      separate "slow path" transport, only a POST that may resolve
-  //      before or after the loop finishes.
+  //      before or after the loop finishes. This subscription is durable:
+  //      `_streamSSE` reconnects with backoff if the connection drops
+  //      mid-turn, and a reconnect's `conversation.snapshot` frame is
+  //      checked for an answer the server persisted while disconnected
+  //      (see the `conversation.snapshot` handler below) — without this the
+  //      SSE-first move would have merely relocated the ">30s POST death"
+  //      onto the stream instead of fixing it (tickets/opus2 audit,
+  //      2026-08-14).
   //   4. POST the message ({ content, modelMode }).
   //   5. If the POST resolves with a final answer/suspension, use it
   //      directly. If it resolves with `{ accepted: true }` (turn still
@@ -456,18 +534,30 @@ export class AiService extends BaseService {
   //      ASSISTANT_FALLBACK_MS and surface the latest assistant message.
   //
   // Returns cancel() — aborts the SSE stream and marks the turn cancelled.
-  _streamWorkspaceTurn (payload, callbacks = {}) {
-    const { onChunk, onDone, onError, onToolCall, onToolEvent, onProcessActive, onReset } = callbacks
+  _streamWorkspaceTurn(payload, callbacks = {}) {
+    const {
+      onChunk,
+      onDone,
+      onError,
+      onToolCall,
+      onToolEvent,
+      onProcessActive,
+      onReset
+    } = callbacks
 
     // Scope: workspace is the DEFAULT ("most common"); a project-scoped
     // conversation is used when a projectId is supplied — agents work on both.
     // Both hit /core/agents/<scope>/conversations (note the /core prefix —
     // _requestExternal/_streamSSE take a full URL, so we add it here).
     const projectId = payload?.projectId || this._context?.activeProjectId
+    // Plane fingerprint — see `_fnv1aHex` above. Included in the cache key
+    // so an id minted against one API base can never be retrieved (or
+    // overwritten) by a different one for the same workspace/project.
+    const plane = this._planeTag()
     let base, cacheKey
     if (projectId) {
       base = `${this._apiUrl}/core/agents/projects/${encodeURIComponent(projectId)}/conversations`
-      cacheKey = `symbols_ai_conversation_project_${projectId}`
+      cacheKey = `symbols_ai_conversation_project_${projectId}_${plane}`
     } else {
       const wsId = this._activeWorkspaceId()
       if (!wsId) {
@@ -475,7 +565,7 @@ export class AiService extends BaseService {
         return () => {}
       }
       base = `${this._apiUrl}/core/agents/workspaces/${encodeURIComponent(wsId)}/conversations`
-      cacheKey = `symbols_ai_conversation_${wsId}`
+      cacheKey = `symbols_ai_conversation_${wsId}_${plane}`
     }
 
     let answered = false
@@ -485,6 +575,22 @@ export class AiService extends BaseService {
     let clientToolPending = false
     let cancelStream = () => {}
     let fallbackTimer = null
+    // A cached conversation id can still go stale (deleted server-side, or
+    // the backend was reseeded / repointed at a different Mongo) — tickets/
+    // sonnet.md "stale cached conversation id permanently bricks the
+    // workspace AI", 2026-08-15. Both the stream GET and the message POST
+    // 404 instantly in that case, and nothing ever cleared the cache key on
+    // that error — every subsequent turn 404s forever. One bounded retry
+    // with a freshly-created conversation self-heals it; the flag caps this
+    // to exactly once so a genuinely broken backend can't loop.
+    //
+    // Note this is now ONLY the genuine-staleness case: the cross-plane
+    // collision this ticket also described (two dev origins fighting over
+    // one cache slot for the same workspace id) is prevented structurally
+    // by `plane` above — a different API base resolves a different cache
+    // key, so it can never read or clobber another plane's id in the first
+    // place, and never pays this 404 round-trip to find out.
+    let retriedStaleConversation404 = false
     // Turn boundary for the assistant fallback read — see
     // _fallbackToLatestAssistant: only messages from THIS turn may be
     // surfaced as its answer.
@@ -493,14 +599,24 @@ export class AiService extends BaseService {
     // SSE frame (fast-path) and a POST response (reliable path); run it once.
     const handledCalls = new Set()
 
-    const stopStream = () => { try { cancelStream() } catch (_) {} }
+    const stopStream = () => {
+      try {
+        cancelStream()
+      } catch (_) {}
+    }
     const clearFallback = () => {
-      if (fallbackTimer) { clearTimeout(fallbackTimer); fallbackTimer = null }
+      if (fallbackTimer) {
+        clearTimeout(fallbackTimer)
+        fallbackTimer = null
+      }
     }
 
     // Pull the joined text out of an assistant message's content blocks.
     const blocksToText = (content) =>
-      (content || []).filter((p) => p && p.type === 'text').map((p) => p.text).join('')
+      (content || [])
+        .filter((p) => p && p.type === 'text')
+        .map((p) => p.text)
+        .join('')
 
     const finishAnswer = (txt, messageId, suggestions, metadata) => {
       if (answered || cancelled) return
@@ -552,7 +668,8 @@ export class AiService extends BaseService {
       // server finished while the connection was dead, and without this it
       // had no id to read on a first-turn/cached-id failure (seen live).
       try {
-        const cid = resolvedConvId || (payload && payload.conversationId) || null
+        const cid =
+          resolvedConvId || (payload && payload.conversationId) || null
         if (err && !err.conversationId && cid) err.conversationId = cid
       } catch (_) {}
       onError?.(err)
@@ -575,17 +692,30 @@ export class AiService extends BaseService {
       Promise.resolve(
         onToolCall
           ? onToolCall(id, call.tool, call.args, call)
-          : { ok: false, error: 'No client-tool handler registered for this surface.' }
+          : {
+              ok: false,
+              error: 'No client-tool handler registered for this surface.'
+            }
       )
         .then((result) =>
-          this.submitToolResult(resolvedConvId, id, result === undefined ? { ok: true } : result, {
-            projectId: payload?.projectId
-          })
+          this.submitToolResult(
+            resolvedConvId,
+            id,
+            result === undefined ? { ok: true } : result,
+            {
+              projectId: payload?.projectId
+            }
+          )
         )
         .catch((err) =>
-          this.submitToolResult(resolvedConvId, id, { ok: false, error: String(err?.message || err) }, {
-            projectId: payload?.projectId
-          })
+          this.submitToolResult(
+            resolvedConvId,
+            id,
+            { ok: false, error: String(err?.message || err) },
+            {
+              projectId: payload?.projectId
+            }
+          )
         )
         .then((resume) => {
           if (!resume) return
@@ -597,17 +727,43 @@ export class AiService extends BaseService {
           if (txt) {
             finishAnswer(
               txt,
-              resume.assistantMessage?._id || resume.assistantMessage?.id || null,
+              resume.assistantMessage?._id ||
+                resume.assistantMessage?.id ||
+                null,
               messageSuggestions(resume.assistantMessage),
               messageMetadata(resume.assistantMessage)
             )
           }
         })
-        .catch(() => { /* resume-response consumption is best-effort */ })
-        .finally(() => { clientToolPending = false })
+        .catch(() => {
+          /* resume-response consumption is best-effort */
+        })
+        .finally(() => {
+          clientToolPending = false
+        })
     }
 
-    ;(async () => {
+    // Returns true (and kicks off the one-shot retry) if `err` is a 404 this
+    // turn hasn't already retried past — callers should stop their own error
+    // handling (skip fail()) when this returns true, since runTurn(true)
+    // owns finishing/failing the turn from here.
+    const handleStaleConversation404 = (err) => {
+      if (answered || cancelled) return false
+      if (!err || err.status !== 404 || retriedStaleConversation404)
+        return false
+      retriedStaleConversation404 = true
+      try {
+        this._clearStorage(cacheKey)
+      } catch (_) {}
+      stopStream()
+      runTurn(true).catch((retryErr) => fail(retryErr))
+      return true
+    }
+
+    // On a stale-conversation 404, drop the cache key and re-run this whole
+    // resolve→subscribe→post sequence once with a freshly-created
+    // conversation (forceNewConv) instead of the caller's original id/cache.
+    const runTurn = async (forceNewConv) => {
       let conversationId
       try {
         // Honor the caller's active thread: if a real conversation id is passed
@@ -615,17 +771,18 @@ export class AiService extends BaseService {
         // otherwise fall back to the per-workspace cached/lazily-created one.
         // This is what makes "new thread" and "switch thread" actually route the
         // message to the selected conversation instead of one sticky cache id.
-        const wanted = payload && payload.conversationId
+        const wanted = !forceNewConv && payload && payload.conversationId
         conversationId =
           wanted && !String(wanted).startsWith('s-')
             ? String(wanted)
             : await this._resolveConversationId(cacheKey, base, {
-              // The caller explicitly opened a NEW thread (payload.newConversation,
-              // set by the workspace transport when the active session is a local
-              // 's-…' placeholder) — create a fresh server conversation instead of
-              // resuming the cached one.
-              forceNew: !!(payload && payload.newConversation)
-            })
+                // The caller explicitly opened a NEW thread (payload.newConversation,
+                // set by the workspace transport when the active session is a local
+                // 's-…' placeholder), or this is the one-shot stale-id retry above —
+                // either way, create a fresh server conversation instead of resuming
+                // the cached/requested one.
+                forceNew: forceNewConv || !!(payload && payload.newConversation)
+              })
         resolvedConvId = conversationId
         // Keep the per-(workspace|project) cache tracking the LAST-USED thread,
         // not the first-ever one. _resolveConversationId only writes the cache when
@@ -634,7 +791,9 @@ export class AiService extends BaseService {
         // meaning any later turn arriving with a blank/local id fell back to that
         // first thread and independent threads collapsed onto it (the "messages
         // mixed up" bug). Write through so the cache always names the active thread.
-        try { this._writeStorage(cacheKey, conversationId) } catch (_) {}
+        try {
+          this._writeStorage(cacheKey, conversationId)
+        } catch (_) {}
       } catch (err) {
         fail(err)
         return
@@ -686,6 +845,43 @@ export class AiService extends BaseService {
             onProcessActive?.({ event, ...(data || {}) })
             return
           }
+          // Fires on every (re)connect of the stream above — including a
+          // RECOVERY reconnect after the connection dropped mid-turn
+          // (tickets/opus2 "SSE-first moved the fragile link to the stream,
+          // and the stream had no reconnect", 2026-08-14 audit). `_streamSSE`
+          // now reconnects with backoff on a dropped connection, but this
+          // endpoint assigns no per-event id (no Last-Event-ID resume is
+          // possible), so the server's actual resume contract is: every
+          // connect gets a fresh `conversation.snapshot` of the latest
+          // messages. If this turn's answer was persisted by the server
+          // while we were disconnected, it is in here — recover it the same
+          // way `_fallbackToLatestAssistant` does (bounded to THIS turn via
+          // `turnStartedAt`, 5s clock-skew slack), so a mid-turn drop no
+          // longer strands an already-finished answer client-side.
+          if (event === 'conversation.snapshot') {
+            const messages = Array.isArray(data?.messages) ? data.messages : []
+            const freshEnough = (m) => {
+              const ts = Date.parse(m?.createdAt || m?.created_at || '') || 0
+              return ts >= turnStartedAt - 5000
+            }
+            const assistant = [...messages]
+              .reverse()
+              .find(
+                (m) =>
+                  m?.role === 'assistant' &&
+                  blocksToText(m.content) &&
+                  freshEnough(m)
+              )
+            if (assistant) {
+              finishAnswer(
+                blocksToText(assistant.content),
+                assistant.id || assistant._id || null,
+                messageSuggestions(assistant),
+                messageMetadata(assistant)
+              )
+            }
+            return
+          }
           if (event === 'message.created' && data?.role === 'assistant') {
             // A multi-step agentic turn persists intermediate assistant
             // `tool_call` messages (tool_call part only, NO text) before the
@@ -703,7 +899,9 @@ export class AiService extends BaseService {
             }
           }
         },
-        onError: (err) => fail(err)
+        onError: (err) => {
+          if (!handleStaleConversation404(err)) fail(err)
+        }
       })
 
       // POST the user message. The assistant reply comes back over the SSE
@@ -713,67 +911,84 @@ export class AiService extends BaseService {
         body: {
           content: payload.content || payload.text || '',
           modelMode: this.getModelMode(),
-          targetAgentId: (payload && (payload.targetAgentId || (payload.context && payload.context.targetAgentId))) || null,
+          targetAgentId:
+            (payload &&
+              (payload.targetAgentId ||
+                (payload.context && payload.context.targetAgentId))) ||
+            null,
           // Forward the caller's freeform per-turn context (page awareness:
           // currentPage / pageData / pageActions) so the server can surface it
           // in the agent's system instruction. Null when the caller passes none.
           context: (payload && payload.context) || null
         },
         methodName: 'ai.appendMessage'
-      }).then((res) => {
-        if (answered || cancelled) return
-        // The POST response is the RELIABLE turn outcome: it carries either a
-        // client-tool suspension (run it here — the SSE frame is a fast-path
-        // that dies with the stream) or the final assistant message.
-        const outcome = this._unwrap(res)
-        if (outcome && outcome.suspended && outcome.fn && outcome.callId) {
-          runClientTool(outcome)
-          return
-        }
-        const finalTxt = blocksToText(outcome?.assistantMessage?.content)
-        if (finalTxt) {
-          finishAnswer(
-            finalTxt,
-            outcome?.assistantMessage?._id || outcome?.assistantMessage?.id || null,
-            messageSuggestions(outcome?.assistantMessage),
-            messageMetadata(outcome?.assistantMessage)
-          )
-          return
-        }
-        // SSE-first (tickets/opus.md "fix the >30s POST death"). A turn that
-        // takes longer than the server's short ack window now resolves this
-        // POST early with `{ accepted: true }` — no assistantMessage, no
-        // suspension — INSTEAD of holding the connection open for however
-        // long the loop takes (that hold was the bug: the LB cuts a long-idle
-        // connection while the server keeps working and persists an answer
-        // nobody is left to receive). This is not "the POST resolved with
-        // nothing" (the race-guard case below); it is an explicit
-        // still-working signal. The turn keeps running server-side and its
-        // answer (or the next client-tool suspension) streams over the SSE
-        // connection already subscribed above via message.created /
-        // tool.call_required — never start the short race-guard fallback for
-        // it, which would fire long before a multi-minute turn finishes and
-        // wrongly report "no assistant response".
-        if (outcome && outcome.accepted) return
-        // Race guard: if the assistant frame hasn't arrived shortly after
-        // the POST resolves, read the conversation directly and use the
-        // latest assistant message.
-        clearFallback()
-        if (clientToolPending) return
-        fallbackTimer = setTimeout(() => {
-          this._fallbackToLatestAssistant(base, conversationId, finishAnswer, fail, turnStartedAt)
-        }, ASSISTANT_FALLBACK_MS)
-      }).catch((err) => {
-        // A conversation-level "turn already in progress" (409) means this
-        // POST was correctly rejected as a duplicate/racing submit — the
-        // conversation's existing turn is still legitimately running and
-        // will deliver its answer over the SSE stream already subscribed
-        // above. Surface nothing rather than a spurious "Failed to fetch"-
-        // shaped error for a request that did exactly what it should.
-        if (err && err.status === 409) return
-        fail(err)
       })
-    })()
+        .then((res) => {
+          if (answered || cancelled) return
+          // The POST response is the RELIABLE turn outcome: it carries either a
+          // client-tool suspension (run it here — the SSE frame is a fast-path
+          // that dies with the stream) or the final assistant message.
+          const outcome = this._unwrap(res)
+          if (outcome && outcome.suspended && outcome.fn && outcome.callId) {
+            runClientTool(outcome)
+            return
+          }
+          const finalTxt = blocksToText(outcome?.assistantMessage?.content)
+          if (finalTxt) {
+            finishAnswer(
+              finalTxt,
+              outcome?.assistantMessage?._id ||
+                outcome?.assistantMessage?.id ||
+                null,
+              messageSuggestions(outcome?.assistantMessage),
+              messageMetadata(outcome?.assistantMessage)
+            )
+            return
+          }
+          // SSE-first (tickets/opus.md "fix the >30s POST death"). A turn that
+          // takes longer than the server's short ack window now resolves this
+          // POST early with `{ accepted: true }` — no assistantMessage, no
+          // suspension — INSTEAD of holding the connection open for however
+          // long the loop takes (that hold was the bug: the LB cuts a long-idle
+          // connection while the server keeps working and persists an answer
+          // nobody is left to receive). This is not "the POST resolved with
+          // nothing" (the race-guard case below); it is an explicit
+          // still-working signal. The turn keeps running server-side and its
+          // answer (or the next client-tool suspension) streams over the SSE
+          // connection already subscribed above via message.created /
+          // tool.call_required — never start the short race-guard fallback for
+          // it, which would fire long before a multi-minute turn finishes and
+          // wrongly report "no assistant response".
+          if (outcome && outcome.accepted) return
+          // Race guard: if the assistant frame hasn't arrived shortly after
+          // the POST resolves, read the conversation directly and use the
+          // latest assistant message.
+          clearFallback()
+          if (clientToolPending) return
+          fallbackTimer = setTimeout(() => {
+            this._fallbackToLatestAssistant(
+              base,
+              conversationId,
+              finishAnswer,
+              fail,
+              turnStartedAt
+            )
+          }, ASSISTANT_FALLBACK_MS)
+        })
+        .catch((err) => {
+          // A conversation-level "turn already in progress" (409) means this
+          // POST was correctly rejected as a duplicate/racing submit — the
+          // conversation's existing turn is still legitimately running and
+          // will deliver its answer over the SSE stream already subscribed
+          // above. Surface nothing rather than a spurious "Failed to fetch"-
+          // shaped error for a request that did exactly what it should.
+          if (err && err.status === 409) return
+          if (handleStaleConversation404(err)) return
+          fail(err)
+        })
+    }
+
+    runTurn(false)
 
     return () => {
       cancelled = true
@@ -783,13 +998,16 @@ export class AiService extends BaseService {
   }
 
   // Resolve the conversation id for a workspace, creating + caching one on
-  // first use. Cached per-workspace in localStorage so a surface reopened
-  // later resumes the same conversation. `forceNew` skips the cache READ and
-  // creates a fresh conversation (still write-through cached): the "new
-  // thread" path — a local placeholder session has no server id yet, and
-  // falling back to the cached id silently appended the "new" thread's
-  // messages (and their full model context) onto the previous conversation.
-  async _resolveConversationId (cacheKey, base, { forceNew = false } = {}) {
+  // first use. Cached per-workspace-AND-PLANE in localStorage (see `_planeTag`
+  // and the `cacheKey` construction in `_streamWorkspaceTurn`) so a surface
+  // reopened later resumes the same conversation, and so two API backends
+  // sharing the same workspace id never read or overwrite each other's
+  // cached id. `forceNew` skips the cache READ and creates a fresh
+  // conversation (still write-through cached): the "new thread" path — a
+  // local placeholder session has no server id yet, and falling back to the
+  // cached id silently appended the "new" thread's messages (and their full
+  // model context) onto the previous conversation.
+  async _resolveConversationId(cacheKey, base, { forceNew = false } = {}) {
     const cached = forceNew ? null : this._readStorage(cacheKey)
     if (cached) return cached
 
@@ -800,7 +1018,8 @@ export class AiService extends BaseService {
     })
     // _requestExternal returns the raw body — unwrap the { success, data }
     // envelope when present, else accept a bare conversation object.
-    const data = res && typeof res === 'object' && 'data' in res ? res.data : res
+    const data =
+      res && typeof res === 'object' && 'data' in res ? res.data : res
     const id = data?.id
     if (!id) throw new Error('[sdk.ai] createConversation returned no id')
     this._writeStorage(cacheKey, id)
@@ -812,19 +1031,29 @@ export class AiService extends BaseService {
   // `sinceTs` bounds the scan to THIS turn: without it, a turn that produced
   // no text surfaced the PREVIOUS turn's answer as if it were the reply —
   // a silent wrong-answer substitution (observed in the 2026-08-11 audit).
-  async _fallbackToLatestAssistant (base, conversationId, finishAnswer, fail, sinceTs = 0) {
+  async _fallbackToLatestAssistant(
+    base,
+    conversationId,
+    finishAnswer,
+    fail,
+    sinceTs = 0
+  ) {
     try {
       const res = await this._requestExternal(`${base}/${conversationId}`, {
         method: 'GET',
         methodName: 'ai.getConversation'
       })
-      const data = res && typeof res === 'object' && 'data' in res ? res.data : res
+      const data =
+        res && typeof res === 'object' && 'data' in res ? res.data : res
       const messages = data?.messages || []
       // Find the latest assistant message that actually carries text — skip
       // intermediate `tool_call` assistant messages (no text part) from a
       // multi-step agentic turn.
       const textOf = (m) =>
-        (m?.content || []).filter((p) => p && p.type === 'text').map((p) => p.text).join('')
+        (m?.content || [])
+          .filter((p) => p && p.type === 'text')
+          .map((p) => p.text)
+          .join('')
       const freshEnough = (m) => {
         if (!sinceTs) return true
         const ts = Date.parse(m?.createdAt || m?.created_at || '') || 0
@@ -836,11 +1065,20 @@ export class AiService extends BaseService {
         .reverse()
         .find((m) => m?.role === 'assistant' && textOf(m) && freshEnough(m))
       const txt = assistant ? textOf(assistant) : ''
-      const sg = assistant && assistant.metadata && Array.isArray(assistant.metadata.suggestions)
-        ? assistant.metadata.suggestions
-        : []
+      const sg =
+        assistant &&
+        assistant.metadata &&
+        Array.isArray(assistant.metadata.suggestions)
+          ? assistant.metadata.suggestions
+          : []
       const meta = (assistant && assistant.metadata) || null
-      if (txt) finishAnswer(txt, (assistant && (assistant.id || assistant._id)) || null, sg, meta)
+      if (txt)
+        finishAnswer(
+          txt,
+          (assistant && (assistant.id || assistant._id)) || null,
+          sg,
+          meta
+        )
       else fail(new Error('[sdk.ai] no assistant response'))
     } catch (err) {
       fail(err)
@@ -853,13 +1091,14 @@ export class AiService extends BaseService {
   // Used by simone's Sessions ▾ thread selector.
 
   // Base URL for the active scope (project when in scope, else active workspace).
-  _conversationBase (opts = {}) {
+  _conversationBase(opts = {}) {
     const projectId = opts?.projectId || this._context?.activeProjectId
     if (projectId) {
       return `${this._apiUrl}/core/agents/projects/${encodeURIComponent(projectId)}/conversations`
     }
     const wsId = this._activeWorkspaceId()
-    if (!wsId) throw new Error('[sdk.ai] no active workspace or project selected')
+    if (!wsId)
+      throw new Error('[sdk.ai] no active workspace or project selected')
     return `${this._apiUrl}/core/agents/workspaces/${encodeURIComponent(wsId)}/conversations`
   }
 
@@ -867,7 +1106,7 @@ export class AiService extends BaseService {
   // with their DOMQL source → [{ id, name, key, route, source, updatedAt }].
   // Powers the /add-app sidebar: created extensions appear and survive reload
   // (clicking re-renders the persisted source into the pane).
-  async listExtensions (opts = {}) {
+  async listExtensions(opts = {}) {
     const wsId = this._activeWorkspaceId(opts?.workspaceId)
     if (!wsId) return []
     const res = await this._requestExternal(
@@ -882,9 +1121,10 @@ export class AiService extends BaseService {
   // { workspaceId?, name, source, scope?:'private'|'shared' }. Returns the
   // created { projectId, key, name, route }. The saved extension appears in
   // listExtensions (→ the /add-app sidebar) and survives reload.
-  async createExtension (body = {}) {
+  async createExtension(body = {}) {
     const wsId = this._activeWorkspaceId(body?.workspaceId)
-    if (!wsId) throw new Error('[sdk.ai] no active workspace for createExtension')
+    if (!wsId)
+      throw new Error('[sdk.ai] no active workspace for createExtension')
     const res = await this._requestExternal(
       `${this._apiUrl}/core/agents/workspaces/${encodeURIComponent(wsId)}/extensions`,
       {
@@ -898,10 +1138,12 @@ export class AiService extends BaseService {
 
   // Re-save an existing extension's source and/or scope. body:
   // { workspaceId?, source?, scope? }. Owner/admin only (server-enforced).
-  async updateExtension (projectId, body = {}) {
+  async updateExtension(projectId, body = {}) {
     const wsId = this._activeWorkspaceId(body?.workspaceId)
-    if (!wsId) throw new Error('[sdk.ai] no active workspace for updateExtension')
-    if (!projectId) throw new Error('[sdk.ai] projectId required for updateExtension')
+    if (!wsId)
+      throw new Error('[sdk.ai] no active workspace for updateExtension')
+    if (!projectId)
+      throw new Error('[sdk.ai] projectId required for updateExtension')
     const res = await this._requestExternal(
       `${this._apiUrl}/core/agents/workspaces/${encodeURIComponent(wsId)}/extensions/${encodeURIComponent(projectId)}`,
       {
@@ -913,13 +1155,13 @@ export class AiService extends BaseService {
     return this._unwrap(res)
   }
 
-  _unwrap (res) {
+  _unwrap(res) {
     return res && typeof res === 'object' && 'data' in res ? res.data : res
   }
 
   // Thread list for the active scope → [{ id, conversationId, title,
   // lastMessageAt, pinned, unread }].
-  async listConversations (opts = {}) {
+  async listConversations(opts = {}) {
     const res = await this._requestExternal(this._conversationBase(opts), {
       method: 'GET',
       methodName: 'ai.listConversations'
@@ -928,7 +1170,7 @@ export class AiService extends BaseService {
   }
 
   // Load one thread → { conversation, messages }. Side effect: marks read.
-  async getConversation (conversationId, opts = {}) {
+  async getConversation(conversationId, opts = {}) {
     const res = await this._requestExternal(
       `${this._conversationBase(opts)}/${encodeURIComponent(conversationId)}`,
       { method: 'GET', methodName: 'ai.getConversation' }
@@ -942,13 +1184,17 @@ export class AiService extends BaseService {
   // invoked automatically by the streaming layer's onToolCall plumbing; exposed
   // for callers that drive the round-trip themselves. Returns the server's
   // { suspended, callId?, assistantMessage? } envelope.
-  async submitToolResult (conversationId, callId, result, opts = {}) {
+  async submitToolResult(conversationId, callId, result, opts = {}) {
     const doPost = () =>
       this._requestExternal(
         `${this._conversationBase(opts)}/${encodeURIComponent(conversationId)}/tool-result`,
         {
           method: 'POST',
-          body: { callId, result, ...(opts?.modelMode ? { modelMode: opts.modelMode } : {}) },
+          body: {
+            callId,
+            result,
+            ...(opts?.modelMode ? { modelMode: opts.modelMode } : {})
+          },
           methodName: 'ai.submitToolResult'
         }
       )
@@ -968,7 +1214,9 @@ export class AiService extends BaseService {
         const msg = String(err?.message || '')
         const networkClass =
           err?.code === 'NETWORK_UNREACHABLE' ||
-          /failed to fetch|network unreachable|networkerror|load failed|socket|ECONNRESET|timeout/i.test(msg)
+          /failed to fetch|network unreachable|networkerror|load failed|socket|ECONNRESET|timeout/i.test(
+            msg
+          )
         if (!networkClass || attempt === RETRY_DELAYS.length) throw err
         await new Promise((r) => setTimeout(r, RETRY_DELAYS[attempt]))
       }
@@ -982,7 +1230,7 @@ export class AiService extends BaseService {
   // The default for stateless consumers (ticket standups, inline
   // completions). payload: { content } or { messages:[{role,content}] },
   // optional system + modelMode.
-  async turn (payload = {}, opts = {}) {
+  async turn(payload = {}, opts = {}) {
     // Workspace-scoped only — the /turn route lives on the workspace, so an
     // active project context must not divert the URL to /projects/:id.
     const wsId = this._activeWorkspaceId(opts?.workspaceId)
@@ -1001,21 +1249,31 @@ export class AiService extends BaseService {
       ...(payload.allowTools === false ? { allowTools: false } : {}),
       modelMode: payload.modelMode || this.getModelMode() || 'auto'
     }
+    // Bellforge B10 — `opts.signal` (an AbortSignal) rides straight into
+    // fetch via _requestExternal (which spreads init). A caller Cancel then
+    // closes the request, and the server's ephemeral /turn maps that close to
+    // an abort of the UPSTREAM model call (server 45cb40a6) — the run stops,
+    // not just the UI.
     const res = await this._requestExternal(url, {
       method: 'POST',
       body,
-      methodName: 'ai.turn'
+      methodName: 'ai.turn',
+      ...(opts && opts.signal ? { signal: opts.signal } : {})
     })
     const data = this._unwrap(res)
     // usage {inputTokens, outputTokens} surfaces top-level so bridge callers
     // (moduleAiBridge) read r.usage without knowing the raw envelope (B1/B2).
-    return { text: (data && data.text) || '', usage: (data && data.usage) || null, raw: data }
+    return {
+      text: (data && data.text) || '',
+      usage: (data && data.usage) || null,
+      raw: data
+    }
   }
 
   // Monthly AI usage for the active (or given) workspace — powers admin
   // AI-settings panels (B1/B7): GET /core/agents/workspaces/:id/ai-usage →
   // { month, calls, inputTokens, outputTokens, capTokens|null }.
-  async usage (opts = {}) {
+  async usage(opts = {}) {
     const wsId = this._activeWorkspaceId(opts?.workspaceId)
     if (!wsId) throw new Error('[sdk.ai] no active workspace selected')
     const res = await this._requestExternal(
@@ -1025,8 +1283,32 @@ export class AiService extends BaseService {
     return this._unwrap(res)
   }
 
-    async createConversation (opts = {}) {
-    const targetAgentId = (opts && (opts.targetAgentId || (opts.context && opts.context.targetAgentId))) || null
+  // Per-day tool-turn success rates for the active (or given) workspace —
+  // the reader for the server's turn telemetry (AI-210): GET
+  // /core/agents/workspaces/:id/ai-turn-stats?days=N → { sinceDay, days,
+  // rows: [{ day, turns, toolTurns, okToolTurns, successRate|null,
+  // textLeakTurns, dedupedWrites }] }. Same member-readable audience as
+  // `usage()` (route-level parity is pinned server-side). `rows` is `[]` for
+  // a workspace with no recorded turns — an asserted contract, so consumers
+  // must render "no turns yet" from an empty ARRAY, never from a missing key.
+  // `days` clamps server-side to [1, 90], default 14 (UTC days).
+  async turnStats(opts = {}) {
+    const wsId = this._activeWorkspaceId(opts?.workspaceId)
+    if (!wsId) throw new Error('[sdk.ai] no active workspace selected')
+    const days = Number(opts?.days)
+    const qs = Number.isFinite(days) && days > 0 ? `?days=${Math.trunc(days)}` : ''
+    const res = await this._requestExternal(
+      `${this._apiUrl}/core/agents/workspaces/${encodeURIComponent(wsId)}/ai-turn-stats${qs}`,
+      { method: 'GET', methodName: 'ai.turnStats' }
+    )
+    return this._unwrap(res)
+  }
+
+  async createConversation(opts = {}) {
+    const targetAgentId =
+      (opts &&
+        (opts.targetAgentId || (opts.context && opts.context.targetAgentId))) ||
+      null
     const res = await this._requestExternal(this._conversationBase(opts), {
       method: 'POST',
       body: { title: opts.title, ...(targetAgentId ? { targetAgentId } : {}) },
@@ -1036,7 +1318,7 @@ export class AiService extends BaseService {
   }
 
   // Pin / archive / rename a thread for the current member.
-  async patchConversation (conversationId, patch = {}, opts = {}) {
+  async patchConversation(conversationId, patch = {}, opts = {}) {
     const res = await this._requestExternal(
       `${this._conversationBase(opts)}/${encodeURIComponent(conversationId)}`,
       { method: 'PATCH', body: patch, methodName: 'ai.patchConversation' }
@@ -1045,7 +1327,7 @@ export class AiService extends BaseService {
   }
 
   // Soft-archive a thread for the current member (keeps the conversation).
-  async deleteConversation (conversationId, opts = {}) {
+  async deleteConversation(conversationId, opts = {}) {
     await this._requestExternal(
       `${this._conversationBase(opts)}/${encodeURIComponent(conversationId)}`,
       { method: 'DELETE', methodName: 'ai.deleteConversation' }
@@ -1057,12 +1339,14 @@ export class AiService extends BaseService {
 
   // Non-streaming turn — collects the stream into a single promise.
   // Mirrors AiChatService.completion shape so consumers swap cleanly.
-  completion (payload = {}) {
+  completion(payload = {}) {
     return new Promise((resolve, reject) => {
       let buffer = ''
       let finalPayload = null
       this.stream(payload, {
-        onChunk: (delta) => { buffer += delta },
+        onChunk: (delta) => {
+          buffer += delta
+        },
         onDone: (payload) => {
           finalPayload = payload
           resolve(finalPayload || { text: buffer })
@@ -1079,7 +1363,7 @@ export class AiService extends BaseService {
   // a fixed-shape extraction prompt. No mode routing needed (the upstream
   // provider is server-side regardless), but exposing it under sdk.ai keeps
   // the consumer-facing namespace consistent.
-  meetAnalyze (payload) {
+  meetAnalyze(payload) {
     return this._call('ai.meetAnalyze', '/ai-chat/meet-analyze', {
       method: 'POST',
       body: { payload }
@@ -1096,16 +1380,37 @@ export class AiService extends BaseService {
   // storage pointer (MWT-aware: sessionStorage's per-tab pointer before
   // localStorage's shared "last default" — see
   // BaseService._readActiveWorkspaceStorage for the precedence rationale).
-  _activeWorkspaceId (explicit) {
+  _activeWorkspaceId(explicit) {
     return this._resolveWorkspaceId(explicit, { fallbackToStorage: true })
   }
 
-  _readStorage (key) {
-    try { return localStorage.getItem(key) } catch (_) { return null }
+  // Short fingerprint of the API plane (base URL) this instance is bound
+  // to — folded into the conversation cache key so ids minted against one
+  // backend can never collide with another (see `_fnv1aHex` at the top of
+  // this file). `_apiUrl` is set once by `BaseService.init` and stable for
+  // the lifetime of the instance, so this needs no memoization.
+  _planeTag() {
+    return _fnv1aHex(String(this._apiUrl || ''))
   }
 
-  _writeStorage (key, value) {
-    try { localStorage.setItem(key, value) } catch (_) {}
+  _readStorage(key) {
+    try {
+      return localStorage.getItem(key)
+    } catch (_) {
+      return null
+    }
+  }
+
+  _writeStorage(key, value) {
+    try {
+      localStorage.setItem(key, value)
+    } catch (_) {}
+  }
+
+  _clearStorage(key) {
+    try {
+      localStorage.removeItem(key)
+    } catch (_) {}
   }
 }
 

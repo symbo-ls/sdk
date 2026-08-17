@@ -142,7 +142,7 @@ export class PersonaService extends BaseService {
       body: { role }
     })
 
-    this._adoptTokens(data)
+    this._installPersonaOverlay(data)
 
     const persona = data?.persona || this._decodePersonaClaim()
     rootBus.emit('sdk.personaChanged', { previous, persona })
@@ -209,10 +209,18 @@ export class PersonaService extends BaseService {
         }
       }
 
-      // Shed the persona claim: prefer the clean token the end endpoint
-      // minted; otherwise refresh — the refresh token is the admin's own
-      // persona-free credential, so the refreshed access token is clean.
-      if (this._adoptTokens(data)) {
+      // Shed the persona claim. With the per-tab overlay this is a DELETE,
+      // not a recovery: the admin's own token was never overwritten, so
+      // removing the overlay restores it exactly, with no network call and
+      // nothing that can fail. That closes the old failure mode where an
+      // unreachable server plus an unrefreshable token left the lens stuck
+      // on — the whole reason endPersona used to need a refresh dance.
+      if (typeof this._tokenManager?.clearPersonaToken === 'function') {
+        this._tokenManager.clearPersonaToken()
+        result.restored = true
+      } else if (this._adoptTokens(data)) {
+        // Legacy path — a TokenManager without overlay support (published
+        // version skew). Keeps the old adopt/refresh recovery intact.
         result.restored = true
       } else if (this._tokenManager?.hasRefreshToken?.()) {
         try {
@@ -310,6 +318,32 @@ export class PersonaService extends BaseService {
       token_type: 'Bearer'
     })
     return true
+  }
+
+  // Install the persona token as this tab's OVERLAY — never as the tab's
+  // (and therefore the origin's) session token.
+  //
+  // This is the difference between "the admin is viewing as a viewer in this
+  // tab" and "the admin is a viewer everywhere". `setTokens` writes
+  // `symbols_access_token` in localStorage, which every tab on the origin
+  // reads, so adopting a persona that way silently narrowed the admin's
+  // OTHER tabs too. `setPersonaToken` writes a distinct sessionStorage key
+  // that only this tab can see, and leaves the admin's own token untouched.
+  //
+  // Falls back to the old adopt-into-TokenManager behaviour when the
+  // TokenManager predates the overlay (published-version skew) — a persona
+  // that works cross-tab beats one that does not work at all, and the
+  // caller's UI is identical either way.
+  _installPersonaOverlay (data) {
+    const accessToken = data?.accessToken || data?.tokens?.accessToken || null
+    if (!accessToken || !this._tokenManager) return false
+    if (typeof this._tokenManager.setPersonaToken === 'function') {
+      return this._tokenManager.setPersonaToken(accessToken)
+    }
+    logger.warn(
+      '[persona] TokenManager has no overlay support — falling back to cross-tab token adoption'
+    )
+    return this._adoptTokens(data)
   }
 
   // Decode the active access token's payload without verifying the

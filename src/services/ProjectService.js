@@ -192,15 +192,28 @@ export class ProjectService extends BaseService {
    * collision-safe 2-seg route when the owner is known.
    *
    * @param {string | { owner?: string, key: string }} keyOrSpec
+   * @param {object} [options]
+   * @param {string} [options.workspaceId] - Workspace-module read grant
+   *   (GA onboarding): when the caller is a member of a workspace that has
+   *   INSTALLED this project (module or workspace app), sending its id
+   *   authorizes the read even without a project-level role. Ignored by
+   *   older servers.
    */
-  async getProjectByKey (keyOrSpec) {
+  async getProjectByKey (keyOrSpec, options = {}) {
     this._requireReady('getProjectByKey')
     const path = keyPath(keyOrSpec)
+    const { workspaceId } = options
+    const queryString = workspaceId
+      ? new URLSearchParams({ workspaceId: String(workspaceId) }).toString()
+      : ''
     try {
-      const response = await this._request(`/projects/key/${path}`, {
-        method: 'GET',
-        methodName: 'getProjectByKey'
-      })
+      const response = await this._request(
+        `/projects/key/${path}${queryString ? `?${queryString}` : ''}`,
+        {
+          method: 'GET',
+          methodName: 'getProjectByKey'
+        }
+      )
       if (response.success) {
         const iconSrc = response.data.icon
           ? `${this._apiUrl}/core/files/public/${response.data.icon.id}/download`
@@ -1232,6 +1245,15 @@ export class ProjectService extends BaseService {
   /**
    * List all environments for a project along with plan limits and activation state.
    * Mirrors ProjectController.listEnvironments.
+   *
+   * @param {string} projectId
+   * @param {object} [options]
+   * @param {object} [options.headers]
+   * @param {string} [options.workspaceId] - Workspace-module read grant
+   *   (GA onboarding): when the caller is a member of a workspace that has
+   *   INSTALLED this project (module or workspace app), sending its id
+   *   authorizes the read even without a project-level role. Ignored by
+   *   older servers.
    */
   async listEnvironments (projectId, options = {}) {
     this._requireReady('listEnvironments')
@@ -1239,14 +1261,20 @@ export class ProjectService extends BaseService {
       throw new Error('Project ID is required')
     }
 
-    const { headers } = options
+    const { headers, workspaceId } = options
+    const queryString = workspaceId
+      ? new URLSearchParams({ workspaceId: String(workspaceId) }).toString()
+      : ''
 
     try {
-      const response = await this._request(`/projects/${projectId}/environments`, {
-        method: 'GET',
-        ...(headers ? { headers } : {}),
-        methodName: 'listEnvironments'
-      })
+      const response = await this._request(
+        `/projects/${projectId}/environments${queryString ? `?${queryString}` : ''}`,
+        {
+          method: 'GET',
+          ...(headers ? { headers } : {}),
+          methodName: 'listEnvironments'
+        }
+      )
 
       if (response && response.success) {
         return response.data

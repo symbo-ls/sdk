@@ -45,6 +45,80 @@ export class SubscriptionService extends BaseService {
   }
 
   /**
+   * Start a REAL Stripe Checkout session for a workspace-scoped self-serve
+   * subscription upgrade — the "Upgrade" tier-card CTA
+   * (tickets/fable.md PRICE-3 redesign, Nika 2026-08-13: "Request upgrade →
+   * >> Upgrade - goes to stipe"). Mirrors `POST /subscriptions/checkout` —
+   * the exact route name `SubscriptionController.create`'s own docblock has
+   * pointed callers at since 2026-08-13 ("For live Stripe checkouts, use
+   * POST /subscriptions/checkout") without that route ever being
+   * registered (verified against server/src/domains/billing/routes/
+   * subscriptions.js — only `/` is wired, and that endpoint is
+   * `SubscriptionController.create`, the admin-only DB dev-bind that
+   * returns no checkout `url`).
+   *
+   * CONTRACT, NOT YET A LIVE SERVER ROUTE (tickets/opus.md PRICE-5 owns
+   * exposing it). The underlying service logic already exists and is
+   * workspace-native — `SubscriptionService.createForWorkspace({
+   * workspaceId, userId, planId, pricingKey, successUrl, cancelUrl })`
+   * (server, same billing domain) resolves a Stripe customer directly off
+   * the WORKSPACE via `BillingScopeService.ensureWorkspaceCustomer` and
+   * creates a real Checkout session with NO project required — it just
+   * is not reachable through any route today except as an internal
+   * fallback of `PaymentController.createCheckout` (`POST
+   * /payments/checkout`), which demands a `projectId` a workspace-scoped
+   * admin page has no correct way to supply. PRICE-5's proposed shape: a
+   * thin controller action that calls `createForWorkspace` directly,
+   * authorized by workspace membership — NOT the global-admin-only gate
+   * `POST /subscriptions` carries.
+   *
+   * Until that route ships, every call fails (404, today) and callers MUST
+   * treat that identically to "self-serve checkout isn't live yet" — never
+   * surface a raw transport error as if the workspace did something wrong
+   * (see workspace `pages/admin/usage.js`'s `_startUpgrade` for the
+   * honest-degrade branch this funds — same shape as `_submitTopup`/
+   * `_claimSignupCredits` already use for their own optional-call
+   * fallbacks on that page).
+   *
+   * Enterprise (`salesLed: true`) has no Stripe product — never call this
+   * for that tier; it keeps the "Talk to sales" mailto route instead.
+   *
+   * @param {string} workspaceId
+   * @param {{ planId: string, pricingKey?: string, successUrl?: string, cancelUrl?: string }} options
+   * @returns {Promise<{ type: 'checkout_required', url: string, sessionId: string } | { type: 'activated', subscription: object }>}
+   */
+  async createWorkspaceSubscriptionCheckout (workspaceId, options = {}) {
+    this._requireReady('createWorkspaceSubscriptionCheckout')
+    if (!workspaceId) {
+      throw new Error('Workspace ID is required')
+    }
+    const { planId, pricingKey = 'monthly', successUrl, cancelUrl } = options
+    if (!planId) {
+      throw new Error('Plan ID is required')
+    }
+
+    try {
+      const response = await this._request('/subscriptions/checkout', {
+        method: 'POST',
+        body: JSON.stringify({
+          workspaceId,
+          planId,
+          pricingKey,
+          successUrl,
+          cancelUrl
+        }),
+        methodName: 'createWorkspaceSubscriptionCheckout'
+      })
+      if (response.success) {
+        return response.data
+      }
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Failed to create workspace subscription checkout: ${error.message}`, { cause: error })
+    }
+  }
+
+  /**
    * Get subscription status and usage for a project
    */
   async getProjectStatus (projectId) {

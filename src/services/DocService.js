@@ -18,6 +18,28 @@ import { BaseService } from './BaseService.js'
 // Back-compat aliases on WorkspaceProjectService delegate to this service
 // for one cutover cycle before being removed in Phase 3.
 export class DocService extends BaseService {
+  // ==================== TENANT SCOPE ====================
+  //
+  // P0 tenant isolation (workspace tickets/fable.md 2026-08-14 —
+  // "/w/natali/…/notes RENDERS BELLFORGE"): every docs call now carries the
+  // tab's tenant scope explicitly (`?workspaceId=&orgId=`, resolved from the
+  // live SDK context that bootShell pins from the URL). Without this the
+  // server could only scope by the caller's global `activeOrganization`
+  // claim — a per-USER ambient pointer shared across tabs and devices — so
+  // a tab whose URL named org A silently received org B's notes whenever
+  // the global pointer said B. The server's `resolveRequestOrgId`
+  // membership-verifies whatever this names; a scope the caller cannot see
+  // never widens the response. Query-string (not body) so the markdown
+  // `create`/`update` bodies and GET routes all thread identically.
+  _scopeQuery () {
+    const { orgId, workspaceId } = this._resolveScope()
+    const params = new URLSearchParams()
+    if (workspaceId) params.set('workspaceId', String(workspaceId))
+    if (orgId) params.set('orgId', String(orgId))
+    const q = params.toString()
+    return q ? `?${q}` : ''
+  }
+
   // ==================== DOC READS ====================
 
   /**
@@ -28,7 +50,7 @@ export class DocService extends BaseService {
    * @returns {Promise<{data: Array, count: number}>} Docs array + total count
    */
   list (filter = {}, options = {}) {
-    return this._call('docs.list', '/docs/list', {
+    return this._call('docs.list', `/docs/list${this._scopeQuery()}`, {
       method: 'POST',
       body: { filter, options }
     })
@@ -41,7 +63,7 @@ export class DocService extends BaseService {
    * @returns {Promise<object>} Doc document
    */
   get (docId) {
-    return this._call('docs.get', `/docs/${encodeURIComponent(docId)}`)
+    return this._call('docs.get', `/docs/${encodeURIComponent(docId)}${this._scopeQuery()}`)
   }
 
   /**
@@ -52,7 +74,7 @@ export class DocService extends BaseService {
    * @returns {Promise<{root: object, descendants: Array}>}
    */
   tree (docId) {
-    return this._call('docs.tree', `/docs/${encodeURIComponent(docId)}/tree`)
+    return this._call('docs.tree', `/docs/${encodeURIComponent(docId)}/tree${this._scopeQuery()}`)
   }
 
   /**
@@ -62,7 +84,7 @@ export class DocService extends BaseService {
    * @returns {Promise<Array>} Folder tree
    */
   folders () {
-    return this._call('docs.folders', '/docs/folders')
+    return this._call('docs.folders', `/docs/folders${this._scopeQuery()}`)
   }
 
   // ==================== DOC WRITES ====================
@@ -81,13 +103,13 @@ export class DocService extends BaseService {
    */
   create (payload) {
     if (typeof payload === 'string') {
-      return this._call('docs.create', '/docs', {
+      return this._call('docs.create', `/docs${this._scopeQuery()}`, {
         method: 'POST',
         body: payload,
         headers: { 'Content-Type': 'text/markdown' }
       })
     }
-    return this._call('docs.create', '/docs', {
+    return this._call('docs.create', `/docs${this._scopeQuery()}`, {
       method: 'POST',
       body: { payload }
     })
@@ -109,13 +131,13 @@ export class DocService extends BaseService {
     if (ifMatch) headers['If-Match'] = ifMatch
     if (typeof payload === 'string') {
       headers['Content-Type'] = 'text/markdown'
-      return this._call('docs.update', `/docs/${encodeURIComponent(docId)}`, {
+      return this._call('docs.update', `/docs/${encodeURIComponent(docId)}${this._scopeQuery()}`, {
         method: 'PUT',
         body: payload,
         headers
       })
     }
-    return this._call('docs.update', `/docs/${encodeURIComponent(docId)}`, {
+    return this._call('docs.update', `/docs/${encodeURIComponent(docId)}${this._scopeQuery()}`, {
       method: 'PUT',
       body: { payload },
       headers
@@ -129,7 +151,7 @@ export class DocService extends BaseService {
    * @returns {Promise<null>}
    */
   remove (docId) {
-    return this._call('docs.remove', `/docs/${encodeURIComponent(docId)}`, {
+    return this._call('docs.remove', `/docs/${encodeURIComponent(docId)}${this._scopeQuery()}`, {
       method: 'DELETE'
     })
   }
@@ -175,7 +197,17 @@ export class DocService extends BaseService {
    * @returns {function} unsubscribe() — call to close the connection
    */
   subscribe (filter = {}, onEvent) {
-    return this._sseSubscribe('/docs/stream', filter, onEvent, {
+    // Tenant scope rides the stream's query too (same P0 as _scopeQuery
+    // above) — DocStreamController resolves it via resolveRequestOrgId, so
+    // the SSE snapshot + live events follow the TAB's org, not the global
+    // activeOrganization pointer. Explicit filter keys win on collision.
+    const { orgId, workspaceId } = this._resolveScope()
+    const scopedFilter = {
+      ...(workspaceId ? { workspaceId } : {}),
+      ...(orgId ? { orgId } : {}),
+      ...filter
+    }
+    return this._sseSubscribe('/docs/stream', scopedFilter, onEvent, {
       events: [
         { name: 'docs.snapshot', frame: (data) => ({ type: 'snapshot', docs: data.docs || data }) },
         { name: 'docs.insert', frame: (data) => ({ type: 'docs.insert', doc: data.doc || data }) },

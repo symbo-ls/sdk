@@ -12,10 +12,12 @@ const makeService = () => {
 
 // getFile --------------------------------------------------------------------
 
-test('getFile hits /files/:fileId with GET', async t => {
+test('getFile hits /files/:fileId with GET', async (t) => {
   t.plan(2)
   const svc = makeService()
-  const requestStub = sandbox.stub(svc, '_request').resolves({ success: true, data: { _id: 'f1' } })
+  const requestStub = sandbox
+    .stub(svc, '_request')
+    .resolves({ success: true, data: { _id: 'f1' } })
   await svc.getFile('f1')
   const [endpoint, opts] = requestStub.firstCall.args
   t.equal(endpoint, '/files/f1', 'URL matches')
@@ -24,23 +26,110 @@ test('getFile hits /files/:fileId with GET', async t => {
   t.end()
 })
 
-test('getFile throws without fileId', async t => {
+test('getFile throws without fileId', async (t) => {
   t.plan(1)
   const svc = makeService()
-  try { await svc.getFile() } catch (err) {
+  try {
+    await svc.getFile()
+  } catch (err) {
     t.equal(err.message, 'fileId is required', 'validation')
   }
   sandbox.restore()
   t.end()
 })
 
+// extractFileText --------------------------------------------------------------
+
+test('extractFileText hits /files/:fileId/extract-text with GET and unwraps data', async (t) => {
+  t.plan(3)
+  const svc = makeService()
+  const data = {
+    fileId: 'f1',
+    name: 'thesis.docx',
+    mimeType:
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    text: 'Extracted body text.',
+    truncated: false,
+    wordCount: 3,
+    pageCount: null,
+    format: 'docx'
+  }
+  const requestStub = sandbox
+    .stub(svc, '_request')
+    .resolves({ success: true, data })
+  const result = await svc.extractFileText('f1')
+  const [endpoint, opts] = requestStub.firstCall.args
+  t.equal(endpoint, '/files/f1/extract-text', 'URL matches')
+  t.equal(opts.method, 'GET', 'method GET')
+  t.deepEqual(result, data, 'unwrapped data returned directly')
+  sandbox.restore()
+  t.end()
+})
+
+test('extractFileText throws without fileId', async (t) => {
+  t.plan(1)
+  const svc = makeService()
+  try {
+    await svc.extractFileText()
+  } catch (err) {
+    t.equal(err.message, 'fileId is required', 'validation')
+  }
+  sandbox.restore()
+  t.end()
+})
+
+test('extractFileText surfaces the server message on failure (e.g. unsupported_type)', async (t) => {
+  t.plan(1)
+  const svc = makeService()
+  sandbox.stub(svc, '_request').resolves({
+    success: false,
+    error: 'unsupported_type',
+    message:
+      'Unsupported file type for text extraction: "application/msword". Supported: PDF, DOCX.'
+  })
+  try {
+    await svc.extractFileText('f1')
+    t.fail('should have thrown')
+  } catch (err) {
+    t.equal(
+      err.message,
+      'Unsupported file type for text extraction: "application/msword". Supported: PDF, DOCX.',
+      'server message surfaced, not swallowed'
+    )
+  }
+  sandbox.restore()
+  t.end()
+})
+
+test('extractFileText propagates a truncated:true flag on success', async (t) => {
+  t.plan(1)
+  const svc = makeService()
+  sandbox.stub(svc, '_request').resolves({
+    success: true,
+    data: {
+      fileId: 'f1',
+      text: 'x'.repeat(500000),
+      truncated: true,
+      wordCount: 1,
+      pageCount: 12,
+      format: 'pdf'
+    }
+  })
+  const result = await svc.extractFileText('f1')
+  t.equal(result.truncated, true, 'truncated flag passed through')
+  sandbox.restore()
+  t.end()
+})
+
 // updateFile -----------------------------------------------------------------
 
-test('updateFile PUTs updates to /files/:fileId', async t => {
+test('updateFile PUTs updates to /files/:fileId', async (t) => {
   t.plan(3)
   const svc = makeService()
   const updates = { tags: ['reviewed'], visibility: 'public' }
-  const requestStub = sandbox.stub(svc, '_request').resolves({ success: true, data: updates })
+  const requestStub = sandbox
+    .stub(svc, '_request')
+    .resolves({ success: true, data: updates })
   await svc.updateFile('f1', updates)
   const [endpoint, opts] = requestStub.firstCall.args
   t.equal(endpoint, '/files/f1', 'URL matches')
@@ -52,10 +141,12 @@ test('updateFile PUTs updates to /files/:fileId', async t => {
 
 // deleteFile -----------------------------------------------------------------
 
-test('deleteFile DELETEs /files/:fileId', async t => {
+test('deleteFile DELETEs /files/:fileId', async (t) => {
   t.plan(2)
   const svc = makeService()
-  const requestStub = sandbox.stub(svc, '_request').resolves({ success: true, data: {} })
+  const requestStub = sandbox
+    .stub(svc, '_request')
+    .resolves({ success: true, data: {} })
   await svc.deleteFile('f1')
   const [endpoint, opts] = requestStub.firstCall.args
   t.equal(endpoint, '/files/f1', 'URL matches')
@@ -66,10 +157,12 @@ test('deleteFile DELETEs /files/:fileId', async t => {
 
 // listMyUploads --------------------------------------------------------------
 
-test('listMyUploads — defaults page=1, limit=20 append to /files/my-uploads', async t => {
+test('listMyUploads — defaults page=1, limit=20 append to /files/my-uploads', async (t) => {
   t.plan(1)
   const svc = makeService()
-  const requestStub = sandbox.stub(svc, '_request').resolves({ success: true, data: [] })
+  const requestStub = sandbox
+    .stub(svc, '_request')
+    .resolves({ success: true, data: [] })
   await svc.listMyUploads()
   t.equal(
     requestStub.firstCall.args[0],
@@ -80,11 +173,18 @@ test('listMyUploads — defaults page=1, limit=20 append to /files/my-uploads', 
   t.end()
 })
 
-test('listMyUploads — full options append to URL', async t => {
+test('listMyUploads — full options append to URL', async (t) => {
   t.plan(1)
   const svc = makeService()
-  const requestStub = sandbox.stub(svc, '_request').resolves({ success: true, data: [] })
-  await svc.listMyUploads({ page: 3, limit: 50, sortBy: 'createdAt', sortOrder: 'asc' })
+  const requestStub = sandbox
+    .stub(svc, '_request')
+    .resolves({ success: true, data: [] })
+  await svc.listMyUploads({
+    page: 3,
+    limit: 50,
+    sortBy: 'createdAt',
+    sortOrder: 'asc'
+  })
   t.equal(
     requestStub.firstCall.args[0],
     '/files/my-uploads?page=3&limit=50&sortBy=createdAt&sortOrder=asc',
@@ -96,26 +196,38 @@ test('listMyUploads — full options append to URL', async t => {
 
 // uploadMarketplaceThumbnail -----------------------------------------------
 
-test('uploadMarketplaceThumbnail POSTs multipart to /marketplace/thumbnail', async t => {
+test('uploadMarketplaceThumbnail POSTs multipart to /marketplace/thumbnail', async (t) => {
   t.plan(4)
   const svc = makeService()
-  const requestStub = sandbox.stub(svc, '_request').resolves({ success: true, data: { thumbnailUrl: 'https://…' } })
+  const requestStub = sandbox
+    .stub(svc, '_request')
+    .resolves({ success: true, data: { thumbnailUrl: 'https://…' } })
   const file = new Blob(['png-bytes'], { type: 'image/png' })
-  await svc.uploadMarketplaceThumbnail(file, { itemId: 'cool-template', kind: 'template' })
+  await svc.uploadMarketplaceThumbnail(file, {
+    itemId: 'cool-template',
+    kind: 'template'
+  })
   const [endpoint, opts] = requestStub.firstCall.args
   t.equal(endpoint, '/marketplace/thumbnail', 'URL matches')
   t.equal(opts.method, 'POST', 'method POST')
   t.ok(opts.body instanceof FormData, 'body is FormData')
-  t.deepEqual(opts.headers, {}, 'empty headers — browser sets multipart boundary')
+  t.deepEqual(
+    opts.headers,
+    {},
+    'empty headers — browser sets multipart boundary'
+  )
   sandbox.restore()
   t.end()
 })
 
-test('uploadMarketplaceThumbnail throws without file', async t => {
+test('uploadMarketplaceThumbnail throws without file', async (t) => {
   t.plan(1)
   const svc = makeService()
   try {
-    await svc.uploadMarketplaceThumbnail(null, { itemId: 'x', kind: 'template' })
+    await svc.uploadMarketplaceThumbnail(null, {
+      itemId: 'x',
+      kind: 'template'
+    })
   } catch (err) {
     t.equal(err.message, 'thumbnailFile is required', 'validation')
   }
@@ -123,7 +235,7 @@ test('uploadMarketplaceThumbnail throws without file', async t => {
   t.end()
 })
 
-test('uploadMarketplaceThumbnail throws without itemId', async t => {
+test('uploadMarketplaceThumbnail throws without itemId', async (t) => {
   t.plan(1)
   const svc = makeService()
   const file = new Blob(['x'], { type: 'image/png' })
@@ -136,7 +248,7 @@ test('uploadMarketplaceThumbnail throws without itemId', async t => {
   t.end()
 })
 
-test('uploadMarketplaceThumbnail throws without kind', async t => {
+test('uploadMarketplaceThumbnail throws without kind', async (t) => {
   t.plan(1)
   const svc = makeService()
   const file = new Blob(['x'], { type: 'image/png' })
@@ -149,7 +261,7 @@ test('uploadMarketplaceThumbnail throws without kind', async t => {
   t.end()
 })
 
-test('teardown', t => {
+test('teardown', (t) => {
   sandbox.restore()
   t.end()
 })

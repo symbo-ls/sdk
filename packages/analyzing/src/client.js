@@ -282,6 +282,7 @@ export const createAnalyzing = (opts = {}) => {
     const BUFFER_CAP = 100
     let _ingestSuspended = false
     let _suspendWarned = false
+    const _dropWarned = new Set()
     const _buffer = []
     const _bufferPush = (envelope) => {
       _buffer.push(envelope)
@@ -366,6 +367,19 @@ export const createAnalyzing = (opts = {}) => {
           try { console.warn('[analyzing] ingest suspended after 401; will resume on next sign-in') } catch {}
         }
         _bufferPush(envelope)
+      } else if (result && result.ok === false && typeof console !== 'undefined') {
+        // Telemetry stays best-effort (the envelope is dropped, never
+        // requeued), but a drop must not be INVISIBLE: one warn per distinct
+        // status/reason per session. A silent non-401 swallow is how a
+        // same-user workspace switch lost every later beacon to a 409 with
+        // no signal anywhere (tickets/analytics.md ANALYZING-SESSION-ROTATE-1).
+        const key = String(result.status ?? result.reason ?? 'unknown')
+        if (!_dropWarned.has(key)) {
+          _dropWarned.add(key)
+          try {
+            console.warn(`[analyzing] ingest envelope dropped (${key}); further drops with this status are silent`)
+          } catch {}
+        }
       }
       return result
     }
@@ -597,6 +611,18 @@ export const createAnalyzing = (opts = {}) => {
   const flush = () => state.flush()
   const shutdown = () => state.destroy()
 
+  // Rotate the session (tickets/analytics.md ANALYZING-SESSION-ROTATE-1).
+  // The server keys a session row on {_id, workspace}; the SAME id under a
+  // NEW workspace is refused (409) for the rest of the session. A caller
+  // that switches the tenant scope mid-page (the workspace shell's
+  // setAnalyzingWorkspace) must call this: the old session is ended
+  // (terminal envelope) and every later envelope carries the new id.
+  let currentSessionId = resolvedSessionId
+  const startNewSession = () => {
+    currentSessionId = state.startNewSession()
+    return currentSessionId
+  }
+
   // Runtime mirror of the per-workspace opt-in lever — call with the
   // loaded `Organization.settings.analyzedNetworkCapture` value once org
   // settings arrive (they load async, after boot). Post-activate, this
@@ -718,7 +744,10 @@ export const createAnalyzing = (opts = {}) => {
     setNetworkCapture,
     flush,
     shutdown,
-    sessionId: resolvedSessionId
+    startNewSession,
+    // Live: reflects the id in force AFTER a startNewSession() (the boot id
+    // until then).
+    get sessionId () { return currentSessionId }
   }
 }
 
