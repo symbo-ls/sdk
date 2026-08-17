@@ -183,6 +183,5 @@ if (typeof global.requestAnimationFrame !== 'function') {
 
 await initializeSdk()
 await guestLogin()
-await createDefaultProject()
 
 export { initializeSdk, guestLogin }
