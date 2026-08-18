@@ -46,6 +46,7 @@ import {
   createWatcherService,
   createActivityEntryService,
   createTagService,
+  createRegistryService,
   createBookingService,
   createAvailabilityRuleService,
   createConversationService,
@@ -473,6 +474,17 @@ export class SDK {
       this._initService(
         'tags',
         createTagService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      // External company-registry proxy (bellforge D2-1) — thin authed
+      // reach over /core/registry/fr/* (provider chain + cache live on the
+      // server). Consumed via getService('registry') by the workspace
+      // shell's capability-gated module bridge.
+      this._initService(
+        'registry',
+        createRegistryService({
           context: this._context,
           options: this._options
         })
@@ -1006,6 +1018,7 @@ export {
   createWatcherService,
   createActivityEntryService,
   createTagService,
+  createRegistryService,
   createBookingService,
   createAvailabilityRuleService,
   createConversationService,

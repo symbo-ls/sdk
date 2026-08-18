@@ -81,6 +81,7 @@ import { AttachmentService } from './AttachmentService.js'
 import { WatcherService } from './WatcherService.js'
 import { ActivityEntryService } from './ActivityEntryService.js'
 import { TagService } from './TagService.js'
+import { RegistryService } from './RegistryService.js'
 // Phase-4 scheduling services (WORKSPACE_DATA_MODEL §6.5/§6.7/§6.8) — the
 // scheduling & service surfaces: bookings (party-facing commitments, +/confirm
 // +cancel-delete), availability-rules (per-user freebusy), conversations (two-
@@ -301,6 +302,10 @@ export const createActivityEntryService = (config) =>
 
 export const createTagService = (config) => createService(TagService, config)
 
+// External company-registry proxy (bellforge D2-1) — /core/registry/fr/*.
+export const createRegistryService = (config) =>
+  createService(RegistryService, config)
+
 // Phase-4 scheduling factories — bookings (+ /confirm + cancel-delete),
 // availability-rules (per-user freebusy), conversations (+ /messages sub-
 // resource), recurrences (generic rrule scheduler). All Mongo-native; reached
@@ -376,6 +381,7 @@ export {
   WatcherService,
   ActivityEntryService,
   TagService,
+  RegistryService,
   BookingService,
   AvailabilityRuleService,
   ConversationService,
