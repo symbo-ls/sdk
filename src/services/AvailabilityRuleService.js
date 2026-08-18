@@ -185,9 +185,7 @@ export class AvailabilityRuleService extends BaseService {
 
     const intervals = []
     for (const availability of availabilities) {
-      // No availability for this user means nothing to intersect. Return
-      // `[]` — not `{}` — to match the array shape `intersect` returns on
-      // every other path (see _intervalsToAvailability).
+      // No availability for this user means nothing to intersect.
       if (!availability || availability.length === 0) {
         return []
       }

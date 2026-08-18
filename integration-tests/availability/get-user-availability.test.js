@@ -12,7 +12,7 @@ test('list user availability', async tape => {
 
 test('intersect availability', async tape => {
   const user1 = await global.globalSdk.getUserByEmail('zachary@symbols.app')
-  const user2 = await global.globalSdk.getUserByEmail('nika@symbols.app')
+  const user2 = await global.globalSdk.getUserByEmail('jerry@symbols.app')
   const availability = await global.globalSdk.getService('availabilityRules').intersect(
     [user1.id, user2.id],
     user1.workspaces?.[0]?.id
