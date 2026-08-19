@@ -919,7 +919,15 @@ export class AiService extends BaseService {
           // Forward the caller's freeform per-turn context (page awareness:
           // currentPage / pageData / pageActions) so the server can surface it
           // in the agent's system instruction. Null when the caller passes none.
-          context: (payload && payload.context) || null
+          context: (payload && payload.context) || null,
+          // AI-EARLY-ACK-COMPAT-1 — declare that this client understands a 202
+          // `{ accepted: true }` ack (handled below: return, let SSE deliver).
+          // The server only takes the early-ack path for clients that say so,
+          // because a client without the guard reads that response as "no
+          // answer" and fails the turn at its 1s race-guard. Sending the flag
+          // is what restores the SSE-first behaviour for THIS sdk; omitting it
+          // is what keeps older deployed bundles working.
+          earlyAck: true
         },
         methodName: 'ai.appendMessage'
       })
@@ -1193,6 +1201,9 @@ export class AiService extends BaseService {
           body: {
             callId,
             result,
+            // AI-EARLY-ACK-COMPAT-1 — same opt-in as appendMessage; a resumed
+            // turn can outlive the ack window just as easily as a fresh one.
+            earlyAck: true,
             ...(opts?.modelMode ? { modelMode: opts.modelMode } : {})
           },
           methodName: 'ai.submitToolResult'
