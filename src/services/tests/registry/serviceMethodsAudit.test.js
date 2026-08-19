@@ -34,7 +34,8 @@ import {
   StorefrontService,
   McpConnectorService,
   VoiceService,
-  PersonaService
+  PersonaService,
+  RegistryService
 } from '../../index.js'
 
 // service-name → ServiceClass — the same wiring `_initService` does in
@@ -74,7 +75,8 @@ const SERVICES = {
   storefront: StorefrontService,
   mcpConnector: McpConnectorService,
   voice: VoiceService,
-  persona: PersonaService
+  persona: PersonaService,
+  registry: RegistryService
 }
 
 // Methods that intentionally exist on a service but are NOT flat-exposed via

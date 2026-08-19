@@ -717,5 +717,14 @@ export const SERVICE_METHODS = {
   requestStorefrontCustomerOtp: 'storefront',
   verifyStorefrontCustomerOtp: 'storefront',
   resetStorefrontCustomerPassword: 'storefront',
-  getStorefrontCustomerMe: 'storefront'
+  getStorefrontCustomerMe: 'storefront',
+
+  // External company-registry proxy (bellforge D2-1) — authenticated,
+  // NOT workspace-scoped; rides the server's provider chain + 1h cache.
+  // GET /core/registry/fr/search?q=&limit= → { rows, provider, cached? }
+  // GET /core/registry/fr/company/:siren   → { company, provider }
+  // GET /core/registry/fr/status           → { mode, providers }
+  frSearch: 'registry',
+  frCompany: 'registry',
+  frStatus: 'registry'
 }
