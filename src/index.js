@@ -67,6 +67,7 @@ import { SERVICE_METHODS } from './utils/services.js'
 import environment from './config/environment.js'
 import { rootBus } from './state/rootEventBus.js'
 import { logger, setDebug } from './utils/logger.js'
+import { getTokenManager } from './utils/TokenManager.js'
 import {
   createEntityDispatcher,
   registerEntity
@@ -94,6 +95,17 @@ export class SDK {
     this._services = new Map()
     this._context = {}
     this._options = this._validateOptions(options)
+
+    // Real accessor for the shared TokenManager singleton (see
+    // utils/TokenManager.js). Every BaseService gets the same instance via
+    // getTokenManager() in its own init() — this stayed null on the SDK
+    // root because nothing ever assigned it here, so `sdk._tokenManager`
+    // read undefined in every build even though
+    // `sdk.getService('auth')._tokenManager` worked. Assigned for real once
+    // a service has initialized it (end of initialize(), below) so the
+    // root never races ahead with apiUrl-less defaults from an early first
+    // call.
+    this._tokenManager = null
 
     // Seed context with apiUrl from options so services resolve the correct host
     if (this._options.apiUrl) {
@@ -607,6 +619,11 @@ export class SDK {
         })
       )
     ])
+
+    // Every service above just called getTokenManager() in its own init()
+    // (see BaseService.js), creating the shared singleton with the real
+    // apiUrl. Adopt that same instance on the root now that it exists.
+    this._tokenManager = getTokenManager()
 
     return this
   }
