@@ -32,6 +32,8 @@
       "default": "./dist/esm/src/index.js"
     },
     "./package.json": "./package.json",
+    "./iife": "./dist/sdk.iife.js",
+    "./iife-string": "./dist/sdk.iife-string.js",
     "./environment": {
       "development": "./src/config/environment.js",
       "import": "./dist/esm/src/config/environment.js",
@@ -53,8 +55,9 @@
     "lint:fix": "ESLINT_USE_FLAT_CONFIG=true eslint . --fix",
     "build:esm": "esbuild $(find . -type f -name \"*.js\" -not -path \"*/dist/*\" -not -path \"*/node_modules/*\" -not -path \"*/__tests__/*\" -not -path \"*/test/*\" -not -path \"*/demo/*\" -not -path \"*/demos/*\" -not -path \"*/examples/*\" -not -path \"*/fixtures/*\" -not -name \"*.test.js\") --target=es2022 --format=esm --outbase=. --outdir=dist/esm --minify --log-level=warning",
     "build:node": "esbuild $(find src -name '*.js' ! -name '*.test.js') --target=node16 --format=esm --platform=node --outdir=dist/node --define:process.env.NODE_ENV=process.env.NODE_ENV",
+    "build:iife": "node build-iife.mjs && node scripts/build-iife-string.mjs",
     "build:types": "tsc -p tsconfig.json || echo '::warning::tsc exited non-zero — type declarations may be incomplete (publish proceeds; fix as separate work)'",
-    "build": "rimraf dist && npm run build:esm && npm run build:types",
+    "build": "rimraf dist && npm run build:esm && npm run build:iife && npm run build:types",
     "watch": "esbuild $(find . -type f -name \"*.js\" -not -path \"*/dist/*\" -not -path \"*/node_modules/*\" -not -path \"*/__tests__/*\" -not -path \"*/test/*\" -not -path \"*/demo/*\" -not -path \"*/demos/*\" -not -path \"*/examples/*\" -not -path \"*/fixtures/*\" -not -name \"*.test.js\") --target=es2022 --format=esm --outbase=. --outdir=dist/esm --watch=forever --log-level=warning",
     "prepublishOnly": "npm run build",
     "_inf": "infisical run --domain=https://km.api.symbols.app/api --projectId=58275b78-1549-4c3b-bdd5-6bedc6af0430 --env=${NODE_ENV:-upcoming} --",
@@ -72,7 +75,7 @@
     "test:favorite-project": "bun run _inf -- tape integration-tests/index.js integration-tests/favorite-project/*.test.js | tap-spec",
     "test:collab": "bun run _inf -- tape integration-tests/index.js integration-tests/collab/*.test.js | tap-spec",
     "test:user": "bun run _inf -- tape integration-tests/index.js integration-tests/user/*.test.js | tap-spec",
-    "test:unit-all": "tape src/services/tests/**/*.test.js | tap-spec"
+    "test:unit-all": "tape src/services/tests/**/*.test.js src/build/tests/*.test.js | tap-spec"
   },
   "dependencies": {
     "@symbo.ls/channels": "^3.14.675",
