@@ -26,4 +26,15 @@ concurrency:
 jobs:
   test:
     uses: symbo-ls/.github/.github/workflows/test-reusable.yml@main
+    with:
+      # This workflow only ever targets `main` (see `on:` above), so the
+      # channel is always `test` (test.api.symbols.app — isolated, never
+      # prod). Passing it explicitly avoids the reusable workflow's
+      # fallback `github.ref_name == 'main' && 'test' || github.ref_name`:
+      # for a `pull_request` trigger, `ref_name` is `<PR#>/merge` (e.g.
+      # `11/merge`), NOT `main` — so the fallback silently picked
+      # `11/merge` as the Infisical environment slug on every PR, which
+      # doesn't exist (404 SecretPathNotFound) and failed the whole Test
+      # job on every single pull request into main.
+      channel: test
     secrets: inherit

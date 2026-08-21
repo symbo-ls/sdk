@@ -3,7 +3,7 @@ import { faker } from '@faker-js/faker'
 import { getConfig } from '../src/config/environment.js'
 
 // Reusable function to create a new project.
-async function createAndGetProject (
+async function createAndGetProject(
   isSharedLibrary = true,
   sdkInstance = global.globalSdk
 ) {
@@ -29,8 +29,8 @@ async function createAndGetProject (
   }
 }
 
-async function authenticateUser (sdkInstance = global.globalSdk) {
-  let accountEmail = 'allen+testaccount@symbols.app'
+async function authenticateUser(sdkInstance = global.globalSdk) {
+  let accountEmail = process.env.GUEST_USER
   let accountPassword = process.env.GUEST_PASSWORD
   if (process.env.LOCAL_TEST_ENV === 'true') {
     accountEmail = process.env.LOCAL_EMAIL
@@ -44,7 +44,7 @@ async function authenticateUser (sdkInstance = global.globalSdk) {
 }
 
 // Reusable function to create a new user.
-async function createAndGetUser ({
+async function createAndGetUser({
   login = false,
   sdkInstance = global.globalSdk,
   role = 'guest'
@@ -80,7 +80,7 @@ async function createAndGetUser ({
   }
 }
 
-function createRandomPassword (length = 8) {
+function createRandomPassword(length = 8) {
   const generatePassword = () => {
     const uppercase = String.fromCharCode(Math.floor(Math.random() * 26) + 65)
     const lowercase = String.fromCharCode(Math.floor(Math.random() * 26) + 97)
@@ -98,7 +98,7 @@ function createRandomPassword (length = 8) {
   return generatePassword()
 }
 
-async function destroySdk (instanceName) {
+async function destroySdk(instanceName) {
   await instanceName.destroy()
 
   const ready = instanceName.isReady()
@@ -107,7 +107,7 @@ async function destroySdk (instanceName) {
   }
 }
 
-async function getSdkStatus () {
+async function getSdkStatus() {
   // Get detailed status
   const status = await global.globalSdk.getStatus()
   console.log(status)
@@ -117,19 +117,19 @@ async function getSdkStatus () {
 // exposes `channel` (canonical channel name) plus boolean flags
 // (`isDevelopment`, `isTest`, `isStaging`, `isPreview`, `isProduction`) — use
 // those instead of the removed `basedEnv` field.
-function isDevelopment () {
+function isDevelopment() {
   return getConfig().channel === 'development' || getConfig().channel === 'local'
 }
 
-function isTesting () {
+function isTesting() {
   return getConfig().isTest === true
 }
 
-function isStaging () {
+function isStaging() {
   return getConfig().channel === 'staging'
 }
 
-function isProduction () {
+function isProduction() {
   return getConfig().channel === 'production'
 }
 
@@ -142,7 +142,7 @@ function isProduction () {
  * when conditions land early and fail with a meaningful message when
  * they don't.
  */
-async function waitFor (predicate, { timeout = 20000, interval = 500, message } = {}) {
+async function waitFor(predicate, { timeout = 20000, interval = 500, message } = {}) {
   const start = Date.now()
   let lastError
   while (Date.now() - start < timeout) {
