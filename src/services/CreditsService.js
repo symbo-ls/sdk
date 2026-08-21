@@ -74,8 +74,12 @@ export class CreditsService extends BaseService {
    * Upsert a project's spend-control config. Pass only the fields that
    * should change — undefined fields are preserved server-side. Admin /
    * owner only.
+   * The row is workspace-scoped server-side (SpendControls has been keyed on
+   * `workspace` since CU-4), so this writes the same document as
+   * `updateWorkspaceSpendControls` for the project's workspace. A project with
+   * no workspace 409s `workspace_unresolved`.
    * @param {string} projectId
-   * @param {{hardCap?: number, categoryCaps?: object, alerts?: object, autoRecharge?: object}} controls
+   * @param {{hardCap?: number, extraSpendLimit?: number, categoryCaps?: object, memberCaps?: object, alerts?: object, autoRecharge?: object}} controls
    * @returns {Promise<object>}
    */
   async updateProjectSpendControls (projectId, controls = {}) {

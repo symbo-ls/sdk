@@ -686,14 +686,27 @@ export class TokenManager {
   }
 }
 
-// Export singleton instance
-let defaultTokenManager = null
+// The DEFAULT TokenManager is parked on globalThis, not held in a
+// module-scoped `let`.
+//
+// One realm routinely evaluates this module more than once — a bundled sdk
+// copy (smbls' framework registry) plus the host app's own `@symbo.ls/sdk`
+// import is the everyday case in canvas, preview and the workspace shell. A
+// module-scoped singleton gives each copy its OWN TokenManager over ONE
+// localStorage session: both load the same refresh token at construction, the
+// first to rotate spends it, the second then presents a token the server has
+// already retired, and the user is signed out with nothing thrown and nothing
+// logged. `state/rootEventBus.js` parks its singleton the same way, for the
+// same reason.
+//
+// `createTokenManager()` below is unaffected — it stays per-call by design.
+const GLOBAL_TOKEN_MANAGER_KEY = '__SMBLS_TOKEN_MANAGER__'
 
 export const getTokenManager = (options) => {
-  if (!defaultTokenManager) {
-    defaultTokenManager = new TokenManager(options)
+  if (!globalThis[GLOBAL_TOKEN_MANAGER_KEY]) {
+    globalThis[GLOBAL_TOKEN_MANAGER_KEY] = new TokenManager(options)
   }
-  return defaultTokenManager
+  return globalThis[GLOBAL_TOKEN_MANAGER_KEY]
 }
 
 export const createTokenManager = (options) => new TokenManager(options)

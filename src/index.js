@@ -67,6 +67,7 @@ import { SERVICE_METHODS } from './utils/services.js'
 import environment from './config/environment.js'
 import { rootBus } from './state/rootEventBus.js'
 import { logger, setDebug } from './utils/logger.js'
+import { getTokenManager } from './utils/TokenManager.js'
 import {
   createEntityDispatcher,
   registerEntity
@@ -94,6 +95,17 @@ export class SDK {
     this._services = new Map()
     this._context = {}
     this._options = this._validateOptions(options)
+
+    // Real accessor for the shared TokenManager singleton (see
+    // utils/TokenManager.js). Every BaseService gets the same instance via
+    // getTokenManager() in its own init() — this stayed null on the SDK
+    // root because nothing ever assigned it here, so `sdk._tokenManager`
+    // read undefined in every build even though
+    // `sdk.getService('auth')._tokenManager` worked. Assigned for real once
+    // a service has initialized it (end of initialize(), below) so the
+    // root never races ahead with apiUrl-less defaults from an early first
+    // call.
+    this._tokenManager = null
 
     // Seed context with apiUrl from options so services resolve the correct host
     if (this._options.apiUrl) {
@@ -608,6 +620,11 @@ export class SDK {
       )
     ])
 
+    // Every service above just called getTokenManager() in its own init()
+    // (see BaseService.js), creating the shared singleton with the real
+    // apiUrl. Adopt that same instance on the root now that it exists.
+    this._tokenManager = getTokenManager()
+
     return this
   }
 
@@ -690,14 +707,32 @@ export class SDK {
   //      e.g. echo from socket fan-out).
   //   2. Updates SDK `_context.activeOrgId` so every service sees the new
   //      org on next access.
-  //   3. Invalidates TokenManager cached claims (next request re-mints).
-  //   4. Walks per-service `switchOrg(newOrgId, previousOrgId)` hooks.
-  //   5. Aligns the ACTIVE WORKSPACE to the new org's home workspace via
+  //   3. Walks per-service `switchOrg(newOrgId, previousOrgId)` hooks —
+  //      this is where the only real cross-switch credential cache is
+  //      dropped (see the NO CLAIM CACHE note below).
+  //   4. Aligns the ACTIVE WORKSPACE to the new org's home workspace via
   //      `switchWorkspace`, IF `opts.homeWorkspaceId` is supplied AND
   //      `opts.skipWorkspaceHop !== true`. Without it, workspace-scoped
   //      reads (tickets, chat, calendar, …) silently stay scoped to the
   //      previous org's workspace.
-  //   6. Emits `sdk.orgSwitched` on rootBus.
+  //   5. Emits `sdk.orgSwitched` on rootBus.
+  //
+  // NO CLAIM CACHE — do not re-add a `_tokenManager.invalidateClaims()`
+  // step here (SDK-INVALIDATECLAIMS-DEAD-GUARD-1). Both switch paths used
+  // to guard on that method; `TokenManager` never defined it, so the guard
+  // was falsy in every build and the call never ran. There is nothing for
+  // it to clear: `TokenManager` holds only `tokens` + `_personaToken`, and
+  // EVERY claim reader re-decodes the live access token per call —
+  // `TokenManager._decodeJwtExpMs`, `PersonaService._decodeAccessTokenClaims`,
+  // `AuthService._userFromTokenClaims`, `WorkspaceProjectService.
+  // _decodeJwtWorkspaceId`. None memoizes. The one credential cache that
+  // CAN outlive a switch is the workspace-project token provider's, and
+  // `WorkspaceProjectService.switchOrg/switchWorkspace` already drop it
+  // via the step-3 hook walk. The access token's OWN `activeOrganization`
+  // claim can still lag a switch (nothing client-side re-mints it since
+  // the Supabase federation retirement, 2026-07-03) — that is handled by
+  // explicit `orgId`/`workspaceId` scoping on the wire plus server-side
+  // resolution from Mongo, never by clearing a client cache.
   //
   // Opts:
   //   skipPersist      — don't PATCH Mongo (use this in socket-echo paths
@@ -738,15 +773,10 @@ export class SDK {
     // 2. Local context — every service sees the new org on next access.
     this.updateContext({ activeOrgId: newOrgId })
 
-    // 3. Token manager — clear cached claims so next request re-mints.
-    if (this._tokenManager?.invalidateClaims) {
-      try {
-        this._tokenManager.invalidateClaims()
-      } catch {}
-    }
-
-    // 4. Walk per-service switchOrg hooks. Services that don't implement
-    //    the hook are silently skipped (additive surface).
+    // 3. Walk per-service switchOrg hooks. Services that don't implement
+    //    the hook are silently skipped (additive surface). This is also the
+    //    step that drops the workspace-project token-provider cache — see
+    //    the NO CLAIM CACHE note on this method.
     const switchPromises = []
     for (const [name, service] of this._services.entries()) {
       if (typeof service.switchOrg === 'function') {
@@ -764,7 +794,7 @@ export class SDK {
     }
     await Promise.all(switchPromises)
 
-    // 5. Align the active workspace to the org's home workspace so
+    // 4. Align the active workspace to the org's home workspace so
     //    workspace-scoped reads re-scope. Errors here don't abort: Mongo is
     //    already updated and the SDK-side context advanced; the hop is
     //    recoverable and shouldn't roll back the org switch.
@@ -784,7 +814,7 @@ export class SDK {
       }
     }
 
-    // 6. Emit on rootBus so external consumers (fetch plugin's queryClient,
+    // 5. Emit on rootBus so external consumers (fetch plugin's queryClient,
     //    shell state managers, workspace's onWorkspaceChange pipeline)
     //    react and clear their own caches.
     this.rootBus?.emit?.('sdk.orgSwitched', {
@@ -837,12 +867,9 @@ export class SDK {
 
     this.updateContext({ activeWorkspaceId: newWorkspaceId })
 
-    if (this._tokenManager?.invalidateClaims) {
-      try {
-        this._tokenManager.invalidateClaims()
-      } catch {}
-    }
-
+    // No claim cache to invalidate here either — see the NO CLAIM CACHE
+    // note on switchOrg (SDK-INVALIDATECLAIMS-DEAD-GUARD-1). The service
+    // hook walk below is what drops the one cache that can go stale.
     // Walk services; per-service switchWorkspace hooks get notified.
     const switchPromises = []
     for (const [name, service] of this._services.entries()) {
