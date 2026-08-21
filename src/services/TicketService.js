@@ -208,6 +208,54 @@ export class TicketService extends BaseService {
     })
   }
 
+  // ==================== APPROVAL (ORCHESTRATION PATH) ====================
+  //
+  // `state`, `assigneeAgentKey`, `metadata.approval|orchestration|qa` and the
+  // orchestration-controlled labels are PROTECTED on the generic update route
+  // (server TicketUpdateProtection.sanitizeGenericTicketUpdatePayload → 400
+  // `protected_ticket_update`). A human approval decision must therefore go
+  // through the explicit orchestration endpoint, which runs the state machine,
+  // stamps metadata.approval.records[] and triggers routing:
+  //   POST /tickets/:ticketId/approval  { action: 'grant' | 'revoke', note }
+  // Do NOT rebuild an approval as `update(id, { state, metadata })`.
+
+  /**
+   * Grant human approval on a ticket (orchestration path).
+   *
+   * @param {string} ticketId - Ticket ID
+   * @param {object} [opts]
+   * @param {string} [opts.note] - Decision note recorded on the approval record
+   * @param {object} [opts.approval] - Extra approval fields (category, etc.)
+   * @returns {Promise<object>} Updated ticket document
+   */
+  approve (ticketId, { note = '', approval = {} } = {}) {
+    const wid = this._workspaceScope()
+    const qs = wid ? `?workspaceId=${encodeURIComponent(wid)}` : ''
+    return this._call('tickets.approve', `/tickets/${encodeURIComponent(ticketId)}/approval${qs}`, {
+      method: 'POST',
+      body: { action: 'grant', note, approval }
+    })
+  }
+
+  /**
+   * Revoke / refuse human approval on a ticket (orchestration path).
+   * The server returns the ticket to `awaiting_approval` when the state
+   * machine allows it, and appends a `revoke` approval record.
+   *
+   * @param {string} ticketId - Ticket ID
+   * @param {object} [opts]
+   * @param {string} [opts.note] - Decision note recorded on the approval record
+   * @returns {Promise<object>} Updated ticket document
+   */
+  reject (ticketId, { note = '' } = {}) {
+    const wid = this._workspaceScope()
+    const qs = wid ? `?workspaceId=${encodeURIComponent(wid)}` : ''
+    return this._call('tickets.reject', `/tickets/${encodeURIComponent(ticketId)}/approval${qs}`, {
+      method: 'POST',
+      body: { action: 'revoke', note }
+    })
+  }
+
   // ==================== COMMENTS SUB-NAMESPACE ====================
   // Bound as arrow functions so `sdk.tickets.comments.list(id)` works
   // safely after destructure (no `this` binding issues).

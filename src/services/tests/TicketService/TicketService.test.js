@@ -207,6 +207,65 @@ test('tickets.assign POSTs to /tickets/:id/assign with assigneeEmail', async t =
   t.end()
 })
 
+// ─── approval (WS-APPROVE-PATCH-REFUSED-PROTECTED-FIELDS-1) ──────────────────
+// `update(id, { state, metadata })` is REFUSED by the server guard
+// (400 protected_ticket_update). Approve/Reject must use the orchestration
+// endpoint POST /tickets/:id/approval.
+
+test('tickets.approve POSTs action=grant to /tickets/:id/approval', async t => {
+  t.plan(4)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({ id: 'tid-3' })
+  await svc.approve('tid-3', { note: 'Approved.' })
+  const [name, path, opts] = stub.firstCall.args
+  t.equal(name, 'tickets.approve', 'method name tag')
+  t.equal(path, '/tickets/tid-3/approval', 'path')
+  t.equal(opts.method, 'POST', 'POST')
+  t.deepEqual(opts.body, { action: 'grant', note: 'Approved.', approval: {} }, 'grant body')
+  sandbox.restore()
+  t.end()
+})
+
+test('tickets.reject POSTs action=revoke to /tickets/:id/approval', async t => {
+  t.plan(3)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({ id: 'tid-4' })
+  await svc.reject('tid-4', { note: 'Needs changes.' })
+  const [name, path, opts] = stub.firstCall.args
+  t.equal(name, 'tickets.reject', 'method name tag')
+  t.equal(path, '/tickets/tid-4/approval', 'path')
+  t.deepEqual(opts.body, { action: 'revoke', note: 'Needs changes.' }, 'revoke body')
+  sandbox.restore()
+  t.end()
+})
+
+test('tickets.approve/reject carry the active workspace scope and encode the id', async t => {
+  t.plan(2)
+  const svc = makeService()
+  svc._context = { activeWorkspaceId: 'ws-123' }
+  const stub = sandbox.stub(svc, '_call').resolves({})
+  await svc.approve('foo/bar')
+  t.equal(stub.firstCall.args[1], '/tickets/foo%2Fbar/approval?workspaceId=ws-123', 'approve scoped + encoded')
+  stub.resetHistory()
+  await svc.reject('foo/bar')
+  t.equal(stub.firstCall.args[1], '/tickets/foo%2Fbar/approval?workspaceId=ws-123', 'reject scoped + encoded')
+  sandbox.restore()
+  t.end()
+})
+
+test('tickets.approve/reject default their note to an empty string', async t => {
+  t.plan(2)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({})
+  await svc.approve('tid-5')
+  t.deepEqual(stub.firstCall.args[2].body, { action: 'grant', note: '', approval: {} }, 'approve defaults')
+  stub.resetHistory()
+  await svc.reject('tid-5')
+  t.deepEqual(stub.firstCall.args[2].body, { action: 'revoke', note: '' }, 'reject defaults')
+  sandbox.restore()
+  t.end()
+})
+
 // ─── comments ─────────────────────────────────────────────────────────────────
 
 test('tickets.comments.list GETs /tickets/:ticketId/comments', async t => {
