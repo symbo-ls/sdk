@@ -554,6 +554,12 @@ export class BaseService {
       // Demo flow — unauthenticated visitor starts a demo session
       'startDemo',
       'enterDemo',
+      // The RECIPIENT's read of a public share link (PUBLIC-SHARE-LINKS-1,
+      // ShareLinkService). The whole point of a share link is that the
+      // person opening it has no account: attaching the SHARER's bearer
+      // token here would make the viewer look like it works in the one
+      // browser that is already signed in, and 404 for everybody else.
+      'getSharedResource',
       // Public storefront catalog reads (StorefrontService, tickets/server.md
       // "storefront catalog read API") — anonymous shoppers, no bearer token.
       'listStorefrontProducts',

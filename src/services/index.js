@@ -5,6 +5,7 @@ import { DocService } from './DocService.js'
 import { TicketService } from './TicketService.js'
 import { AnalyzedService } from './AnalyzedService.js'
 import { ResourceLinkService } from './ResourceLinkService.js'
+import { ShareLinkService } from './ShareLinkService.js'
 import { CollabService } from './CollabService.js'
 import { ProjectService } from './ProjectService.js'
 import { PlanService } from './PlanService.js'
@@ -200,6 +201,11 @@ export const createAnalyzedService = (config) =>
 export const createResourceLinkService = (config) =>
   createService(ResourceLinkService, config)
 
+// Public, revocable share links for a file or a note (PUBLIC-SHARE-LINKS-1).
+// Half its methods are UNAUTHENTICATED by design — see the service header.
+export const createShareLinkService = (config) =>
+  createService(ShareLinkService, config)
+
 export const createAllocationRuleService = (config) =>
   createService(AllocationRuleService, config)
 
@@ -354,6 +360,7 @@ export {
   TicketService,
   AnalyzedService,
   ResourceLinkService,
+  ShareLinkService,
   AllocationRuleService,
   SharedAssetService,
   CreditsService,

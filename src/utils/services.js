@@ -670,6 +670,17 @@ export const SERVICE_METHODS = {
   startProjectCustomDomainSetup: 'dns',
   pollProjectCustomDomainStatus: 'dns',
 
+  // Public share links for a file or a note (PUBLIC-SHARE-LINKS-1,
+  // ShareLinkService). The first three are the authenticated OWNER plane;
+  // `getSharedResource` is the RECIPIENT's read and is deliberately in
+  // BaseService._requiresInit's no-auth set — a recipient has no account.
+  createShareLink: 'shareLinks',
+  listShareLinks: 'shareLinks',
+  revokeShareLink: 'shareLinks',
+  getSharedResource: 'shareLinks',
+  getSharedResourceContentUrl: 'shareLinks',
+  shareUrl: 'shareLinks',
+
   // Public, unauthenticated storefront catalog reads (StorefrontService,
   // tickets/server.md "storefront catalog read API", NAT-V1-25..30). No
   // workspace-membership identity — see BaseService._requiresInit for the

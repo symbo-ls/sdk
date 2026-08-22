@@ -26,6 +26,7 @@ import {
   createAiService,
   createDocService,
   createResourceLinkService,
+  createShareLinkService,
   createTicketService,
   createAnalyzedService,
   createProposedActionService,
@@ -543,6 +544,13 @@ export class SDK {
         })
       ),
       this._initService(
+        'shareLinks',
+        createShareLinkService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      this._initService(
         'allocationRule',
         createAllocationRuleService({
           context: this._context,
@@ -1025,6 +1033,7 @@ export {
   createWorkspaceProjectService,
   createDocService,
   createResourceLinkService,
+  createShareLinkService,
   createTicketService,
   createAnalyzedService,
   createProposedActionService,
