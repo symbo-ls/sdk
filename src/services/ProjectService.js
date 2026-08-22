@@ -614,20 +614,26 @@ export class ProjectService extends BaseService {
   }
 
   // `options.targetOwnerOrganization` / `options.fork` — APP-FORK-COPY-BACKEND-1.
-  // `fork: true` applies the hard-fork disposition server-side (empty
-  // secrets/integrations, `forkedFrom` provenance, `sourceAccess` gating,
-  // manifest lint) instead of the plain duplicate behaviour, which stays the
-  // default whenever `options` is omitted — existing callers are unaffected.
+  // `fork: true` applies the hard-fork disposition server-side (`forkedFrom`
+  // provenance, `sourceAccess` gating, manifest lint) instead of the plain
+  // duplicate behaviour, which stays the default whenever `options` is
+  // omitted — existing callers are unaffected.
+  // `options.regenerateSecrets` — APP-FORK-SECRETS-REGENERATE-AND-PROMPT-1.
+  // A fork of a SYSTEM listing regenerates secrets server-side BY DEFAULT
+  // (zero setup); pass `false` to opt out. On a non-system source the
+  // server refuses `true` (422) and instead blanks secrets and reports the
+  // needed key names in `data.fork.secretKeysNeeded` (plus a notification
+  // to the new owner).
   async duplicateProject (projectId, newName, newKey, targetUserId, options = {}) {
     this._requireReady('duplicateProject')
     if (!projectId) {
       throw new Error('Project ID is required')
     }
-    const { targetOwnerOrganization, fork } = options || {}
+    const { targetOwnerOrganization, fork, regenerateSecrets } = options || {}
     try {
       const response = await this._request(`/projects/${projectId}/duplicate`, {
         method: 'POST',
-        body: JSON.stringify({ name: newName, key: newKey, targetUserId, targetOwnerOrganization, fork }),
+        body: JSON.stringify({ name: newName, key: newKey, targetUserId, targetOwnerOrganization, fork, regenerateSecrets }),
         methodName: 'duplicateProject'
       })
       if (response.success) {
