@@ -613,15 +613,21 @@ export class ProjectService extends BaseService {
     }
   }
 
-  async duplicateProject (projectId, newName, newKey, targetUserId) {
+  // `options.targetOwnerOrganization` / `options.fork` — APP-FORK-COPY-BACKEND-1.
+  // `fork: true` applies the hard-fork disposition server-side (empty
+  // secrets/integrations, `forkedFrom` provenance, `sourceAccess` gating,
+  // manifest lint) instead of the plain duplicate behaviour, which stays the
+  // default whenever `options` is omitted — existing callers are unaffected.
+  async duplicateProject (projectId, newName, newKey, targetUserId, options = {}) {
     this._requireReady('duplicateProject')
     if (!projectId) {
       throw new Error('Project ID is required')
     }
+    const { targetOwnerOrganization, fork } = options || {}
     try {
       const response = await this._request(`/projects/${projectId}/duplicate`, {
         method: 'POST',
-        body: JSON.stringify({ name: newName, key: newKey, targetUserId }),
+        body: JSON.stringify({ name: newName, key: newKey, targetUserId, targetOwnerOrganization, fork }),
         methodName: 'duplicateProject'
       })
       if (response.success) {
