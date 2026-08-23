@@ -170,3 +170,44 @@ test('ShareLinkService is a BaseService', (t) => {
   t.ok(new ShareLinkService() instanceof BaseService, 'extends BaseService')
   t.end()
 })
+
+// CORE-DOCS-GETONE-STRICTER-THAN-LIST-1 — the OWNER plane must carry the tab's
+// tenant, exactly like `DocService._scopeQuery()`. The server resolves the
+// share target through the docs read predicate; without an explicit scope it
+// falls back to the caller's global `activeOrganization` claim, so a tab on
+// org A could not mint a link for a note that same tab had just listed.
+test('owner-plane calls carry the tab tenant scope (workspaceId + orgId)', async (t) => {
+  t.plan(4)
+  const svc = makeService()
+  svc._context = { activeOrgId: 'org-A', activeWorkspaceId: 'ws-1' }
+  const stub = sandbox.stub(svc, '_call').resolves({})
+
+  await svc.createShareLink({ targetType: 'note', targetId: 'n1' })
+  t.equal(
+    stub.getCall(0).args[1],
+    '/share-links?workspaceId=ws-1&orgId=org-A',
+    'createShareLink carries the scope'
+  )
+
+  await svc.listShareLinks({ targetType: 'file', targetId: 'f/1' })
+  t.equal(
+    stub.getCall(1).args[1],
+    '/share-links?targetType=file&targetId=f%2F1&workspaceId=ws-1&orgId=org-A',
+    'listShareLinks keeps its filters AND carries the scope'
+  )
+
+  await svc.revokeShareLink('sl-1')
+  t.equal(
+    stub.getCall(2).args[1],
+    '/share-links/sl-1/revoke?workspaceId=ws-1&orgId=org-A',
+    'revokeShareLink carries the scope'
+  )
+
+  // The PUBLIC plane is unauthenticated — the token is the authority, and a
+  // tenant hint there would be noise at best and an oracle at worst.
+  await svc.getSharedResource('tok-1')
+  t.equal(stub.getCall(3).args[1], '/share/tok-1', 'public read carries NO tenant scope')
+
+  sandbox.restore()
+  t.end()
+})

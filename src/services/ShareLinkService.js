@@ -32,6 +32,30 @@ import { BaseService } from './BaseService.js'
 export const SHARE_DEFAULT_EXPIRY_DAYS = 30
 
 export class ShareLinkService extends BaseService {
+  // ==================== TENANT SCOPE ====================
+  //
+  // The OWNER plane resolves the target through the SAME server-side tenant
+  // predicate the docs routes use (`resolveRequestOrgId` ->
+  // `DocService.getOne`), so it must carry the tab's tenant the same way
+  // `DocService._scopeQuery()` does. Without it the server can only fall back
+  // to the caller's global `activeOrganization` claim - a per-USER ambient
+  // pointer shared across tabs and devices - so a tab on org A failed to mint
+  // a link for a note that the very same tab had just listed, whenever the
+  // global pointer happened to say org B. Query-string, not body, so the
+  // GET/POST calls all thread identically
+  // (CORE-DOCS-GETONE-STRICTER-THAN-LIST-1).
+  //
+  // The PUBLIC plane (`/share/:token`) is unauthenticated and carries no
+  // tenant at all - the token IS the authority there.
+  _scopeQuery (extra) {
+    const { orgId, workspaceId } = this._resolveScope()
+    const params = new URLSearchParams(extra || {})
+    if (workspaceId) params.set('workspaceId', String(workspaceId))
+    if (orgId) params.set('orgId', String(orgId))
+    const q = params.toString()
+    return q ? `?${q}` : ''
+  }
+
   /**
    * Mint a share link. Returns the row PLUS `token` and `path` — the only
    * time the raw token is ever available.
@@ -51,7 +75,10 @@ export class ShareLinkService extends BaseService {
     // after JSON serialization and would silently turn the safe 30-day
     // default into a link that never expires.
     if (expiresInDays !== undefined) body.expiresInDays = expiresInDays
-    return this._call('createShareLink', '/share-links', { method: 'POST', body })
+    return this._call('createShareLink', `/share-links${this._scopeQuery()}`, {
+      method: 'POST',
+      body
+    })
   }
 
   /**
@@ -63,8 +90,7 @@ export class ShareLinkService extends BaseService {
   listShareLinks ({ targetType, targetId } = {}) {
     if (!targetType) throw new Error('targetType is required')
     if (!targetId) throw new Error('targetId is required')
-    const qs = new URLSearchParams({ targetType, targetId }).toString()
-    return this._call('listShareLinks', `/share-links?${qs}`)
+    return this._call('listShareLinks', `/share-links${this._scopeQuery({ targetType, targetId })}`)
   }
 
   /**
@@ -74,7 +100,7 @@ export class ShareLinkService extends BaseService {
    */
   revokeShareLink (id) {
     if (!id) throw new Error('id is required')
-    return this._call('revokeShareLink', `/share-links/${encodeURIComponent(id)}/revoke`, {
+    return this._call('revokeShareLink', `/share-links/${encodeURIComponent(id)}/revoke${this._scopeQuery()}`, {
       method: 'POST'
     })
   }
