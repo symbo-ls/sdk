@@ -208,6 +208,65 @@ export class TicketService extends BaseService {
     })
   }
 
+  // ==================== CLAIM / RELEASE (COMPARE-AND-SET) ================
+  //
+  // `assigneeAgentKey` is PROTECTED on the generic update route, so these two
+  // endpoints are the only door to it. They are the agent fleet's
+  // writer-election primitive: ONE atomic compare-and-set per call, so when
+  // two boxes race for the same ticket exactly one wins and the loser gets
+  // 409 naming the holder. A read-then-write claim through `update()` lets
+  // BOTH callers win — never rebuild a claim that way.
+
+  /**
+   * Claim a ticket for an agent (atomic compare-and-set).
+   *
+   * Succeeds when the ticket is unheld, or already held by this same
+   * `agentKey` (idempotent, so a retry after a dropped response is safe).
+   * Rejects with 409 when another worker holds it (`reason: 'held'`) or when
+   * `expectedUpdatedAt` no longer matches (`reason: 'stale'`).
+   *
+   * @param {string} ticketId - Ticket ID
+   * @param {string} agentKey - The worker/lane key taking the ticket
+   * @param {object} [opts]
+   * @param {string|number} [opts.expectedUpdatedAt] - Lost-update precondition:
+   *   the `updatedAt` the caller last read. ISO-8601 or epoch ms.
+   * @param {string} [opts.columnKey] - Move the card in the SAME atomic write
+   *   (the fleet uses `todo` — claimed means ASSIGNED, not started).
+   * @returns {Promise<object>} Updated ticket document
+   */
+  claim (ticketId, agentKey, { expectedUpdatedAt = null, columnKey = null } = {}) {
+    const wid = this._workspaceScope()
+    const qs = wid ? `?workspaceId=${encodeURIComponent(wid)}` : ''
+    return this._call('tickets.claim', `/tickets/${encodeURIComponent(ticketId)}/claim${qs}`, {
+      method: 'POST',
+      body: { agentKey, expectedUpdatedAt, columnKey, ...(wid ? { workspaceId: wid } : {}) }
+    })
+  }
+
+  /**
+   * Release a claim this agent holds (atomic compare-and-set).
+   *
+   * Rejects with 409 when another worker holds the ticket, unless
+   * `force: true` says the break is deliberate (an operator reaping a dead
+   * lane). Releasing an already-unheld ticket succeeds.
+   *
+   * @param {string} ticketId - Ticket ID
+   * @param {string} agentKey - The worker/lane key dropping the claim
+   * @param {object} [opts]
+   * @param {string|number} [opts.expectedUpdatedAt] - Lost-update precondition
+   * @param {boolean} [opts.force] - Break another worker's claim on purpose
+   * @param {string} [opts.columnKey] - Move the card in the same write
+   * @returns {Promise<object>} Updated ticket document
+   */
+  release (ticketId, agentKey, { expectedUpdatedAt = null, force = false, columnKey = null } = {}) {
+    const wid = this._workspaceScope()
+    const qs = wid ? `?workspaceId=${encodeURIComponent(wid)}` : ''
+    return this._call('tickets.release', `/tickets/${encodeURIComponent(ticketId)}/release${qs}`, {
+      method: 'POST',
+      body: { agentKey, expectedUpdatedAt, force, columnKey, ...(wid ? { workspaceId: wid } : {}) }
+    })
+  }
+
   // ==================== APPROVAL (ORCHESTRATION PATH) ====================
   //
   // `state`, `assigneeAgentKey`, `metadata.approval|orchestration|qa` and the
