@@ -503,6 +503,23 @@ export class WorkspaceProjectService extends BaseService {
           method: 'DELETE'
         }
       ),
+    // CORE-CALENDAR-SERIES-BULK-SOFT-DELETE-1 — future-scope series
+    // soft-delete: one id-free filtered pass over the persisted Google
+    // series (instances outside the loaded window included). The server
+    // gates per row (cal_write_self / cal_write_admin) and answers
+    // { modified, skipped }.
+    deleteFutureEvents: (seriesId, fromDate, workspaceId) => {
+      const wsId = this._chatWorkspaceId(workspaceId)
+      const qs = wsId ? `?workspaceId=${encodeURIComponent(wsId)}` : ''
+      return this._ws(
+        'calendar.deleteFutureEvents',
+        `/calendar/events/delete-future${qs}`,
+        {
+          method: 'POST',
+          body: { seriesId, fromDate }
+        }
+      )
+    },
     // upsertEvent removed 2026-07 — it was the last PostgREST-upsert path on
     // this namespace (dropped with the workspace-project Supabase org
     // retirement). Google-sync re-pull dedupe is handled server-side by the

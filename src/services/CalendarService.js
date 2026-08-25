@@ -146,6 +146,37 @@ export class CalendarService extends BaseService {
   }
 
   /**
+   * Future-scope soft-delete of a Google recurring series
+   * (CORE-CALENDAR-SERIES-BULK-SOFT-DELETE-1): one id-free filtered pass on
+   * the server over every persisted instance of the series from `fromDate`
+   * onward — including rows outside any loaded calendar window. The store
+   * gates per row (cal_write_self / cal_write_admin); rows the caller cannot
+   * write are skipped and counted, never an error.
+   *
+   * @param {object} args
+   * @param {string} args.seriesId - the series' base google_event_id (no instance suffix)
+   * @param {string} args.fromDate - YYYY-MM-DD floor, inclusive
+   * @param {string} args.organization
+   * @param {string} [args.workspaceId]
+   * @returns {Promise<object>} { modified, skipped }
+   */
+  calendarDeleteFutureEvents({ seriesId, fromDate, organization, workspaceId } = {}) {
+    if (!seriesId) throw new Error('seriesId is required')
+    if (!fromDate) throw new Error('fromDate is required')
+    if (!organization)
+      throw new Error('organization is required (member write gate)')
+    return this._call('calendarDeleteFutureEvents', '/calendar/events/delete-future', {
+      method: 'POST',
+      body: {
+        seriesId,
+        fromDate,
+        organization,
+        ...(workspaceId ? { workspaceId } : {})
+      }
+    })
+  }
+
+  /**
    * Trigger an external (Google) sync pass for the workspace.
    *
    * Replaces the `calendar-sync` Supabase edge function, which was deleted with

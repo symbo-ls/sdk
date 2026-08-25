@@ -624,6 +624,7 @@ export const SERVICE_METHODS = {
   calendarCreateEvent: 'calendar',
   calendarUpdateEvent: 'calendar',
   calendarDeleteEvent: 'calendar',
+  calendarDeleteFutureEvents: 'calendar',
   calendarSync: 'calendar',
   calendarSyncStatus: 'calendar',
 

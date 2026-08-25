@@ -1227,7 +1227,11 @@ const ENTITY_ROUTES = {
       get: 'calendar.getEvent',
       create: 'calendar.createEvent',
       update: 'calendar.updateEvent',
-      remove: 'calendar.deleteEvent'
+      remove: 'calendar.deleteEvent',
+      // CORE-CALENDAR-SERIES-BULK-SOFT-DELETE-1 — future-scope series
+      // soft-delete. Filters CANNOT ride the update op (argMaps.idPayload
+      // drops every non-id param by design), so the bulk pass is its own op.
+      deleteFuture: 'calendar.deleteFutureEvents'
       // upsert op removed 2026-07 — calendar.upsertEvent was the last
       // PostgREST-upsert path on the calendar namespace (dropped with the
       // workspace-project Supabase org retirement).
@@ -1237,7 +1241,8 @@ const ENTITY_ROUTES = {
       get: argMaps.id,
       create: argMaps.payload,
       update: argMaps.idPayload,
-      remove: argMaps.id
+      remove: argMaps.id,
+      deleteFuture: (a) => [a?.seriesId, a?.fromDate, a?.workspaceId]
     }
   },
   // workspaceProject.documents{,.kb,.notes,.userDocuments,.resourceLinks}
