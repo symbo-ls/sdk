@@ -1164,6 +1164,26 @@ export class AuthService extends BaseService {
     }
   }
 
+  // Same GET /auth/user lookup as getUserByEmail, keyed by username —
+  // WS-SDK-AUTH-USER-LOOKUP-METHOD-1: workspace's userProfileData used to
+  // raw-fetch this endpoint because no wrapper existed. Server side is
+  // AuthController.getUserBy: another user's profile comes back as the
+  // LIMITED public shape { id, name, username, avatar } (no email) unless
+  // the caller is the user themselves or a platform superuser — callers
+  // must not assume `email` is present. Routed through _call (the
+  // envelope-aware helper new wrappers use) instead of the hand-rolled
+  // _request unwrap the older sibling carries.
+  async getUserByUsername(username) {
+    if (!username) {
+      throw new Error('Username is required')
+    }
+    const data = await this._call(
+      'getUserByUsername',
+      `/auth/user?username=${encodeURIComponent(username)}`
+    )
+    return data?.user || data
+  }
+
   // ==================== PROJECT ROLE METHODS ====================
 
   /**
