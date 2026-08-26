@@ -1,6 +1,6 @@
 {
   "name": "@symbo.ls/sdk-financials",
-  "version": "3.14.599",
+  "version": "3.14.600",
   "type": "module",
   "description": "Financials extension for @symbo.ls/sdk — equity grants, compensation, investor profiles, valuations. Opt-in per tenant via Organization.enabledExtensions[]. Mongo-backed on the main API at /core/financials/*.",
   "main": "./dist/cjs/src/index.cjs",
