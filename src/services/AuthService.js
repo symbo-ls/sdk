@@ -1184,6 +1184,19 @@ export class AuthService extends BaseService {
     return data?.user || data
   }
 
+  // Username self-service availability probe (INVITE-ONBOARDING-USERNAME-
+  // NOT-ORG-1) — pairs with `updateMe({ username })`. Server normalizes
+  // the candidate the same way the setter does; `available` is advisory
+  // (the setter still enforces uniqueness at write time).
+  // @returns {Promise<{available: boolean, suggestion?: string}>}
+  async checkUsernameAvailable({ username } = {}) {
+    if (!username) throw new Error('username is required')
+    return this._call(
+      'checkUsernameAvailable',
+      `/auth/username-available?u=${encodeURIComponent(username)}`
+    )
+  }
+
   // ==================== PROJECT ROLE METHODS ====================
 
   /**

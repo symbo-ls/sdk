@@ -728,4 +728,24 @@ export class WorkspaceService extends BaseService {
       { method: 'POST', body: { token } }
     )
   }
+
+  /**
+   * PUBLIC invitation preview by token (INVITE-JOIN-PAGE-PERSONALIZED-1)
+   * — display data only, for the personalized join/signup pages, covering
+   * ALL membership kinds (workspace / organization / team; the token
+   * carries its own kind). Unauthenticated on the server by design; POST
+   * so the token stays out of URLs and access logs.
+   * @param {{token: string}} args
+   * @returns {Promise<{kind: string, status: string, inviteeEmail: string,
+   *   role: string, workspaceName?: string, orgName?: string,
+   *   inviterName?: string}>}
+   */
+  async getInvitationPreview ({ token } = {}) {
+    if (!token) throw new Error('token is required')
+    return this._call(
+      'getInvitationPreview',
+      '/invitations/preview',
+      { method: 'POST', body: { token } }
+    )
+  }
 }
