@@ -708,6 +708,74 @@ export class OrganizationService extends BaseService {
     throw new Error(response.message)
   }
 
+  // ==================== WHITE-LABEL CUSTOM DOMAINS ====================
+  //
+  // `Organization.customDomains` — the record that serves the Symbols APP
+  // SHELL on a customer's own hostname (app.<customer>.tld). This is NOT the
+  // per-project published-site domain (`DnsService.addProjectCustomDomains`,
+  // `/core/projects/:id/custom-domains`); the two are different products on
+  // different tiers and have been confused before. White-label domains are
+  // gated by the `whitelabel_domain` capability, enforced on the server both
+  // at the route (`requireCapability`) and inside `CustomDomainService`.
+  //
+  // The LIST is deliberately ungated: an org that later drops off the tier
+  // must still see its own rows, or a downgrade looks like data loss.
+
+  /**
+   * List the org's white-label domain rows. Open to org managers on any tier.
+   * @param {string} orgId
+   * @returns {Promise<{customDomains: Array}>}
+   */
+  async listOrgCustomDomains (orgId) {
+    if (!orgId) throw new Error('orgId is required')
+    return this._call(
+      'listOrgCustomDomains',
+      `/organizations/${orgId}/custom-domains`,
+      { method: 'GET' }
+    )
+  }
+
+  /**
+   * Attach a white-label domain to one of the org's workspaces.
+   *
+   * TIER-GATED. On a tier without `whitelabel_domain` the server answers 402
+   * and this throws — read the refusal with `readTierLock(err)` (exported
+   * from the SDK root) to render an upsell. NEVER branch on a tier name in
+   * client code: `readTierLock` returns the required tier the SERVER named.
+   *
+   * @param {string} orgId
+   * @param {{domain: string, workspaceId: string}} params
+   * @returns {Promise<{customDomains: Array}>}
+   */
+  async attachOrgCustomDomain (orgId, { domain, workspaceId } = {}) {
+    if (!orgId) throw new Error('orgId is required')
+    if (!domain) throw new Error('domain is required')
+    if (!workspaceId) throw new Error('workspaceId is required')
+    return this._call(
+      'attachOrgCustomDomain',
+      `/organizations/${orgId}/custom-domains`,
+      { method: 'POST', body: { domain, workspaceId } }
+    )
+  }
+
+  /**
+   * Mark an attached domain verified — platform-superuser only, because it
+   * asserts an EXTERNAL fact (the CNAME + edge TLS are live). Also tier-gated:
+   * verification is what makes a row resolve scope.
+   * @param {string} orgId
+   * @param {string} domain
+   * @param {{tls?: object}} [options]
+   */
+  async verifyOrgCustomDomain (orgId, domain, { tls } = {}) {
+    if (!orgId) throw new Error('orgId is required')
+    if (!domain) throw new Error('domain is required')
+    return this._call(
+      'verifyOrgCustomDomain',
+      `/organizations/${orgId}/custom-domains/${encodeURIComponent(domain)}/verify`,
+      { method: 'POST', body: { tls: tls ?? null } }
+    )
+  }
+
   // ==================== ADMIN ====================
 
   // ==================== CUSTOM ROLES (Phase C/D) ====================

@@ -1117,3 +1117,9 @@ export {
   PROJECT_ROLE_PERMISSIONS,
   TIER_FEATURES
 } from './utils/permission.js'
+
+// Tier-lock refusals (HTTP 402). Exported from the MAIN entry because every
+// upsell in every consumer needs it: it turns a rejected tier-gated call into
+// the fields the SERVER named (`tier`, `requiredTier`, `requiredTierName`),
+// so no client ever hardcodes a tier name to decide what to offer.
+export { readTierLock, isTierLocked } from './utils/tierLock.js'

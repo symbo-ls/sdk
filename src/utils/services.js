@@ -457,6 +457,12 @@ export const SERVICE_METHODS = {
   updateSso: 'organization',
   getScim: 'organization',
   updateScim: 'organization',
+  // White-label domains (`Organization.customDomains`) — NOT the per-project
+  // published-site domain, which lives on DnsService. Attach + verify are
+  // tier-gated (`whitelabel_domain`); read the 402 with `readTierLock`.
+  listOrgCustomDomains: 'organization',
+  attachOrgCustomDomain: 'organization',
+  verifyOrgCustomDomain: 'organization',
 
   // Single-round-trip boot composite — GET /core/boot. Collapses the
   // workspace shell's boot-sequence waterfall (getMe -> getOrganization +
