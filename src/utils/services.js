@@ -44,6 +44,7 @@ export const SERVICE_METHODS = {
   confirmPasswordChange: 'auth',
   getMe: 'auth',
   updateMe: 'auth',
+  checkUsernameAvailable: 'auth',
   getPermissions: 'auth',
   getSession: 'auth',
   onAuthStateChange: 'auth',
@@ -565,6 +566,7 @@ export const SERVICE_METHODS = {
   createWorkspaceInvitation: 'workspace',
   revokeWorkspaceInvitation: 'workspace',
   acceptWorkspaceInvitation: 'workspace',
+  getInvitationPreview: 'workspace',
 
   setProjectSourceAccess: 'project',
 
