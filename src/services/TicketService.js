@@ -30,11 +30,28 @@ export class TicketService extends BaseService {
   }
 
   /**
-   * List tickets matching filter and options.
+   * List ONE PAGE of tickets matching filter and options.
    *
-   * @param {object} filter - Filter criteria (ownerOrganization, project, state, assignee, etc.)
-   * @param {object} options - Pagination/sort options (limit, offset, order, etc.)
-   * @returns {Promise<Array>} Array of ticket documents
+   * PAGING IS CAPPED SERVER-SIDE. The route applies a default limit of 100 and
+   * a hard cap of 500, so `list()` is never a whole-board read for a board
+   * over 500 rows — use `listAll()` when you need every row
+   * (PLATFORM-TICKETS-LIST-15S-LOSES-THE-CLIENT-RACE-1: the workspace UI asks
+   * for `limit: 2000`, `3000` and `10000` and silently receives 500).
+   *
+   * The response says what it is: `{ data, count, complete, limit, skip,
+   * hasMore, nextSkip, ignoredOptions? }`. `complete` is true only when this
+   * one body holds every matching row; `limit`/`skip` are what the server
+   * APPLIED, so a clamp or a default is visible without knowing either
+   * constant. `ignoredOptions` names any option key the route did not honour.
+   *
+   * ONLY `limit`, `skip`, `sortBy`, `sortDir` and `includeCount` are read.
+   * `offset`, `order` and `sort` are NOT option names on this route — they
+   * come back in `ignoredOptions` and change nothing. Paging passed at the
+   * top level of the body instead of inside `options` is a 400.
+   *
+   * @param {object} filter - Filter criteria (workspaceId, project, state, assignee, etc.)
+   * @param {object} options - Paging/sort: limit, skip, sortBy, sortDir, includeCount
+   * @returns {Promise<object>} { data, count, complete, limit, skip, hasMore, nextSkip }
    */
   list (filter = {}, options = {}) {
     const wid = (filter.workspaceId || filter.workspace || filter.workspace_id)
@@ -45,6 +62,68 @@ export class TicketService extends BaseService {
       method: 'POST',
       body: { filter: scoped, options }
     })
+  }
+
+  /**
+   * Every ticket matching the filter, read to exhaustion — and honest when it
+   * could not finish.
+   *
+   * WHY THIS EXISTS. `list()` returns one capped page, and a caller that
+   * treats that page as the whole board is silently wrong. Worse, the natural
+   * hand-rolled pager — "stop when a page comes back shorter than the limit I
+   * asked for" — is defeated by any request whose limit the server did not
+   * honour: the first page is short, so the pager stops at page 1 and calls
+   * the read COMPLETE. A board read degraded exactly that way was used to
+   * decide a ticket close. So this pages on the SERVER's `nextSkip`, and when
+   * it runs out of pages it returns `complete: false` with a reason instead of
+   * a short array that reads like the end of the list.
+   *
+   * @param {object} filter - Same filter criteria as list()
+   * @param {object} options - Same options as list(); `skip` is managed here
+   * @param {object} [paging] - { pageSize = 500, maxPages = 100 }
+   * @returns {Promise<object>} { items, count, complete, pages, incomplete? }
+   */
+  async listAll (filter = {}, options = {}, { pageSize = 500, maxPages = 100 } = {}) {
+    const limit = Math.max(1, Math.min(Number(pageSize) || 500, 500))
+    const items = []
+    let count = null
+    let pages = 0
+    let skip = Number(options.skip) || 0
+
+    for (; pages < maxPages; pages++) {
+      const page = await this.list(filter, { ...options, limit, skip })
+      const batch = Array.isArray(page) ? page : (page && page.data) || []
+      const total = Number(page && page.count)
+      if (Number.isFinite(total)) count = total
+      items.push(...batch)
+
+      // The server's own verdict first — it knows what it applied. Fall back
+      // to a short page only when the envelope is absent (an older
+      // deployment), never as a way to overrule it.
+      if (page && typeof page.hasMore === 'boolean') {
+        if (!page.hasMore) return { items, count, complete: true, pages: pages + 1 }
+        skip = Number.isFinite(Number(page.nextSkip)) && page.nextSkip !== null
+          ? Number(page.nextSkip)
+          : skip + batch.length
+      } else {
+        if (batch.length < limit) return { items, count, complete: true, pages: pages + 1 }
+        if (count !== null && items.length >= count) {
+          return { items, count, complete: true, pages: pages + 1 }
+        }
+        skip += batch.length
+      }
+      // A page that returns nothing while claiming more would loop forever.
+      if (!batch.length) break
+    }
+
+    return {
+      items,
+      count,
+      complete: false,
+      pages,
+      incomplete: `read ${items.length} ticket(s) in ${pages} page(s) without reaching the end`
+        + `${count === null ? ' and the server reported no count' : ` of ${count}`}`
+    }
   }
 
   /**
