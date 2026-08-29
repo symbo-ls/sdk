@@ -28,6 +28,7 @@ import {
   createResourceLinkService,
   createShareLinkService,
   createTicketService,
+  createFleetService,
   createAnalyzedService,
   createProposedActionService,
   createWorkflowService,
@@ -338,6 +339,15 @@ export class SDK {
       this._initService(
         'tickets',
         createTicketService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      // /core/fleet/* — the fleet's first-class collections (runs/metrics/events
+      // + per-node config), workspace-scoped. See FleetService.js.
+      this._initService(
+        'fleet',
+        createFleetService({
           context: this._context,
           options: this._options
         })
@@ -1035,6 +1045,7 @@ export {
   createResourceLinkService,
   createShareLinkService,
   createTicketService,
+  createFleetService,
   createAnalyzedService,
   createProposedActionService,
   createWorkflowService,

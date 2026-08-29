@@ -3,6 +3,9 @@ import { AiChatService } from './AiChatService.js'
 import { AiService } from './AiService.js'
 import { DocService } from './DocService.js'
 import { TicketService } from './TicketService.js'
+// /core/fleet/* — the fleet's first-class collections (runs/metrics/events +
+// per-node config), workspace-scoped (CORE-FLEET-COLLECTIONS-API-1). See FleetService.js.
+import { FleetService } from './FleetService.js'
 import { AnalyzedService } from './AnalyzedService.js'
 import { ResourceLinkService } from './ResourceLinkService.js'
 import { ShareLinkService } from './ShareLinkService.js'
@@ -195,6 +198,9 @@ export const createDocService = (config) => createService(DocService, config)
 export const createTicketService = (config) =>
   createService(TicketService, config)
 
+export const createFleetService = (config) =>
+  createService(FleetService, config)
+
 export const createAnalyzedService = (config) =>
   createService(AnalyzedService, config)
 
@@ -358,6 +364,7 @@ export {
   AiService,
   DocService,
   TicketService,
+  FleetService,
   AnalyzedService,
   ResourceLinkService,
   ShareLinkService,
