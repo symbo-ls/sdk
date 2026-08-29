@@ -5,8 +5,13 @@
 # `workflow_run` trigger is the gate: if Test fails, this never runs,
 # the manager is never invoked, and the broken commit cannot publish.
 #
-# Required secret on this repo: RELEASE_MANAGER_DISPATCH_TOKEN — a GitHub
-# Classic PAT with `repo` scope on symbo-ls/release-manager (SSO authorized).
+# Required secret on this repo: RELEASE_PAT — the org-wide canonical name for
+# the single GitHub PAT. Classic PAT with `repo` scope on
+# symbo-ls/release-manager (SSO authorized). release-manager stores the same
+# PAT under the same name.
+#
+# secret-ref-lint: ignore — RELEASE_MANAGER_DISPATCH_TOKEN and RELEASE_MANAGER_PAT never existed on any repo; both were printed here as recovery guidance until 2026-08-20.
+# release-manager's scripts/check-secret-refs.mjs now fails on the next such name.
 
 name: Notify release-manager
 
@@ -51,10 +56,10 @@ jobs:
         if: failure()
         run: |
           echo "::error::Dispatch to symbo-ls/release-manager FAILED — auto-publish did NOT fire for ${GITHUB_SHA}."
-          echo "::error::'Bad credentials' (HTTP 401) means RELEASE_MANAGER_DISPATCH_TOKEN is revoked/expired. It is NOT a permissions or SSO problem — those return 403/404."
+          echo "::error::'Bad credentials' (HTTP 401) means RELEASE_PAT is revoked/expired. It is NOT a permissions or SSO problem — those return 403/404."
           echo "::error::This secret is REPO-level on EVERY consumer, so fixing one repo is not enough — set the new PAT on all five: smbls, server, company, workspace, sdk."
           echo "::error::  this repo: https://github.com/${{ github.repository }}/settings/secrets/actions"
-          echo "::error::release-manager's own RELEASE_MANAGER_PAT is normally the SAME PAT and dies with it. Rotate it at the REPO level too — a repo-level secret SHADOWS the org-level one, so updating only the org copy changes nothing:"
+          echo "::error::release-manager stores the SAME PAT under the SAME name, RELEASE_PAT, and it dies with this one. Rotate it at the REPO level too — a repo-level secret SHADOWS the org-level one, so updating only the org copy changes nothing:"
           echo "::error::  https://github.com/symbo-ls/release-manager/settings/secrets/actions"
           echo "::error::PAT requirements: classic, 'repo' scope, SSO-authorized for symbo-ls."
           echo "::error::Fallback that needs no dispatch token (one run publishes all pending submodule work):"
