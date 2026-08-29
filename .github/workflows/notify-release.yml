@@ -10,8 +10,10 @@
 # symbo-ls/release-manager (SSO authorized). release-manager stores the same
 # PAT under the same name.
 #
-# secret-ref-lint: ignore — RELEASE_MANAGER_DISPATCH_TOKEN and RELEASE_MANAGER_PAT never existed on any repo; both were printed here as recovery guidance until 2026-08-20.
-# release-manager's scripts/check-secret-refs.mjs now fails on the next such name.
+# secret-ref-lint: ignore — RELEASE_MANAGER_DISPATCH_TOKEN is an ORG-level Actions secret (created 2026-06-19, granted to this repo). RELEASE_PAT superseded it on 2026-08-29.
+# This file read it as a fallback lookup until 2026-08-08 and printed it in recovery guidance until 2026-08-29. It is scheduled for deletion after the next release cut (NOTIFY-RELEASE-DISPATCH-TOKEN-NAME-1).
+# secret-ref-lint: ignore — RELEASE_MANAGER_PAT never existed on any inventory, repo or org; recovery guidance here named it until 2026-08-29.
+# The release-manager checker (scripts/check-secret-refs.mjs) warns on the superseded name and fails on a name no inventory has.
 
 name: Notify release-manager
 
