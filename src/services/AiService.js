@@ -697,21 +697,22 @@ export class AiService extends BaseService {
               error: 'No client-tool handler registered for this surface.'
             }
       )
+        // Scoped to the TOOL EXECUTION only — a rejection here means the
+        // tool itself threw, so ok:false is the truth. This must resolve
+        // BEFORE submitToolResult is ever called, so a transport rejection
+        // of that POST (409 workspace_turn_in_progress, 5xx, timeout) can
+        // never land in this `.catch` and get reported as a second,
+        // fabricated tool outcome for a tool that actually succeeded
+        // (SDK-TOOLRESULT-REJECTED-POST-FALSE-FAILURE-1).
+        .catch((err) => ({
+          ok: false,
+          error: String(err?.message || err)
+        }))
         .then((result) =>
           this.submitToolResult(
             resolvedConvId,
             id,
             result === undefined ? { ok: true } : result,
-            {
-              projectId: payload?.projectId
-            }
-          )
-        )
-        .catch((err) =>
-          this.submitToolResult(
-            resolvedConvId,
-            id,
-            { ok: false, error: String(err?.message || err) },
             {
               projectId: payload?.projectId
             }
@@ -736,7 +737,10 @@ export class AiService extends BaseService {
           }
         })
         .catch(() => {
-          /* resume-response consumption is best-effort */
+          /* Reaches here only when submitToolResult itself rejected (its
+             own bounded retry already ran) or the resume-response
+             consumption threw — both best-effort: a transport failure at
+             this point gets no second, invented result. */
         })
         .finally(() => {
           clientToolPending = false
@@ -1209,12 +1213,27 @@ export class AiService extends BaseService {
           methodName: 'ai.submitToolResult'
         }
       )
-    // Network-class failures retry with backoff — the server resolves each
+    // Transport failures retry with backoff — the server resolves each
     // callId exactly ONCE (duplicate submits are acknowledged, not
     // re-appended), so retrying is safe, and a lost submit used to strand
     // the suspended turn with an executed-but-unreported side effect
     // (2026-08-11: a clear ran, its result never landed, the loop re-drew).
+    // A 409 workspace_turn_in_progress is transport too, not a real
+    // rejection of this result: the lock is short-lived (measured live —
+    // 14-17ms hold, then 200 on release), so it belongs on the same
+    // schedule as a 5xx or a network blip, never re-cast as a tool failure
+    // (SDK-TOOLRESULT-REJECTED-POST-FALSE-FAILURE-1).
     const RETRY_DELAYS = [1500, 4000]
+    const isRetryableTransport = (err) => {
+      const status = err?.status
+      if (status === 409 || (typeof status === 'number' && status >= 500)) {
+        return true
+      }
+      if (err?.code === 'NETWORK_UNREACHABLE') return true
+      return /failed to fetch|network unreachable|networkerror|load failed|socket|ECONNRESET|timeout/i.test(
+        String(err?.message || '')
+      )
+    }
     let lastErr
     for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt++) {
       try {
@@ -1222,13 +1241,9 @@ export class AiService extends BaseService {
         return this._unwrap(res)
       } catch (err) {
         lastErr = err
-        const msg = String(err?.message || '')
-        const networkClass =
-          err?.code === 'NETWORK_UNREACHABLE' ||
-          /failed to fetch|network unreachable|networkerror|load failed|socket|ECONNRESET|timeout/i.test(
-            msg
-          )
-        if (!networkClass || attempt === RETRY_DELAYS.length) throw err
+        if (!isRetryableTransport(err) || attempt === RETRY_DELAYS.length) {
+          throw err
+        }
         await new Promise((r) => setTimeout(r, RETRY_DELAYS[attempt]))
       }
     }
