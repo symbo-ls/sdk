@@ -58,12 +58,22 @@ export class WorkspaceService extends BaseService {
    * `partialSettings` is a FLAT object of settings keys — only the keys you
    * pass are touched. Server whitelist:
    * `navbar`, `apps`, `home_default_panels`, `designSystem`,
-   * `workspaceModule`, `language`, `layoutDirection`, `modules`
+   * `workspaceModule`, `workspaceApps`, `language`, `layoutDirection`,
+   * `modules`, `companyInfo`, `featureFlags`, `appAccessControl`, `voice`,
+   * `aiProvider`, `ai`, `publicOnboarding`
    * (unknown keys are rejected). Owner/admin gated server-side (same
    * `requireWorkspaceRole(['owner','admin'])` as `updateWorkspace`). When
    * `workspaceModule` is present the server validates the module reference
    * (project resolves, is `metadata.workspaceModule`, org-readable) and
    * clamps its `tier` before persisting.
+   *
+   * `language` is the workspace-level DEFAULT interface language — what
+   * members who never chose one for themselves boot into. It is VALIDATED
+   * against the shipped-language list: an unshipped or malformed code answers
+   * 400 `{ error: 'invalid_language' }` and writes nothing at all (the whole
+   * request is refused, siblings included). `null` clears the default. The
+   * same gate guards the whole-bag `updateWorkspace({ settings })` replace,
+   * so there is no second door.
    *
    * @param {string} workspaceId
    * @param {{ navbar?: any, apps?: any, home_default_panels?: any, designSystem?: any, workspaceModule?: any, language?: any, layoutDirection?: any, modules?: any }} partialSettings

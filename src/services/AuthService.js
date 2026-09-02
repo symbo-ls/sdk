@@ -582,7 +582,20 @@ export class AuthService extends BaseService {
    * Update the current user's profile / preferences.
    * Replaces the (now-removed) `sdk.auth.updateMe(...)` call sites that
    * existed before SERVICE_METHODS flattened auth methods. Body shape is
-   * forwarded to /auth/me PATCH; server decides what columns are mutable.
+   * forwarded to /auth/me PATCH VERBATIM — this method filters nothing; the
+   * server decides what columns are mutable.
+   *
+   * Mutable today: `name`, `username`, `avatar`, `timezone`, `type` (the
+   * signup account type, stored as `preferences.accountType`), and
+   * `preferences.lang` — the account-level interface language.
+   *
+   * `preferences.lang` is the ONE field here that REFUSES a bad value instead
+   * of dropping it: an unshipped or malformed code answers 400
+   * `{ error: 'invalid_language' }`, because a language is an explicit,
+   * user-initiated setting and a silent drop is indistinguishable from a
+   * broken switcher. Callers that write it must handle the rejection — see
+   * `UserController.updateProfile` in the server repo. Every other field
+   * follows the historical silent-drop contract.
    */
   async updateMe(payload) {
     this._requireReady('updateMe')
