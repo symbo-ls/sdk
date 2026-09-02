@@ -462,11 +462,61 @@ export class TokenManager {
   }
 
   /**
-   * Perform the actual token refresh request
+   * Perform the actual token refresh request.
+   *
+   * CROSS-TAB ROTATION (2026-09-02 — the /login?next renderer-OOM loop):
+   * refresh tokens are SINGLE-USE. Two tabs of one origin each hold a copy;
+   * whichever rotates first invalidates the other's. The loser used to send
+   * its stale copy, read the server's refusal as "session dead", clear the
+   * SHARED storage (killing the winner's persisted session too) and bounce
+   * to /login — where the winner's re-written tokens forwarded it straight
+   * back: the ping-pong that OOM-crashed the renderer (four Crashpad dumps,
+   * 2026-09-01/02; workspace 3ade58b39 carries the guard-side breaker).
+   * Three layers close the race itself:
+   *   1. a Web-Locks mutex serializes rotation across the origin's tabs;
+   *   2. after acquiring the lock, storage is re-read — a rotation that
+   *      happened while waiting ends this refresh with ZERO network;
+   *   3. if the server still refuses AND storage now holds a DIFFERENT
+   *      refresh token than the one sent, the race was lost mid-flight:
+   *      adopt the winner's tokens and retry once instead of clearing a
+   *      healthy session.
+   * Node/tests (no navigator.locks) keep the direct path; the persona
+   * overlay lives in `_personaToken`, never in `this.tokens`, so base-token
+   * adoption cannot disturb it.
    */
   async _performRefresh () {
-    const refreshToken = this.getRefreshToken()
+    const run = () => this._performRefreshExclusive()
+    const hasLocks = typeof navigator !== 'undefined' &&
+      navigator.locks && typeof navigator.locks.request === 'function'
+    return hasLocks
+      ? navigator.locks.request('symbols_token_rotation', run)
+      : run()
+  }
 
+  async _performRefreshExclusive () {
+    // Layer 2 — another tab may have rotated while we waited on the lock.
+    if (this._adoptStoredTokens() && this.isAccessTokenValid()) {
+      return this.tokens
+    }
+    const sent = this.getRefreshToken()
+    try {
+      return await this._rotateWith(sent)
+    } catch (error) {
+      // Layer 3 — refute-then-recheck. A transport failure says nothing
+      // about the token, so it keeps the existing keep-and-rethrow path.
+      if (isNetworkFailure(error)) throw error
+      const changed = this._adoptStoredTokens()
+      const current = this.getRefreshToken()
+      if (changed && current && current !== sent) {
+        logger.warn('[TokenManager] refresh lost a cross-tab rotation race — adopting the winner\'s tokens')
+        if (this.isAccessTokenValid()) return this.tokens
+        return this._rotateWith(current)
+      }
+      throw error
+    }
+  }
+
+  async _rotateWith (refreshToken) {
     const response = await fetch(`${this.config.apiUrl}/core/auth/refresh`, {
       method: 'POST',
       headers: {
@@ -496,6 +546,39 @@ export class TokenManager {
       // Fallback to old format for backward compatibility
       return this.setTokens(responseData)
 
+  }
+
+  /**
+   * Re-read the base tokens from the shared storage and adopt any values
+   * another tab wrote since our last read. Returns true when memory changed.
+   * Memory-mode storage is process-local (the same object this instance
+   * writes), so this is a no-op there by construction and tests stay
+   * deterministic. Never touches the per-tab persona overlay.
+   */
+  _adoptStoredTokens () {
+    try {
+      const { storage } = this
+      const keys = this.storageKeys
+      const accessToken = storage.getItem(keys.accessToken)
+      const refreshToken = storage.getItem(keys.refreshToken)
+      if (!accessToken && !refreshToken) return false
+      const changed = accessToken !== this.tokens.accessToken ||
+        refreshToken !== this.tokens.refreshToken
+      if (!changed) return false
+      const expiresAt = storage.getItem(keys.expiresAt)
+      const expiresIn = storage.getItem(keys.expiresIn)
+      this.tokens = {
+        accessToken,
+        refreshToken,
+        expiresAt: expiresAt ? parseInt(expiresAt, 10) : null,
+        expiresIn: expiresIn ? parseInt(expiresIn, 10) : null,
+        tokenType: 'Bearer'
+      }
+      this.scheduleRefresh()
+      return true
+    } catch (_) {
+      return false
+    }
   }
 
   /**
