@@ -491,7 +491,9 @@ export class AiService extends BaseService {
   //
   // payload:
   //   { content, messages?, threadId?, attachedCard?, systemPromptOverride?,
-  //     model?, context? }
+  //     model?, context?, attachments? }
+  // `attachments` — image attachments for this turn; see the POST body in
+  // _streamWorkspaceTurn for the accepted shapes and the server-side caps.
   // callbacks:
   //   onChunk(deltaText), onDone({ text, … }), onError(err)
   // returns: cancel() — abort the in-flight turn
@@ -931,7 +933,21 @@ export class AiService extends BaseService {
           // answer" and fails the turn at its 1s race-guard. Sending the flag
           // is what restores the SSE-first behaviour for THIS sdk; omitting it
           // is what keeps older deployed bundles working.
-          earlyAck: true
+          earlyAck: true,
+          // Image attachments for THIS turn — an array of
+          // `{ name, mime, size, dataUrl }` (dataUrl = the full
+          // `data:<mime>;base64,<data>` string a FileReader produced), or bare
+          // data-URL strings; the server accepts both. It applies the
+          // count/size caps (agent-core IMAGE_ATTACHMENT_LIMITS) and persists
+          // the survivors as `image` content parts on the user message, which
+          // the multimodal providers send as real image blocks.
+          //
+          // OMITTED ENTIRELY when the turn carries none, so every text-only
+          // turn posts the exact byte-for-byte body it posted before this
+          // field existed.
+          ...(Array.isArray(payload?.attachments) && payload.attachments.length
+            ? { attachments: payload.attachments }
+            : {})
         },
         methodName: 'ai.appendMessage'
       })
