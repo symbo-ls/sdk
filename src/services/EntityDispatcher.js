@@ -942,15 +942,18 @@ const ENTITY_ROUTES = {
   // The built-in mail client over /core/mail/*. ONLY the routes registered on
   // the server today are routed here — the §3.2a setup gate (incl. the real
   // link), the member account reads/writes + the personal OAuth connect /
-  // reconnect / sync-now, and the admin health + audit surface. `mail`
-  // itself (threads), 'mail.messages', 'mail.drafts', 'mail.outbox',
-  // 'mail.tenant' and 'mail.shared' are deliberately absent: those routes do
-  // not exist yet, so an entry for them would answer 404 and read as a
-  // server fault. Each arrives with the server ticket that lands its routes.
+  // reconnect / sync-now, the admin health + audit surface, and the §5.7
+  // send path ('mail.drafts' + 'mail.outbox', MAIL-SERVER-SEND-OUTBOX-1).
+  // `mail` itself (threads), 'mail.messages', 'mail.tenant' and
+  // 'mail.shared' are deliberately absent: those routes do not exist yet,
+  // so an entry for them would answer 404 and read as a server fault. Each
+  // arrives with the server ticket that lands its routes.
   //   sdk.execute('mail.setup', 'get', { workspaceId })
   //   sdk.execute('mail.accounts', 'list', { workspaceId })
   //   sdk.execute('mail.accounts', 'update', { id, workspaceId, signature })
   //   sdk.execute('mail.admin', 'audit', { workspaceId, limit: 50 })
+  //   sdk.execute('mail.drafts', 'create', { workspaceId, account, to, subject })
+  //   sdk.execute('mail.outbox', 'send', { workspaceId, draftId, undoSeconds: 10 })
   'mail.setup': {
     service: 'mail',
     methods: {
@@ -993,6 +996,42 @@ const ENTITY_ROUTES = {
       connect: (a) => [a?.provider ?? (typeof a === 'string' ? a : undefined), ..._wsOpts(a)],
       reconnect: wsArgMaps.id,
       sync: wsArgMaps.id
+    }
+  },
+  'mail.drafts': {
+    service: 'mail',
+    methods: {
+      create: 'createDraft',
+      update: 'updateDraft',
+      remove: 'deleteDraft',
+      attach: 'uploadDraftAttachment'
+    },
+    // No list/get: the server registers none (§5.2 — the composer holds its
+    // draft; the OAuth return keeps it client-side). `attach` takes a
+    // File/Blob positional the JSON maps cannot shape.
+    //   sdk.execute('mail.drafts', 'attach', { id, file, workspaceId })
+    argMap: {
+      create: wsArgMaps.payload,
+      update: wsArgMaps.idPayload,
+      remove: wsArgMaps.id,
+      attach: (a) => [a?.id, a?.file, ..._wsOpts(a)]
+    }
+  },
+  'mail.outbox': {
+    service: 'mail',
+    methods: {
+      list: 'listOutbox',
+      send: 'send',
+      cancel: 'cancelSend'
+    },
+    // `send` consumes a draft into a queued outbox row (202); `cancel` is
+    // the undo — 409 not_cancellable once the worker claimed the row.
+    //   sdk.execute('mail.outbox', 'list', { workspaceId, status: 'queued' })
+    //   sdk.execute('mail.outbox', 'cancel', { id, workspaceId })
+    argMap: {
+      list: argMaps.filterOptions,
+      send: wsArgMaps.payload,
+      cancel: wsArgMaps.id
     }
   },
   'mail.admin': {

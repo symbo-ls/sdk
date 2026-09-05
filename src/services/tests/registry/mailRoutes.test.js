@@ -130,11 +130,13 @@ test('mail.admin ops resolve the admin methods', async t => {
 
 test('no mail entity is registered for a route the server does not serve yet', async t => {
   const execute = createEntityDispatcher(makeSdk([]))
-  const absent = ['mail', 'mail.messages', 'mail.drafts', 'mail.outbox', 'mail.tenant', 'mail.shared']
+  const absent = ['mail', 'mail.messages', 'mail.tenant', 'mail.shared']
   for (const entity of absent) {
     t.equal(execute.getRoute(entity), null, `${entity} is not routed until its server routes land`)
   }
-  const present = ['mail.setup', 'mail.accounts', 'mail.admin']
+  // mail.drafts + mail.outbox joined `present` when MAIL-SERVER-SEND-OUTBOX-1
+  // registered the §5.7 routes.
+  const present = ['mail.setup', 'mail.accounts', 'mail.admin', 'mail.drafts', 'mail.outbox']
   for (const entity of present) {
     t.equal(execute.getRoute(entity)?.service, 'mail', `${entity} routes to the mail service`)
   }
@@ -161,5 +163,42 @@ test('mail.accounts connect / reconnect / sync unpack their args', async t => {
   await execute('mail.accounts', 'sync', { id: 'a1', workspaceId: 'ws1' })
   t.equal(calls[2].method, 'syncNow', 'sync → syncNow')
   t.deepEqual(calls[2].args[1], { workspaceId: 'ws1' }, 'sync carries the workspace pin')
+  t.end()
+})
+
+// ─── mail.drafts + mail.outbox — the §5.7 send path ──────────────────────────
+
+test('mail.drafts ops unpack their args (create strips the pin, attach passes the file positional)', async t => {
+  const calls = []
+  const execute = createEntityDispatcher(makeSdk(calls))
+  await execute('mail.drafts', 'create', { workspaceId: 'ws1', account: 'a1', subject: 'Hi' })
+  t.equal(calls[0].method, 'createDraft', 'create → createDraft')
+  t.deepEqual(calls[0].args[0], { account: 'a1', subject: 'Hi' }, 'the routing pin is stripped from the body')
+  t.deepEqual(calls[0].args[1], { workspaceId: 'ws1' }, 'the pin rides in the options')
+  await execute('mail.drafts', 'update', { id: 'd1', workspaceId: 'ws1', subject: 'x' })
+  t.deepEqual(calls[1].args, ['d1', { subject: 'x' }, { workspaceId: 'ws1' }], 'update(id, patch, { workspaceId })')
+  await execute('mail.drafts', 'remove', { id: 'd1', workspaceId: 'ws1' })
+  t.deepEqual(calls[2].args, ['d1', { workspaceId: 'ws1' }], 'remove(id, { workspaceId })')
+  const file = { fake: 'blob' }
+  await execute('mail.drafts', 'attach', { id: 'd1', file, workspaceId: 'ws1' })
+  t.equal(calls[3].method, 'uploadDraftAttachment', 'attach → uploadDraftAttachment')
+  t.equal(calls[3].args[0], 'd1', 'the draft id is the first positional')
+  t.equal(calls[3].args[1], file, 'the file is the second positional, untouched')
+  t.deepEqual(calls[3].args[2], { workspaceId: 'ws1' }, 'the pin rides in the options')
+  t.end()
+})
+
+test('mail.outbox ops unpack their args', async t => {
+  const calls = []
+  const execute = createEntityDispatcher(makeSdk(calls))
+  await execute('mail.outbox', 'send', { workspaceId: 'ws1', draftId: 'd1', undoSeconds: 10 })
+  t.equal(calls[0].method, 'send', 'send → send')
+  t.deepEqual(calls[0].args[0], { draftId: 'd1', undoSeconds: 10 }, 'the send body keeps draftId + undoSeconds, pin stripped')
+  t.deepEqual(calls[0].args[1], { workspaceId: 'ws1' }, 'the pin rides in the options')
+  await execute('mail.outbox', 'list', { workspaceId: 'ws1', status: 'queued' })
+  t.equal(calls[1].method, 'listOutbox', 'list → listOutbox')
+  t.deepEqual(calls[1].args[0], { workspaceId: 'ws1', status: 'queued' }, 'flat keys become the filter')
+  await execute('mail.outbox', 'cancel', { id: 'o1', workspaceId: 'ws1' })
+  t.deepEqual(calls[2], { service: 'mail', method: 'cancelSend', args: ['o1', { workspaceId: 'ws1' }] }, 'cancel(id, { workspaceId }) → cancelSend')
   t.end()
 })

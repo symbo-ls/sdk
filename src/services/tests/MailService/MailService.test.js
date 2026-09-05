@@ -415,3 +415,80 @@ test('an account the viewer may not see answers 404, never 403', async t => {
   sandbox.restore()
   t.end()
 })
+
+// ─── Send path (§5.7, MAIL-SERVER-SEND-OUTBOX-1) ─────────────────────────────
+
+test('mail.createDraft POSTs the body to /mail/drafts with the workspace pin', async t => {
+  t.plan(4)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({ id: 'd1' })
+  await svc.createDraft({ account: 'a1', to: [{ email: 'x@y.co' }], subject: 'Hi' }, { workspaceId: 'ws1' })
+  t.equal(stub.firstCall.args[0], 'mail.createDraft', 'name')
+  t.equal(stub.firstCall.args[1], '/mail/drafts?workspaceId=ws1', 'path + pin')
+  t.equal(stub.firstCall.args[2].method, 'POST', 'verb')
+  t.deepEqual(stub.firstCall.args[2].body.to, [{ email: 'x@y.co' }], 'body intact')
+  sandbox.restore()
+  t.end()
+})
+
+test('mail.updateDraft PATCHes /mail/drafts/:id; deleteDraft DELETEs it', async t => {
+  t.plan(4)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({})
+  await svc.updateDraft('d1', { subject: 'x' }, { workspaceId: 'ws1' })
+  t.equal(stub.firstCall.args[1], '/mail/drafts/d1?workspaceId=ws1', 'update path')
+  t.equal(stub.firstCall.args[2].method, 'PATCH', 'update verb')
+  await svc.deleteDraft('d1', { workspaceId: 'ws1' })
+  t.equal(stub.secondCall.args[1], '/mail/drafts/d1?workspaceId=ws1', 'delete path')
+  t.equal(stub.secondCall.args[2].method, 'DELETE', 'delete verb')
+  sandbox.restore()
+  t.end()
+})
+
+test('mail.uploadDraftAttachment sends FormData with a `file` part', async t => {
+  t.plan(4)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({})
+  const blob = new Blob(['bytes'], { type: 'text/plain' })
+  await svc.uploadDraftAttachment('d1', blob, { workspaceId: 'ws1', filename: 'a.txt' })
+  t.equal(stub.firstCall.args[1], '/mail/drafts/d1/attachments?workspaceId=ws1', 'path')
+  t.equal(stub.firstCall.args[2].method, 'POST', 'verb')
+  t.ok(stub.firstCall.args[2].body instanceof FormData, 'FormData body — Content-Type left to the runtime')
+  t.ok(stub.firstCall.args[2].body.get('file'), 'the file part is set')
+  sandbox.restore()
+  t.end()
+})
+
+test('mail.send POSTs { draftId, … } to /mail/send; listOutbox threads status+limit; cancelSend POSTs the cancel', async t => {
+  t.plan(6)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({})
+  await svc.send({ draftId: 'd1', undoSeconds: 10 }, { workspaceId: 'ws1' })
+  t.equal(stub.firstCall.args[1], '/mail/send?workspaceId=ws1', 'send path')
+  t.deepEqual(stub.firstCall.args[2].body, { draftId: 'd1', undoSeconds: 10 }, 'send body')
+  await svc.listOutbox({ workspaceId: 'ws1', status: 'queued', limit: 5 })
+  t.equal(stub.secondCall.args[1], '/mail/outbox?status=queued&limit=5&workspaceId=ws1', 'outbox query')
+  t.equal(stub.secondCall.args[2], undefined, 'outbox GET — no options')
+  await svc.cancelSend('o1', { workspaceId: 'ws1' })
+  t.equal(stub.thirdCall.args[1], '/mail/outbox/o1/cancel?workspaceId=ws1', 'cancel path')
+  t.equal(stub.thirdCall.args[2].method, 'POST', 'cancel verb')
+  sandbox.restore()
+  t.end()
+})
+
+test('a 409 not_cancellable ride: rowStatus reaches the caller via cause', async t => {
+  t.plan(2)
+  const svc = makeFetchService()
+  sandbox
+    .stub(globalThis, 'fetch')
+    .resolves(fakeResponse(409, { error: 'not_cancellable', message: 'outbox row is sent', rowStatus: 'sent' }))
+  try {
+    await svc.cancelSend('o1', { workspaceId: 'ws1' })
+    t.fail('should have thrown')
+  } catch (err) {
+    t.equal(err.status, 409, '409 once the worker claimed the row')
+    t.equal(err.cause.rowStatus, 'sent', 'rowStatus rides on cause')
+  }
+  sandbox.restore()
+  t.end()
+})

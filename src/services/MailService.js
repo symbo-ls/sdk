@@ -18,6 +18,15 @@ import { BaseService } from './BaseService.js'
 //   DELETE /mail/admin/accounts/:id           → adminDisconnect    mail admin · audited mail.account.force_disconnect
 //   GET    /mail/admin/audit                  → adminAudit         mail admin · last 50 `mail.*` AdminActionLog rows
 //
+// Send path (MAIL-SERVER-SEND-OUTBOX-1, §5.7):
+//   POST   /mail/drafts                       → createDraft        owner · account needs ACL write
+//   PATCH  /mail/drafts/:id                   → updateDraft        owner · `attachments` = keep-list of storagePaths
+//   DELETE /mail/drafts/:id                   → deleteDraft        owner · staged blobs dropped
+//   POST   /mail/drafts/:id/attachments       → uploadDraftAttachment  owner · multipart, 25MB per file
+//   POST   /mail/send                         → send               owner + send ACL · 202 outbox row
+//   GET    /mail/outbox                       → listOutbox         owner · undo / scheduled / recent list
+//   POST   /mail/outbox/:id/cancel            → cancelSend         owner · queued only; the draft is restored
+//
 // NOT a method: GET /mail/oauth/callback/:provider. It is the browser's
 // return leg from Google (public, state-JWT-guarded, answers a 302 to
 // <shell>/mail?connected=<id> or ?mailError=<code>) — the shell opens the
@@ -31,12 +40,12 @@ import { BaseService } from './BaseService.js'
 // (§5.11): treat a 404 from get/update/remove as "not visible to you", not
 // as proof the row is gone.
 //
-// NOT here, on purpose: threads, message bodies, attachments, drafts, send,
-// outbox, search, the SSE stream, the tenant surface and the provider
-// webhooks. Those routes are not registered yet; each lands with its own
-// server ticket and gains its SDK method there (MAIL-SERVER-SYNC-ENGINE-1 /
-// the send + body tickets / the tenant ticket). A method here for a route
-// that does not exist would answer 404 and read as a server fault.
+// NOT here, on purpose: threads, message bodies, attachments (reading),
+// search, the SSE stream, the tenant surface and the provider webhooks.
+// Those routes are not registered yet; each lands with its own server
+// ticket and gains its SDK method there (MAIL-SERVER-SYNC-ENGINE-1 / the
+// body ticket / the tenant ticket). A method here for a route that does
+// not exist would answer 404 and read as a server fault.
 //
 // Workspace-scoped server-side (active-workspace claim fallback); an explicit
 // `workspaceId` is threaded as a query param — a ROUTING param, never a body
@@ -194,6 +203,88 @@ export class MailService extends BaseService {
     if (limit !== undefined) extra.limit = limit
     const ws = filter.workspaceId || options.workspaceId
     return this._call('mail.adminAudit', `/mail/admin/audit${qs(ws, extra)}`)
+  }
+
+  // POST /core/mail/drafts — composer autosave birth. Body allowlist:
+  // account (required, needs ACL write on it — 404 when not writable) / to /
+  // cc / bcc ([{ name?, email }]) / subject / html / text /
+  // inReplyToMessage / thread. 201 with the serialized draft; `attachments`
+  // enter only through uploadDraftAttachment (server-minted storagePaths).
+  createDraft (payload = {}, { workspaceId } = {}) {
+    return this._call('mail.createDraft', `/mail/drafts${qs(workspaceId)}`, {
+      method: 'POST',
+      body: payload
+    })
+  }
+
+  // PATCH /core/mail/drafts/:id (owner only — any other viewer's id answers
+  // 404). Same field allowlist as create; an `attachments` array is the
+  // KEEP-LIST: pass the storagePaths to keep, the dropped refs' staged
+  // blobs are deleted.
+  updateDraft (id, payload = {}, { workspaceId } = {}) {
+    return this._call('mail.updateDraft', `/mail/drafts/${encodeURIComponent(id)}${qs(workspaceId)}`, {
+      method: 'PATCH',
+      body: payload
+    })
+  }
+
+  // DELETE /core/mail/drafts/:id — drops the draft AND its staged blobs.
+  deleteDraft (id, { workspaceId } = {}) {
+    return this._call('mail.deleteDraft', `/mail/drafts/${encodeURIComponent(id)}${qs(workspaceId)}`, {
+      method: 'DELETE'
+    })
+  }
+
+  // POST /core/mail/drafts/:id/attachments — multipart staging into the
+  // private mail-attachments bucket (25MB per file, 20 per draft). `file`
+  // is a File/Blob; 201 with the updated draft. 413 file_too_large · 400
+  // too_many_attachments.
+  uploadDraftAttachment (id, file, { workspaceId, filename } = {}) {
+    const formData = new FormData()
+    if (filename) formData.append('file', file, filename)
+    else formData.append('file', file)
+    return this._call('mail.uploadDraftAttachment', `/mail/drafts/${encodeURIComponent(id)}/attachments${qs(workspaceId)}`, {
+      method: 'POST',
+      body: formData
+    })
+  }
+
+  // POST /core/mail/send — { draftId, accountId?, sendAs?, scheduleAt?,
+  // undoSeconds? } → 202 with the queued outbox row (`sendAt` = the
+  // scheduled instant, or now + undoSeconds). The draft is CONSUMED (it
+  // moves into the row's snapshot; cancel restores it). 400
+  // no_recipients/too_many_recipients/invalid_send_as/schedule_in_past ·
+  // 409 account_not_ready (+ accountStatus) · 413 message_too_large · 429
+  // send_rate_limited.
+  send (payload = {}, { workspaceId } = {}) {
+    return this._call('mail.send', `/mail/send${qs(workspaceId)}`, {
+      method: 'POST',
+      body: payload
+    })
+  }
+
+  // GET /core/mail/outbox?status=&limit= — this viewer's sends, newest
+  // first: queued (undo-able / scheduled), sending, sent, failed,
+  // cancelled. Rows carry the snapshot SUMMARY (subject, to, counts) —
+  // never the body.
+  listOutbox (filter = {}, options = {}) {
+    const extra = {}
+    const status = filter.status ?? options.status
+    const limit = filter.limit ?? options.limit
+    if (status !== undefined) extra.status = status
+    if (limit !== undefined) extra.limit = limit
+    const ws = filter.workspaceId || options.workspaceId
+    return this._call('mail.listOutbox', `/mail/outbox${qs(ws, extra)}`)
+  }
+
+  // POST /core/mail/outbox/:id/cancel — the UNDO: only a still-queued row
+  // cancels; the response carries { outbox, draft } with the restored
+  // draft. 409 not_cancellable (+ rowStatus 'sending'|'sent'|…) once the
+  // worker claimed it.
+  cancelSend (id, { workspaceId } = {}) {
+    return this._call('mail.cancelSend', `/mail/outbox/${encodeURIComponent(id)}/cancel${qs(workspaceId)}`, {
+      method: 'POST'
+    })
   }
 }
 
