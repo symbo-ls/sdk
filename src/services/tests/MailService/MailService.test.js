@@ -492,3 +492,48 @@ test('a 409 not_cancellable ride: rowStatus reaches the caller via cause', async
   sandbox.restore()
   t.end()
 })
+
+// ─── subscribeStream (§5.9, MAIL-SERVER-STREAM-RELAY-1) ──────────────────────
+
+test('mail.subscribeStream calls _sseSubscribe with /mail/stream, flat workspaceId, unsub passthrough', t => {
+  t.plan(5)
+  const svc = makeService()
+  const cb = () => {}
+  const unsubMock = () => {}
+  const stub = sandbox.stub(svc, '_sseSubscribe').returns(unsubMock)
+  const unsub = svc.subscribeStream({ workspaceId: 'ws1' }, cb)
+  t.equal(stub.calledOnce, true, '_sseSubscribe called once')
+  t.equal(stub.firstCall.args[0], '/mail/stream', 'path')
+  t.deepEqual(stub.firstCall.args[1], { workspaceId: 'ws1' }, 'workspaceId threaded in the filter')
+  t.equal(stub.firstCall.args[3].flatParams, true, 'FLAT params — the member chain reads ?workspaceId=, not filter[workspaceId]')
+  t.equal(unsub, unsubMock, 'returns the unsubscribe fn from _sseSubscribe')
+  sandbox.restore()
+  t.end()
+})
+
+// The DocService lesson (2026-08-09) pinned here from birth: an SSE wrapper
+// that omits `events` inherits the tickets.* default vocabulary — names the
+// mail stream never emits — and onEvent silently never fires. Pin the REAL
+// §5.9 names MailStreamController writeEvent()s.
+test('mail.subscribeStream wires the REAL mail.* server event names, not the tickets.* default', t => {
+  t.plan(4)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_sseSubscribe').returns(() => {})
+  svc.subscribeStream({}, () => {})
+  const opts = stub.firstCall.args[3]
+  const names = opts.events.map((e) => e.name)
+  t.deepEqual(
+    names,
+    ['mail.snapshot', 'mail.thread.upsert', 'mail.thread.delete', 'mail.account.status', 'mail.account.progress', 'mail.outbox.sent', 'mail.outbox.failed', 'mail.unread'],
+    'listens for the mail.* names MailStreamController actually writeEvent()s'
+  )
+  t.equal(names.includes('tickets.snapshot'), false, 'does NOT listen for the tickets.* default')
+  t.deepEqual(
+    opts.events[0].frame({ accounts: [], unread: [] }),
+    { type: 'mail.snapshot', accounts: [], unread: [] },
+    'frame merges the SSE data under the event type'
+  )
+  t.deepEqual(stub.firstCall.args[1], {}, 'no workspaceId → empty filter (server falls back to the active-workspace claim)')
+  sandbox.restore()
+  t.end()
+})

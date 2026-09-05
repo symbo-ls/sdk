@@ -41,11 +41,11 @@ import { BaseService } from './BaseService.js'
 // as proof the row is gone.
 //
 // NOT here, on purpose: threads, message bodies, attachments (reading),
-// search, the SSE stream, the tenant surface and the provider webhooks.
-// Those routes are not registered yet; each lands with its own server
-// ticket and gains its SDK method there (MAIL-SERVER-SYNC-ENGINE-1 / the
-// body ticket / the tenant ticket). A method here for a route that does
-// not exist would answer 404 and read as a server fault.
+// search, the tenant surface and the provider webhooks. Those routes are
+// not registered yet; each lands with its own server ticket and gains its
+// SDK method there (MAIL-SERVER-SYNC-ENGINE-1 / the body ticket / the
+// tenant ticket). A method here for a route that does not exist would
+// answer 404 and read as a server fault.
 //
 // Workspace-scoped server-side (active-workspace claim fallback); an explicit
 // `workspaceId` is threaded as a query param — a ROUTING param, never a body
@@ -284,6 +284,35 @@ export class MailService extends BaseService {
   cancelSend (id, { workspaceId } = {}) {
     return this._call('mail.cancelSend', `/mail/outbox/${encodeURIComponent(id)}/cancel${qs(workspaceId)}`, {
       method: 'POST'
+    })
+  }
+
+  // GET /core/mail/stream — the mail realtime SSE stream (spec §5.9,
+  // MAIL-SERVER-STREAM-RELAY-1). ONE multiplexed workspace-anchored
+  // connection: `mail.snapshot { accounts, unread }` on open (accounts
+  // exactly as listAccounts answers them, ACL-filtered server-side; unread
+  // is [{ accountId, n }]), then ACL-masked live events with the
+  // producer's REST-shaped row + { accountId, workspaceId } merged on top.
+  // Auth rides `?access_token=` (EventSource cannot set headers);
+  // `workspaceId` is threaded as a FLAT query param so the server's member
+  // chain pins the stream to that workspace. Every event object passed to
+  // `onEvent` carries `type` (the SSE event name) + the frame's data.
+  // Returns unsubscribe() — call it to close the connection.
+  subscribeStream ({ workspaceId } = {}, onEvent) {
+    const names = [
+      'mail.snapshot',
+      'mail.thread.upsert',
+      'mail.thread.delete',
+      'mail.account.status',
+      'mail.account.progress',
+      'mail.outbox.sent',
+      'mail.outbox.failed',
+      'mail.unread'
+    ]
+    const filter = workspaceId ? { workspaceId: String(workspaceId) } : {}
+    return this._sseSubscribe('/mail/stream', filter, onEvent, {
+      flatParams: true,
+      events: names.map(name => ({ name, frame: (data) => ({ type: name, ...data }) }))
     })
   }
 }
