@@ -138,10 +138,28 @@ test('no mail entity is registered for a route the server does not serve yet', a
   for (const entity of present) {
     t.equal(execute.getRoute(entity)?.service, 'mail', `${entity} routes to the mail service`)
   }
+  const accountOps = Object.keys(execute.getRoute('mail.accounts').methods)
   t.deepEqual(
-    Object.keys(execute.getRoute('mail.accounts').methods),
-    ['list', 'get', 'update', 'remove'],
-    'mail.accounts has no create op — an account is born from the OAuth connect flow'
+    accountOps,
+    ['list', 'get', 'update', 'remove', 'connect', 'reconnect', 'sync'],
+    'mail.accounts: the CRUD reads/writes plus the personal OAuth connect / reconnect / sync-now'
   )
+  t.notOk(accountOps.includes('create'), 'mail.accounts has no create op — an account is born from the OAuth connect flow (connect answers the authorize URL, the public callback creates the row)')
+  t.end()
+})
+
+test('mail.accounts connect / reconnect / sync unpack their args', async t => {
+  const calls = []
+  const execute = createEntityDispatcher(makeSdk(calls))
+  await execute('mail.accounts', 'connect', { provider: 'google', workspaceId: 'ws1' })
+  t.equal(calls[0].method, 'startConnect', 'connect → startConnect')
+  t.equal(calls[0].args[0], 'google', 'the provider is the first positional')
+  t.deepEqual(calls[0].args[1], { workspaceId: 'ws1' }, 'the workspace pin rides in the options')
+  await execute('mail.accounts', 'reconnect', { id: 'a1', workspaceId: 'ws1' })
+  t.equal(calls[1].method, 'reconnect', 'reconnect → reconnect')
+  t.equal(calls[1].args[0], 'a1', 'the id is the first positional')
+  await execute('mail.accounts', 'sync', { id: 'a1', workspaceId: 'ws1' })
+  t.equal(calls[2].method, 'syncNow', 'sync → syncNow')
+  t.deepEqual(calls[2].args[1], { workspaceId: 'ws1' }, 'sync carries the workspace pin')
   t.end()
 })

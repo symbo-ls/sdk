@@ -74,6 +74,90 @@ test('mail.setupLink POSTs /mail/setup/link with no body', async t => {
   t.end()
 })
 
+// ─── Personal OAuth: connect / reconnect / sync-now ─────────────────────────
+
+test('mail.startConnect POSTs /mail/accounts/connect/:provider with no body', async t => {
+  t.plan(4)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({ authorizeUrl: 'https://accounts.google.com/x' })
+  await svc.startConnect('google')
+  t.equal(stub.firstCall.args[0], 'mail.startConnect', 'name')
+  t.equal(stub.firstCall.args[1], '/mail/accounts/connect/google', 'path')
+  t.equal(stub.firstCall.args[2].method, 'POST', 'POST')
+  t.equal(stub.firstCall.args[2].body, undefined, 'no body — the policy and the viewer are server-side facts')
+  sandbox.restore()
+  t.end()
+})
+
+test('mail.reconnect POSTs /mail/accounts/:id/reconnect encoded', async t => {
+  t.plan(3)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({})
+  await svc.reconnect('a/1')
+  t.equal(stub.firstCall.args[0], 'mail.reconnect', 'name')
+  t.equal(stub.firstCall.args[1], '/mail/accounts/a%2F1/reconnect', 'encoded path')
+  t.equal(stub.firstCall.args[2].method, 'POST', 'POST')
+  sandbox.restore()
+  t.end()
+})
+
+test('mail.syncNow POSTs /mail/accounts/:id/sync', async t => {
+  t.plan(3)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({ enqueued: true })
+  await svc.syncNow('a1')
+  t.equal(stub.firstCall.args[0], 'mail.syncNow', 'name')
+  t.equal(stub.firstCall.args[1], '/mail/accounts/a1/sync', 'path')
+  t.equal(stub.firstCall.args[2].method, 'POST', 'POST')
+  sandbox.restore()
+  t.end()
+})
+
+test('connect / reconnect / sync thread workspaceId as a query param', async t => {
+  t.plan(3)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({})
+  await svc.startConnect('google', { workspaceId: 'ws1' })
+  t.equal(stub.getCall(0).args[1], '/mail/accounts/connect/google?workspaceId=ws1', 'connect')
+  await svc.reconnect('a1', { workspaceId: 'ws1' })
+  t.equal(stub.getCall(1).args[1], '/mail/accounts/a1/reconnect?workspaceId=ws1', 'reconnect')
+  await svc.syncNow('a1', { workspaceId: 'ws1' })
+  t.equal(stub.getCall(2).args[1], '/mail/accounts/a1/sync?workspaceId=ws1', 'sync')
+  sandbox.restore()
+  t.end()
+})
+
+test('a 202 from sync-now with the pending seam answer is a plain result, not an error', async t => {
+  t.plan(2)
+  const svc = makeFetchService()
+  sandbox.stub(globalThis, 'fetch').resolves(
+    fakeResponse(202, { accountId: 'a1', enqueued: false, pending: 'sync_engine_pending', owner: 'MAIL-SERVER-SYNC-ENGINE-1' })
+  )
+  const r = await svc.syncNow('a1', { workspaceId: 'ws1' })
+  t.equal(r.enqueued, false, '202 body returned')
+  t.equal(r.pending, 'sync_engine_pending', 'the seam names the pending engine')
+  sandbox.restore()
+  t.end()
+})
+
+test('startConnect surfaces a 403 personal_not_allowed with its reason', async t => {
+  t.plan(3)
+  const svc = makeFetchService()
+  sandbox.stub(globalThis, 'fetch').resolves(
+    fakeResponse(403, { error: 'personal_not_allowed', message: 'the workspace policy does not allow this personal account', reason: 'domain_not_allowed' })
+  )
+  try {
+    await svc.startConnect('google', { workspaceId: 'ws1' })
+    t.fail('should have thrown')
+  } catch (err) {
+    t.equal(err.status, 403, 'status')
+    t.equal(err.cause.error, 'personal_not_allowed', 'code on cause')
+    t.equal(err.cause.reason, 'domain_not_allowed', 'reason on cause')
+  }
+  sandbox.restore()
+  t.end()
+})
+
 // ─── Accounts (member) ───────────────────────────────────────────────────────
 
 test('mail.listAccounts GETs the bare collection', async t => {
@@ -268,26 +352,27 @@ test('a { success: false } envelope throws its message', async t => {
 
 // ─── The error contracts the server answers today ────────────────────────────
 
-test('setupLink surfaces the 501 frozen contract as a typed error', async t => {
-  t.plan(4)
+test('setupLink surfaces the 409 directory_mismatch with expectedAddress; 200 linked passes through', async t => {
+  t.plan(5)
   const svc = makeFetchService()
-  sandbox.stub(globalThis, 'fetch').resolves(
-    fakeResponse(501, {
-      error: 'not_implemented',
-      code: 'mail_setup_link_pending',
-      message: 'Mailbox linking arrives with the tenant provider ticket',
-      contract: { request: { workspaceId: 'string' }, responses: { 200: { linked: true } } }
-    })
+  const fetchStub = sandbox.stub(globalThis, 'fetch')
+  fetchStub.onCall(0).resolves(
+    fakeResponse(409, { error: 'directory_mismatch', message: 'the directory has no mailbox for this member', expectedAddress: 'nika@symbols.app' })
+  )
+  fetchStub.onCall(1).resolves(
+    fakeResponse(200, { linked: true, created: true, account: { id: 'a1', address: 'nika@symbols.app', kind: 'tenant', status: 'active', canSend: true } })
   )
   try {
     await svc.setupLink({ workspaceId: 'ws1' })
-    t.fail('should have thrown — /setup/link is 501 until the provider ticket lands')
+    t.fail('should have thrown on 409')
   } catch (err) {
-    t.equal(err.status, 501, 'status rides on the error')
-    t.equal(err.message, 'Mailbox linking arrives with the tenant provider ticket', 'message')
-    t.equal(err.cause.code, 'mail_setup_link_pending', 'the machine code rides on cause')
-    t.ok(err.cause.contract, 'the frozen contract rides on cause')
+    t.equal(err.status, 409, 'status rides on the error')
+    t.equal(err.cause.error, 'directory_mismatch', 'the machine code rides on cause')
+    t.equal(err.cause.expectedAddress, 'nika@symbols.app', 'the address the directory expects rides on cause')
   }
+  const ok = await svc.setupLink({ workspaceId: 'ws1' })
+  t.equal(ok.linked, true, 'linked')
+  t.equal(ok.account.kind, 'tenant', 'a tenant mailbox')
   sandbox.restore()
   t.end()
 })

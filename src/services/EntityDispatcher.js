@@ -940,12 +940,13 @@ const ENTITY_ROUTES = {
 
   // ─── Mail (architecture/MAIL.md §5.2, §7) ───────────────────────────────────
   // The built-in mail client over /core/mail/*. ONLY the routes registered on
-  // the server today are routed here — the §3.2a setup gate, the member
-  // account reads/writes, and the admin health + audit surface. `mail` itself
-  // (threads), 'mail.messages', 'mail.drafts', 'mail.outbox', 'mail.tenant'
-  // and 'mail.shared' are deliberately absent: those routes do not exist yet,
-  // so an entry for them would answer 404 and read as a server fault. Each
-  // arrives with the server ticket that lands its routes.
+  // the server today are routed here — the §3.2a setup gate (incl. the real
+  // link), the member account reads/writes + the personal OAuth connect /
+  // reconnect / sync-now, and the admin health + audit surface. `mail`
+  // itself (threads), 'mail.messages', 'mail.drafts', 'mail.outbox',
+  // 'mail.tenant' and 'mail.shared' are deliberately absent: those routes do
+  // not exist yet, so an entry for them would answer 404 and read as a
+  // server fault. Each arrives with the server ticket that lands its routes.
   //   sdk.execute('mail.setup', 'get', { workspaceId })
   //   sdk.execute('mail.accounts', 'list', { workspaceId })
   //   sdk.execute('mail.accounts', 'update', { id, workspaceId, signature })
@@ -972,16 +973,26 @@ const ENTITY_ROUTES = {
       list: 'listAccounts',
       get: 'getAccount',
       update: 'updateAccount',
-      remove: 'disconnectAccount'
+      remove: 'disconnectAccount',
+      connect: 'startConnect',
+      reconnect: 'reconnect',
+      sync: 'syncNow'
     },
-    // Explicit, not WS_CRUD_ARG_MAP: there is no `create` op (an account is
-    // born from the OAuth connect flow, which is not wrapped yet), and
-    // `remove` is the disconnect (tombstone), never a hard delete.
+    // Explicit, not WS_CRUD_ARG_MAP: there is no `create` op — an account is
+    // born from the OAuth round trip (`connect` answers the authorize URL,
+    // the public callback creates the row) — and `remove` is the disconnect
+    // (tombstone), never a hard delete.
+    //   sdk.execute('mail.accounts', 'connect', { provider: 'google', workspaceId })
+    //   sdk.execute('mail.accounts', 'reconnect', { id, workspaceId })
+    //   sdk.execute('mail.accounts', 'sync', { id, workspaceId })
     argMap: {
       list: argMaps.filterOptions,
       get: wsArgMaps.id,
       update: wsArgMaps.idPayload,
-      remove: wsArgMaps.id
+      remove: wsArgMaps.id,
+      connect: (a) => [a?.provider ?? (typeof a === 'string' ? a : undefined), ..._wsOpts(a)],
+      reconnect: wsArgMaps.id,
+      sync: wsArgMaps.id
     }
   },
   'mail.admin': {

@@ -4,16 +4,24 @@ import { BaseService } from './BaseService.js'
 // client (architecture/MAIL.md §5.2). It wraps ONLY the routes that are
 // registered today (server/src/domains/mail/routes/mail.js):
 //
-//   GET    /mail/setup                → getSetup           member · the §3.2a setup-gate contract
-//   POST   /mail/setup/notify-admin   → setupNotifyAdmin   member · one Notification per org admin, 1/viewer/day → 429
-//   POST   /mail/setup/link           → setupLink          member · 501 today, the contract is frozen
-//   GET    /mail/accounts             → listAccounts       member · ACL read, never tokens
-//   GET    /mail/accounts/:id         → getAccount         ACL read
-//   PATCH  /mail/accounts/:id         → updateAccount      ACL write · displayName / signature / defaultSendAs / settings only
-//   DELETE /mail/accounts/:id         → disconnectAccount  ACL manage · tombstone (status 'disabled'), never a hard delete
-//   GET    /mail/admin/accounts       → adminListAccounts  mail admin · health rows, no content
-//   DELETE /mail/admin/accounts/:id   → adminDisconnect    mail admin · audited mail.account.force_disconnect
-//   GET    /mail/admin/audit          → adminAudit         mail admin · last 50 `mail.*` AdminActionLog rows
+//   GET    /mail/setup                        → getSetup           member · the §3.2a setup-gate contract
+//   POST   /mail/setup/notify-admin           → setupNotifyAdmin   member · one Notification per org admin, 1/viewer/day → 429
+//   POST   /mail/setup/link                   → setupLink          member · directory match on the org's tenant → a tenant mailbox
+//   GET    /mail/accounts                     → listAccounts       member · ACL read, never tokens
+//   POST   /mail/accounts/connect/:provider   → startConnect       member + policy · { authorizeUrl } for a personal OAuth
+//   GET    /mail/accounts/:id                 → getAccount         ACL read
+//   PATCH  /mail/accounts/:id                 → updateAccount      ACL write · displayName / signature / defaultSendAs / settings only
+//   DELETE /mail/accounts/:id                 → disconnectAccount  ACL manage · tombstone (status 'disabled'), never a hard delete
+//   POST   /mail/accounts/:id/reconnect       → reconnect          ACL manage · a fresh authorize URL bound to the row
+//   POST   /mail/accounts/:id/sync            → syncNow            ACL read · 202, a delta pass now
+//   GET    /mail/admin/accounts               → adminListAccounts  mail admin · health rows, no content
+//   DELETE /mail/admin/accounts/:id           → adminDisconnect    mail admin · audited mail.account.force_disconnect
+//   GET    /mail/admin/audit                  → adminAudit         mail admin · last 50 `mail.*` AdminActionLog rows
+//
+// NOT a method: GET /mail/oauth/callback/:provider. It is the browser's
+// return leg from Google (public, state-JWT-guarded, answers a 302 to
+// <shell>/mail?connected=<id> or ?mailError=<code>) — the shell opens the
+// `authorizeUrl` from startConnect/reconnect and reads those params back.
 //
 // Gates. Member routes run requireAuth → attachUser → requireWorkspaceMember
 // → requireMailWorkspaceInOrg (the org is derived FROM the workspace, never
@@ -24,12 +32,11 @@ import { BaseService } from './BaseService.js'
 // as proof the row is gone.
 //
 // NOT here, on purpose: threads, message bodies, attachments, drafts, send,
-// outbox, search, the SSE stream, personal OAuth connect/reconnect/sync, the
-// tenant surface and the provider webhooks. Those routes are not registered
-// yet; each lands with its own server ticket and gains its SDK method there
-// (MAIL-SERVER-GOOGLE-PROVIDER-1 / MAIL-SERVER-SYNC-ENGINE-1 / the tenant
-// ticket). A method here for a route that does not exist would answer 404 and
-// read as a server fault.
+// outbox, search, the SSE stream, the tenant surface and the provider
+// webhooks. Those routes are not registered yet; each lands with its own
+// server ticket and gains its SDK method there (MAIL-SERVER-SYNC-ENGINE-1 /
+// the send + body tickets / the tenant ticket). A method here for a route
+// that does not exist would answer 404 and read as a server fault.
 //
 // Workspace-scoped server-side (active-workspace claim fallback); an explicit
 // `workspaceId` is threaded as a query param — a ROUTING param, never a body
@@ -73,10 +80,13 @@ export class MailService extends BaseService {
   }
 
   // POST /core/mail/setup/link — run the directory match for this viewer on
-  // the connected tenant, no body. 501 `mail_setup_link_pending` today; the
-  // response carries the frozen contract (200 linked · 404 no_tenant · 409
-  // directory_mismatch · 403 policy_forbids_link) that the provider ticket
-  // will implement. Callers must handle the throw, not assume a 200.
+  // the org's connected tenant, no body. 200 { linked, created, account:
+  // { id, address, kind: 'tenant', status, canSend } } · 404 no_tenant · 403
+  // policy_forbids_link · 409 directory_mismatch (the error body carries
+  // `expectedAddress`, the address the directory holds for the viewer's
+  // local part on the tenant domain, or null) · 501 provider_not_available
+  // (a Microsoft-only tenant until the Microsoft lane lands). Callers must
+  // handle the throw, not assume a 200.
   setupLink ({ workspaceId } = {}) {
     return this._call('mail.setupLink', `/mail/setup/link${qs(workspaceId)}`, {
       method: 'POST'
@@ -89,6 +99,21 @@ export class MailService extends BaseService {
   listAccounts (filter = {}, options = {}) {
     const ws = filter.workspaceId || options.workspaceId
     return this._call('mail.listAccounts', `/mail/accounts${qs(ws)}`)
+  }
+
+  // POST /core/mail/accounts/connect/:provider — start a personal OAuth
+  // connection (policy-gated: allowPersonal + allowedDomains for the
+  // viewer's address). Answers { provider, authorizeUrl, expiresIn: 600,
+  // accountId: null }; the shell opens `authorizeUrl` (popup, fallback same
+  // tab) and the callback redirects back to /mail?connected=<id>. 400
+  // unknown_provider · 403 personal_not_allowed (+ `reason`) · 403
+  // mail_disabled · 501 provider_not_available (microsoft, until its lane
+  // lands) · 503 provider_not_configured (no Google OAuth client on the
+  // platform).
+  startConnect (provider, { workspaceId } = {}) {
+    return this._call('mail.startConnect', `/mail/accounts/connect/${encodeURIComponent(provider)}${qs(workspaceId)}`, {
+      method: 'POST'
+    })
   }
 
   // GET /core/mail/accounts/:id (ACL read; 404 when not visible).
@@ -114,6 +139,29 @@ export class MailService extends BaseService {
   disconnectAccount (id, { workspaceId } = {}) {
     return this._call('mail.disconnectAccount', `/mail/accounts/${encodeURIComponent(id)}${qs(workspaceId)}`, {
       method: 'DELETE'
+    })
+  }
+
+  // POST /core/mail/accounts/:id/reconnect (ACL manage, personal rows only)
+  // — a fresh authorize URL whose state is bound to the row; the callback
+  // then requires the SAME address (address_mismatch otherwise). Answers the
+  // startConnect shape with `accountId` set. 404 when not visible · 409
+  // not_reconnectable for tenant/shared rows (the org admin re-authorises
+  // those).
+  reconnect (id, { workspaceId } = {}) {
+    return this._call('mail.reconnect', `/mail/accounts/${encodeURIComponent(id)}/reconnect${qs(workspaceId)}`, {
+      method: 'POST'
+    })
+  }
+
+  // POST /core/mail/accounts/:id/sync (ACL read — owner or grantee) — ask
+  // for a delta pass now. Always 202: { accountId, enqueued: true, jobId }
+  // or { accountId, enqueued: false, pending: 'sync_engine_pending', owner }
+  // while the sync engine's queue is not registered yet. 404 when not
+  // visible · 409 account_disabled.
+  syncNow (id, { workspaceId } = {}) {
+    return this._call('mail.syncNow', `/mail/accounts/${encodeURIComponent(id)}/sync${qs(workspaceId)}`, {
+      method: 'POST'
     })
   }
 
