@@ -86,7 +86,25 @@ const INTENTIONALLY_PRIVATE_PER_CLASS = {
     'update'
   ]),
   ResourceLinkService: new Set(['create', 'list', 'remove', 'removeByPair']),
-  WorkspaceProjectService: new Set(['setRealtimeProvider'])
+  WorkspaceProjectService: new Set(['setRealtimeProvider']),
+  //   MailService            — entity-routed via
+  //                            sdk.execute('mail.setup' | 'mail.accounts' |
+  //                            'mail.admin', op) and sdk.getService('mail').
+  //                            Flat sdk.listAccounts() / sdk.getSetup() would
+  //                            collide with the account/setup vocabulary of
+  //                            other surfaces, so mail keeps its namespace.
+  MailService: new Set([
+    'getSetup',
+    'setupLink',
+    'setupNotifyAdmin',
+    'listAccounts',
+    'getAccount',
+    'updateAccount',
+    'disconnectAccount',
+    'adminListAccounts',
+    'adminDisconnect',
+    'adminAudit'
+  ])
 }
 
 let BASE_METHODS = new Set()

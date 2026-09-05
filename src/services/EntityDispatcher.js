@@ -241,6 +241,21 @@ const spineListArgs = (a) => [
   }
 ]
 
+// Mail setup-gate adapter (architecture/MAIL.md §3.2a). The three setup ops
+// take NO id and NO body — only the workspace routing pin — so they cannot
+// use argMaps.id / argMaps.payload: those would forward the whole caller bag
+// as an id (or a body) and the request would go out unscoped. Same dual-shape
+// tolerance as the builds/orgIntegration adapters: the imperative bag
+// ({ workspaceId }) and the declarative fetch-adapter packs ({ params },
+// { filter }) both resolve. Declared BEFORE ENTITY_ROUTES: the route object
+// reads this binding while it is built, not at call time.
+const mailScopeArgs = (a) => [
+  {
+    workspaceId:
+      a?.workspaceId ?? a?.params?.workspaceId ?? a?.filter?.workspaceId
+  }
+]
+
 const ENTITY_ROUTES = {
   // ─── i18n (translations stream) ────────────────────────────────────────────
   // The TranslationWatcher in workspace/app.js subscribes to live translation
@@ -920,6 +935,69 @@ const ENTITY_ROUTES = {
       ...CRUD_ARG_MAP,
       tree: argMaps.id,
       folders: () => []
+    }
+  },
+
+  // ─── Mail (architecture/MAIL.md §5.2, §7) ───────────────────────────────────
+  // The built-in mail client over /core/mail/*. ONLY the routes registered on
+  // the server today are routed here — the §3.2a setup gate, the member
+  // account reads/writes, and the admin health + audit surface. `mail` itself
+  // (threads), 'mail.messages', 'mail.drafts', 'mail.outbox', 'mail.tenant'
+  // and 'mail.shared' are deliberately absent: those routes do not exist yet,
+  // so an entry for them would answer 404 and read as a server fault. Each
+  // arrives with the server ticket that lands its routes.
+  //   sdk.execute('mail.setup', 'get', { workspaceId })
+  //   sdk.execute('mail.accounts', 'list', { workspaceId })
+  //   sdk.execute('mail.accounts', 'update', { id, workspaceId, signature })
+  //   sdk.execute('mail.admin', 'audit', { workspaceId, limit: 50 })
+  'mail.setup': {
+    service: 'mail',
+    methods: {
+      get: 'getSetup',
+      link: 'setupLink',
+      notifyAdmin: 'setupNotifyAdmin'
+    },
+    // All three take the workspace pin only — no id, no body. `link` answers
+    // 501 today (the contract is frozen); `notifyAdmin` answers 429 with a
+    // retryAt once per viewer per day.
+    argMap: {
+      get: mailScopeArgs,
+      link: mailScopeArgs,
+      notifyAdmin: mailScopeArgs
+    }
+  },
+  'mail.accounts': {
+    service: 'mail',
+    methods: {
+      list: 'listAccounts',
+      get: 'getAccount',
+      update: 'updateAccount',
+      remove: 'disconnectAccount'
+    },
+    // Explicit, not WS_CRUD_ARG_MAP: there is no `create` op (an account is
+    // born from the OAuth connect flow, which is not wrapped yet), and
+    // `remove` is the disconnect (tombstone), never a hard delete.
+    argMap: {
+      list: argMaps.filterOptions,
+      get: wsArgMaps.id,
+      update: wsArgMaps.idPayload,
+      remove: wsArgMaps.id
+    }
+  },
+  'mail.admin': {
+    service: 'mail',
+    methods: {
+      list: 'adminListAccounts',
+      remove: 'adminDisconnect',
+      audit: 'adminAudit'
+    },
+    // `audit` reads its optional `limit` off the same filter bag as `list`
+    // (the server clamps it to 1..200); `remove` is the audited force
+    // disconnect.
+    argMap: {
+      list: argMaps.filterOptions,
+      remove: wsArgMaps.id,
+      audit: argMaps.filterOptions
     }
   },
 

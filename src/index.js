@@ -53,6 +53,7 @@ import {
   createAvailabilityRuleService,
   createConversationService,
   createRecurrenceService,
+  createMailService,
   createAllocationRuleService,
   createSharedAssetService,
   createCreditsService,
@@ -542,6 +543,18 @@ export class SDK {
       this._initService(
         'recurrences',
         createRecurrenceService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      // The built-in mail client (architecture/MAIL.md §5.2) — /core/mail/*
+      // on the main server. Only the routes that exist today are wrapped:
+      // the §3.2a setup gate, the member account reads/writes and the admin
+      // health + audit surface. Reached via
+      // sdk.execute('mail.setup' | 'mail.accounts' | 'mail.admin', op).
+      this._initService(
+        'mail',
+        createMailService({
           context: this._context,
           options: this._options
         })
@@ -1070,6 +1083,7 @@ export {
   createAvailabilityRuleService,
   createConversationService,
   createRecurrenceService,
+  createMailService,
   createAllocationRuleService,
   createSharedAssetService,
   createCreditsService,
