@@ -1039,7 +1039,7 @@ export class ProjectService extends BaseService {
       throw new Error('Changes must be an array')
     }
 
-    const { message, branch = 'main', type = 'patch', headers } = options
+    const { message, branch = 'main', type = 'patch', headers, source, forceSharedLibrary } = options
 
     // Preprocess into granular changes and derive orders using current state if available
     const state = this._context && this._context.state
@@ -1059,7 +1059,14 @@ export class ProjectService extends BaseService {
           message,
           branch,
           type,
-          ...(derivedOrders && derivedOrders.length ? { orders: derivedOrders } : {})
+          ...(derivedOrders && derivedOrders.length ? { orders: derivedOrders } : {}),
+          // Push-source identity contract (PushSourceGuard, server-side):
+          // `source: { owner, key, lockProjectId, client }` declares which tree
+          // this change-set came from; the server refuses a declared owner/key
+          // that mismatches the record, and a shared-library record refuses a
+          // push that neither proves lock possession nor sets forceSharedLibrary.
+          ...(source && typeof source === 'object' ? { source } : {}),
+          ...(forceSharedLibrary === true ? { forceSharedLibrary: true } : {})
         }),
         ...(headers ? { headers } : {}),
         methodName: 'applyProjectChanges'
