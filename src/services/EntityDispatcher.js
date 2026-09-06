@@ -1136,6 +1136,20 @@ const ENTITY_ROUTES = {
       update: wsArgMaps.idPayload
     }
   },
+  'mail.serviceDesk': {
+    service: 'mail',
+    methods: {
+      reply: 'serviceDeskReply'
+    },
+    // The D8 shared-inbox answer: name the thread by its ticket or its
+    // conversation, and the reply leaves through the shared account,
+    // threaded. 202 with the ordinary outbox row (undo via mail.outbox).
+    //   sdk.execute('mail.serviceDesk', 'reply', { workspaceId, ticketId, html })
+    //   sdk.execute('mail.serviceDesk', 'reply', { workspaceId, conversationId, text })
+    argMap: {
+      reply: wsArgMaps.payload
+    }
+  },
 
   // ─── AI Chat (AiChatService — Mongo-backed assistant) ─────────────────────
   // Replaces the workspaceProject.aiChat Supabase edge-function surface.

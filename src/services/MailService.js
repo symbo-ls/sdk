@@ -67,6 +67,9 @@ import { BaseService } from './BaseService.js'
 // guarded, answers a 302 to <shell>/admin/mail?tenantConnected= or
 // ?tenantError=) — the admin page opens `consentUrl` and reads those params.
 //
+// Shared-inbox service desk (MAIL-SHARED-INBOX-SERVICE-DESK-1, D8 · §3.7):
+//   POST   /mail/service-desk/reply           → serviceDeskReply   member + ACL write on the shared inbox · answer a desk thread from its ticket or its conversation → 202 outbox row
+//
 // NOT here, on purpose: the provider-scope search (GET /search), thread
 // links + rsvp, attachment save-to-Files, the image proxy and the provider
 // webhooks. Those routes are not registered yet; each lands with its own
@@ -478,6 +481,36 @@ export class MailService extends BaseService {
   cancelSend (id, { workspaceId } = {}) {
     return this._call('mail.cancelSend', `/mail/outbox/${encodeURIComponent(id)}/cancel${qs(workspaceId)}`, {
       method: 'POST'
+    })
+  }
+
+  // POST /core/mail/service-desk/reply — the service-desk answer (D8, §3.7
+  // "ticket comment 'Reply by email'"). Name the thread by its ticket
+  // (`ticketId`, what the ticket UI holds) or by its conversation
+  // (`conversationId`); one of the two is required, as is `html` or `text`.
+  //
+  // The reply leaves through the SHARED inbox, threaded on the newest
+  // INBOUND message (`In-Reply-To` + `References`), so the customer sees one
+  // conversation and the desk's own outbound copy lands back in the
+  // Conversation feed. Recipients default to that message's sender — never
+  // the whole cc list; pass `to: [{ name, email }]` to override. `subject`
+  // defaults to `Re: <thread subject>`; `sendAs`, `undoSeconds` and
+  // `scheduleAt` behave exactly as on `send`.
+  //
+  // Answers 202 { outbox, conversationId, ticketId, threadId, accountId,
+  // inReplyToMessageId, at } — `outbox` is the ordinary §5.7 row, so undo
+  // (`cancelSend`) and the outbox list cover it like any other send.
+  //
+  // 400 bad_request (neither id, or an empty body) · 404 not_found (the
+  // conversation, its ticket, its thread or an inbox this viewer may not
+  // SEND from — the ACL is `write`, and a read-only grantee is a 404, not a
+  // 403) · 409 not_a_service_desk (the inbox is not one, `reason` names the
+  // gate) · 409 nothing_to_answer (no inbound mail on the thread) · plus
+  // every refusal `send` can raise (409 account_not_ready, 413, 429).
+  serviceDeskReply (payload = {}, { workspaceId } = {}) {
+    return this._call('mail.serviceDeskReply', `/mail/service-desk/reply${qs(workspaceId)}`, {
+      method: 'POST',
+      body: payload
     })
   }
 
