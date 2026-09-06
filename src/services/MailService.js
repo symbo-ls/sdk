@@ -18,6 +18,19 @@ import { BaseService } from './BaseService.js'
 //   DELETE /mail/admin/accounts/:id           → adminDisconnect    mail admin · audited mail.account.force_disconnect
 //   GET    /mail/admin/audit                  → adminAudit         mail admin · last 50 `mail.*` AdminActionLog rows
 //
+// Read path (MAIL-SERVER-THREAD-READ-ROUTES-1, §5.2 threads · §5.6 bodies):
+//   GET    /mail/threads                      → listThreads        member · readable accounts only; accountId|all, folder, label, unread, starred, attachments, from, q, cursor, limit≤100 → { rows, cursor, exhausted, limit }
+//   GET    /mail/threads/:id                  → getThread          ACL read · { thread, messages[] } — each envelope carries bodyState
+//   PATCH  /mail/threads/:id                  → updateThread       ACL write · read / starred / muted / snoozedUntil / folder / addLabels / removeLabels
+//   POST   /mail/threads/batch                → batchThreads       ACL write on every id · { ids, ...the same flags }, all-or-nothing, ≤100 ids
+//   GET    /mail/messages/:id/body            → getBody            ACL read · sanitised { html, text, blockedImages } (cache, fetch-on-miss)
+//   GET    /mail/messages/:id/attachments/:aid → attachmentUrl     ACL read · { url, path, expiresAt, filename, mime, size, inline } — a 10-minute signed URL
+//
+// NOT a method: GET /mail/messages/:id/attachments/:aid/content?sig=. It is
+// the BROWSER's leg (a download tab, an <img> inside the sandboxed body
+// iframe) — public, verified by the purpose-bound token the member route
+// minted; `attachmentUrl` answers the URL to open.
+//
 // Send path (MAIL-SERVER-SEND-OUTBOX-1, §5.7):
 //   POST   /mail/drafts                       → createDraft        owner · account needs ACL write
 //   PATCH  /mail/drafts/:id                   → updateDraft        owner · `attachments` = keep-list of storagePaths
@@ -40,12 +53,12 @@ import { BaseService } from './BaseService.js'
 // (§5.11): treat a 404 from get/update/remove as "not visible to you", not
 // as proof the row is gone.
 //
-// NOT here, on purpose: threads, message bodies, attachments (reading),
-// search, the tenant surface and the provider webhooks. Those routes are
-// not registered yet; each lands with its own server ticket and gains its
-// SDK method there (MAIL-SERVER-SYNC-ENGINE-1 / the body ticket / the
-// tenant ticket). A method here for a route that does not exist would
-// answer 404 and read as a server fault.
+// NOT here, on purpose: the provider-scope search (GET /search), thread
+// links + rsvp, attachment save-to-Files, the image proxy, the tenant
+// surface and the provider webhooks. Those routes are not registered yet;
+// each lands with its own server ticket and gains its SDK method there. A
+// method here for a route that does not exist would answer 404 and read as
+// a server fault.
 //
 // Workspace-scoped server-side (active-workspace claim fallback); an explicit
 // `workspaceId` is threaded as a query param — a ROUTING param, never a body
@@ -203,6 +216,93 @@ export class MailService extends BaseService {
     if (limit !== undefined) extra.limit = limit
     const ws = filter.workspaceId || options.workspaceId
     return this._call('mail.adminAudit', `/mail/admin/audit${qs(ws, extra)}`)
+  }
+
+  // ── Read path (§5.2 threads) ──────────────────────────────────────────────
+
+  // GET /core/mail/threads — one page of thread rows across the accounts the
+  // viewer may read (or one account: `accountId`; 'all' and absent both mean
+  // every readable one — an accountId the viewer cannot read is a 404, never
+  // a 403). Filters: folder (inbox|sent|drafts|archive|spam|trash), label
+  // (a provider label id), unread / starred / attachments / snoozed
+  // (booleans), from (name or address, substring), q (local text search).
+  // Paging: `cursor` from the previous answer + `limit` (default 50, server
+  // clamps to 100). Answers { rows, cursor, exhausted, limit } — `cursor` is
+  // null and `exhausted` true on the last page. `limit` and `cursor` are read
+  // from EITHER bag: the dispatcher's flat-args contract hoists `limit` into
+  // the options positional.
+  listThreads (filter = {}, options = {}) {
+    const extra = {}
+    const keys = ['accountId', 'folder', 'label', 'unread', 'starred', 'attachments', 'snoozed', 'from', 'q', 'cursor', 'limit']
+    for (const k of keys) {
+      const v = filter[k] ?? options[k]
+      if (v !== undefined && v !== null && v !== '') extra[k] = v
+    }
+    const ws = filter.workspaceId || options.workspaceId
+    return this._call('mail.listThreads', `/mail/threads${qs(ws, extra)}`)
+  }
+
+  // GET /core/mail/threads/:id (ACL read; 404 when not visible) →
+  // { thread, messages } — the envelopes oldest-first, each with `bodyState`
+  // ('none' | 'cached' | 'stale') and `attachments[].id` (the provider
+  // attachment id `attachmentUrl` takes).
+  getThread (id, { workspaceId } = {}) {
+    return this._call('mail.getThread', `/mail/threads/${encodeURIComponent(id)}${qs(workspaceId)}`)
+  }
+
+  // PATCH /core/mail/threads/:id (ACL write; 404 when not writable). Body
+  // allowlist: read / starred / muted (booleans), snoozedUntil (ISO string
+  // or null — local-only), folder ('inbox' | 'archive' | 'trash' | 'spam';
+  // sent/drafts are never a move target → 400), addLabels / removeLabels
+  // (provider label ids, ≤ 20). The server writes the local rows at once and
+  // queues the provider modify; answers { thread, jobs }. A refusal (400 /
+  // 404) leaves nothing written — roll the optimistic row back.
+  updateThread (id, payload = {}, { workspaceId } = {}) {
+    return this._call('mail.updateThread', `/mail/threads/${encodeURIComponent(id)}${qs(workspaceId)}`, {
+      method: 'PATCH',
+      body: payload
+    })
+  }
+
+  // POST /core/mail/threads/batch — { ids: [≤100], ...the same flags }.
+  // All-or-nothing: one id the viewer cannot write is a 404 for the whole
+  // batch and nothing changes. Answers { count, threads, jobs }.
+  batchThreads (payload = {}, { workspaceId } = {}) {
+    return this._call('mail.batchThreads', `/mail/threads/batch${qs(workspaceId)}`, {
+      method: 'POST',
+      body: payload
+    })
+  }
+
+  // ── Read path (§5.6 bodies + attachments) ────────────────────────────────
+
+  // GET /core/mail/messages/:id/body (ACL read) → { html, text,
+  // blockedImages, bodyState, fetchedAt, expiresAt }. `html` is the
+  // server-sanitised document (scripts/handlers gone, remote images swapped
+  // into `data-mail-src` + counted in blockedImages, inline cid: images
+  // already pointing at signed content URLs for THIS viewer). Render it in
+  // the sandboxed iframe only; never sanitise client-side. 409
+  // account_disabled / account_reauth_required · 429 provider_rate_limited
+  // (+ retryAfterMs) · 502 provider_error when the provider fetch fails.
+  getBody (id, { workspaceId } = {}) {
+    return this._call('mail.getBody', `/mail/messages/${encodeURIComponent(id)}/body${qs(workspaceId)}`)
+  }
+
+  // GET /core/mail/messages/:id/attachments/:aid (ACL read) → { url, path,
+  // expiresAt, filename, mime, size, inline }. `url` is what the browser
+  // opens (window.open / an <a href>) — a signed, 10-minute, viewer-bound
+  // URL onto the public content route; no header, no session token in it.
+  // The server names its own `path`; this client re-bases it on the API
+  // origin it actually reaches (a local proxy or tunnel differs from the
+  // channel default the server assumes) and keeps the server's `url` as the
+  // fallback when no base is configured. 404 for an unknown aid or a message
+  // the viewer cannot read.
+  async attachmentUrl (id, aid, { workspaceId } = {}) {
+    const r = await this._call('mail.attachmentUrl', `/mail/messages/${encodeURIComponent(id)}/attachments/${encodeURIComponent(aid)}${qs(workspaceId)}`)
+    if (r && typeof r === 'object' && typeof r.path === 'string' && this._apiUrl) {
+      return { ...r, url: `${this._apiUrl}${r.path}` }
+    }
+    return r
   }
 
   // POST /core/mail/drafts — composer autosave birth. Body allowlist:

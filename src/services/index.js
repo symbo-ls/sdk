@@ -98,8 +98,9 @@ import { ConversationService } from './ConversationService.js'
 import { RecurrenceService } from './RecurrenceService.js'
 // The built-in mail client (architecture/MAIL.md §5.2) — /core/mail/*. Wraps
 // only the routes registered today: the §3.2a setup gate, the member account
-// reads/writes and the admin health + audit surface. Threads, bodies, send,
-// connect, tenant and webhooks arrive with their own server tickets.
+// reads/writes + connect, the admin health + audit surface, the §5.7 send
+// path and the §5.2/§5.6 read path (threads, bodies, signed attachment
+// URLs). Search, links, tenant and webhooks arrive with their own tickets.
 import { MailService } from './MailService.js'
 import { CanvasLayoutService } from './CanvasLayoutService.js'
 import { MeetService } from './MeetService.js'
@@ -341,7 +342,8 @@ export const createRecurrenceService = (config) =>
   createService(RecurrenceService, config)
 
 // The built-in mail client — /core/mail/* on the main server. Reached via
-// sdk.execute('mail.setup' | 'mail.accounts' | 'mail.admin', op) and
+// sdk.execute('mail.setup' | 'mail.accounts' | 'mail.threads' |
+// 'mail.messages' | 'mail.drafts' | 'mail.outbox' | 'mail.admin', op) and
 // sdk.getService('mail'). See MailService.js for the route + gate table.
 export const createMailService = (config) => createService(MailService, config)
 

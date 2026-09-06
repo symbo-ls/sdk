@@ -537,3 +537,99 @@ test('mail.subscribeStream wires the REAL mail.* server event names, not the tic
   sandbox.restore()
   t.end()
 })
+
+// ─── Read path (MAIL-SERVER-THREAD-READ-ROUTES-1, §5.2 threads · §5.6 bodies) ──
+
+test('mail.listThreads GETs /mail/threads with the filter keys as query params, limit/cursor from either bag', async t => {
+  t.plan(5)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({ rows: [], cursor: null, exhausted: true })
+  await svc.listThreads({ workspaceId: 'ws1', folder: 'inbox', unread: true, accountId: 'all', from: 'ana', q: 'invoice' }, { limit: 50, cursor: 'c1' })
+  t.equal(stub.firstCall.args[0], 'mail.listThreads', 'name')
+  const url = new URL(`https://x${stub.firstCall.args[1]}`)
+  t.equal(url.pathname, '/mail/threads', 'path')
+  t.deepEqual(
+    Object.fromEntries(url.searchParams),
+    { accountId: 'all', folder: 'inbox', unread: 'true', from: 'ana', q: 'invoice', cursor: 'c1', limit: '50', workspaceId: 'ws1' },
+    'every filter + the hoisted limit/cursor + the workspace pin'
+  )
+  t.equal(stub.firstCall.args[2], undefined, 'GET — no options')
+  await svc.listThreads({}, {})
+  t.equal(stub.secondCall.args[1], '/mail/threads', 'empty filter → bare collection (no dangling ?)')
+  sandbox.restore()
+  t.end()
+})
+
+test('mail.getThread / updateThread / batchThreads hit the thread routes with the right verbs and bodies', async t => {
+  t.plan(9)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({})
+  await svc.getThread('t/1', { workspaceId: 'ws1' })
+  t.equal(stub.getCall(0).args[0], 'mail.getThread', 'get name')
+  t.equal(stub.getCall(0).args[1], '/mail/threads/t%2F1?workspaceId=ws1', 'encoded id + pin')
+  t.equal(stub.getCall(0).args[2], undefined, 'GET')
+  await svc.updateThread('t1', { read: true, folder: 'archive' }, { workspaceId: 'ws1' })
+  t.equal(stub.getCall(1).args[0], 'mail.updateThread', 'update name')
+  t.equal(stub.getCall(1).args[1], '/mail/threads/t1?workspaceId=ws1', 'update path')
+  t.deepEqual(stub.getCall(1).args[2], { method: 'PATCH', body: { read: true, folder: 'archive' } }, 'PATCH with the flag body')
+  await svc.batchThreads({ ids: ['t1', 't2'], starred: true }, { workspaceId: 'ws1' })
+  t.equal(stub.getCall(2).args[0], 'mail.batchThreads', 'batch name')
+  t.equal(stub.getCall(2).args[1], '/mail/threads/batch?workspaceId=ws1', 'batch path')
+  t.deepEqual(stub.getCall(2).args[2], { method: 'POST', body: { ids: ['t1', 't2'], starred: true } }, 'POST with ids + flags')
+  sandbox.restore()
+  t.end()
+})
+
+test('mail.getBody GETs /mail/messages/:id/body; attachmentUrl re-bases the server path on this client\'s API origin', async t => {
+  t.plan(7)
+  const svc = makeService()
+  svc._apiUrl = 'https://api.local'
+  const stub = sandbox.stub(svc, '_call')
+  stub.onCall(0).resolves({ html: '<p>x</p>', text: 'x', blockedImages: 1 })
+  stub.onCall(1).resolves({
+    url: 'https://dev.api.symbols.app/core/mail/messages/m1/attachments/A1/content?sig=tok',
+    path: '/core/mail/messages/m1/attachments/A1/content?sig=tok',
+    expiresAt: '2026-09-06T12:10:00.000Z',
+    filename: 'a.pdf',
+    mime: 'application/pdf',
+    size: 3,
+    inline: false
+  })
+  const body = await svc.getBody('m1', { workspaceId: 'ws1' })
+  t.equal(stub.getCall(0).args[0], 'mail.getBody', 'body name')
+  t.equal(stub.getCall(0).args[1], '/mail/messages/m1/body?workspaceId=ws1', 'body path')
+  t.equal(body.blockedImages, 1, 'the sanitised answer passes through untouched')
+  const att = await svc.attachmentUrl('m1', 'A/1', { workspaceId: 'ws1' })
+  t.equal(stub.getCall(1).args[0], 'mail.attachmentUrl', 'attachment name')
+  t.equal(stub.getCall(1).args[1], '/mail/messages/m1/attachments/A%2F1?workspaceId=ws1', 'encoded aid + pin')
+  t.equal(att.url, 'https://api.local/core/mail/messages/m1/attachments/A1/content?sig=tok', 'url re-based on _apiUrl + the server path')
+  t.equal(att.filename, 'a.pdf', 'the rest of the answer is kept')
+  sandbox.restore()
+  t.end()
+})
+
+test('mail.attachmentUrl keeps the server url when this client has no API base', async t => {
+  t.plan(1)
+  const svc = makeService()
+  svc._apiUrl = null
+  sandbox.stub(svc, '_call').resolves({ url: 'https://dev.api.symbols.app/x?sig=t', path: '/x?sig=t' })
+  const att = await svc.attachmentUrl('m1', 'A1')
+  t.equal(att.url, 'https://dev.api.symbols.app/x?sig=t', 'fallback: the server\'s absolute url')
+  sandbox.restore()
+  t.end()
+})
+
+test('a 404 from getThread reads as "not visible to you" — a thrown Error, never a 403 leak', async t => {
+  t.plan(2)
+  const svc = makeFetchService()
+  sandbox.stub(globalThis, 'fetch').resolves(fakeResponse(404, { error: 'not_found', message: 'mail thread not found' }))
+  try {
+    await svc.getThread('t1', { workspaceId: 'ws1' })
+    t.fail('should throw')
+  } catch (err) {
+    t.ok(err instanceof Error, 'throws')
+    t.equal(err.status, 404, 'the 404 status rides the error')
+  }
+  sandbox.restore()
+  t.end()
+})

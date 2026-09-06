@@ -942,18 +942,23 @@ const ENTITY_ROUTES = {
   // The built-in mail client over /core/mail/*. ONLY the routes registered on
   // the server today are routed here — the §3.2a setup gate (incl. the real
   // link), the member account reads/writes + the personal OAuth connect /
-  // reconnect / sync-now, the admin health + audit surface, and the §5.7
-  // send path ('mail.drafts' + 'mail.outbox', MAIL-SERVER-SEND-OUTBOX-1).
-  // `mail` itself (threads), 'mail.messages', 'mail.tenant' and
+  // reconnect / sync-now, the admin health + audit surface, the §5.7 send
+  // path ('mail.drafts' + 'mail.outbox', MAIL-SERVER-SEND-OUTBOX-1) and the
+  // §5.2/§5.6 read path ('mail.threads' + 'mail.messages',
+  // MAIL-SERVER-THREAD-READ-ROUTES-1). §7 named the thread entity bare
+  // `mail`; the shipped read UI (workspace/packages/mail) calls
+  // 'mail.threads', so that is the registered name. 'mail.tenant' and
   // 'mail.shared' are deliberately absent: those routes do not exist yet,
-  // so an entry for them would answer 404 and read as a server fault. Each
-  // arrives with the server ticket that lands its routes.
+  // so an entry for them would answer 404 and read as a server fault.
   //   sdk.execute('mail.setup', 'get', { workspaceId })
   //   sdk.execute('mail.accounts', 'list', { workspaceId })
   //   sdk.execute('mail.accounts', 'update', { id, workspaceId, signature })
   //   sdk.execute('mail.admin', 'audit', { workspaceId, limit: 50 })
   //   sdk.execute('mail.drafts', 'create', { workspaceId, account, to, subject })
   //   sdk.execute('mail.outbox', 'send', { workspaceId, draftId, undoSeconds: 10 })
+  //   sdk.execute('mail.threads', 'list', { workspaceId, folder: 'inbox', unread: true, limit: 50 })
+  //   sdk.execute('mail.threads', 'update', { id, workspaceId, read: true })
+  //   sdk.execute('mail.messages', 'body', { id, workspaceId })
   'mail.setup': {
     service: 'mail',
     methods: {
@@ -1032,6 +1037,45 @@ const ENTITY_ROUTES = {
       list: argMaps.filterOptions,
       send: wsArgMaps.payload,
       cancel: wsArgMaps.id
+    }
+  },
+  'mail.threads': {
+    service: 'mail',
+    methods: {
+      list: 'listThreads',
+      get: 'getThread',
+      update: 'updateThread',
+      batch: 'batchThreads'
+    },
+    // list: flat keys become the filter (folder, label, unread, starred,
+    // attachments, from, q, cursor) and `limit` rides the options bag —
+    // listThreads reads both. update strips the routing pin from the flag
+    // body; batch is a body ({ ids, ...flags }) with the pin in the options.
+    //   sdk.execute('mail.threads', 'list', { workspaceId, accountId: 'all', folder: 'inbox', cursor })
+    //   sdk.execute('mail.threads', 'get', { id, workspaceId })
+    //   sdk.execute('mail.threads', 'update', { id, workspaceId, folder: 'archive' })
+    //   sdk.execute('mail.threads', 'batch', { ids, workspaceId, read: true })
+    argMap: {
+      list: argMaps.filterOptions,
+      get: wsArgMaps.id,
+      update: wsArgMaps.idPayload,
+      batch: wsArgMaps.payload
+    }
+  },
+  'mail.messages': {
+    service: 'mail',
+    methods: {
+      body: 'getBody',
+      attachment: 'attachmentUrl'
+    },
+    // `attachment` answers the signed { url } the browser opens (§7 named the
+    // op attachmentUrl; the shipped read UI calls `attachment`). Two ids ride
+    // as positionals: the message id and the provider attachment id.
+    //   sdk.execute('mail.messages', 'body', { id, workspaceId })
+    //   sdk.execute('mail.messages', 'attachment', { id, aid, workspaceId })
+    argMap: {
+      body: wsArgMaps.id,
+      attachment: (a) => [a?.id, a?.aid ?? a?.attachmentId, ..._wsOpts(a)]
     }
   },
   'mail.admin': {

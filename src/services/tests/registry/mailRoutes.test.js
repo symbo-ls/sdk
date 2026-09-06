@@ -2,13 +2,14 @@ import test from 'tape'
 import { createEntityDispatcher } from '../../EntityDispatcher.js'
 
 // Dispatch-layer contract for the mail entities (architecture/MAIL.md §5.2,
-// §7). Three routes only — 'mail.setup', 'mail.accounts', 'mail.admin' —
-// because those are the routes the server registers today. Verifies each op
-// resolves the right service method with the right positional args for both
-// caller shapes: the imperative bag ({ id, workspaceId, ... }) and the
-// declarative fetch-adapter pack ({ filter, params, options }). The last test
-// pins the ABSENT entities: an entry for a route that does not exist yet
-// would answer 404 and read as a server fault.
+// §7): 'mail.setup', 'mail.accounts', 'mail.admin', the §5.7 'mail.drafts' +
+// 'mail.outbox', and the §5.2/§5.6 read path 'mail.threads' + 'mail.messages'
+// (MAIL-SERVER-THREAD-READ-ROUTES-1) — the routes the server registers
+// today. Verifies each op resolves the right service method with the right
+// positional args for both caller shapes: the imperative bag ({ id,
+// workspaceId, ... }) and the declarative fetch-adapter pack ({ filter,
+// params, options }). The last test pins the ABSENT entities: an entry for a
+// route that does not exist yet would answer 404 and read as a server fault.
 
 const makeSdk = (calls) => ({
   getService: (name) =>
@@ -126,17 +127,52 @@ test('mail.admin ops resolve the admin methods', async t => {
   t.end()
 })
 
+// ─── mail.threads + mail.messages — the §5.2/§5.6 read path ─────────────────
+
+test('mail.threads ops unpack their args (list keeps flat filters + hoists limit, update strips the pin, batch is a body)', async t => {
+  const calls = []
+  const execute = createEntityDispatcher(makeSdk(calls))
+  await execute('mail.threads', 'list', { workspaceId: 'ws1', accountId: 'all', folder: 'inbox', unread: true, cursor: 'c1', limit: 50 })
+  t.equal(calls[0].method, 'listThreads', 'list → listThreads')
+  t.deepEqual(calls[0].args[0], { workspaceId: 'ws1', accountId: 'all', folder: 'inbox', unread: true, cursor: 'c1' }, 'flat keys become the filter')
+  t.equal(calls[0].args[1].limit, 50, 'limit rides the options positional (listThreads reads both)')
+  t.equal(calls[0].args[1].workspaceId, 'ws1', 'the pin rides the options too')
+  await execute('mail.threads', 'get', { id: 't1', workspaceId: 'ws1' })
+  t.deepEqual(calls[1], { service: 'mail', method: 'getThread', args: ['t1', { workspaceId: 'ws1' }] }, 'get(id, { workspaceId })')
+  await execute('mail.threads', 'update', { id: 't1', workspaceId: 'ws1', read: true, folder: 'archive' })
+  t.deepEqual(calls[2], { service: 'mail', method: 'updateThread', args: ['t1', { read: true, folder: 'archive' }, { workspaceId: 'ws1' }] }, 'update(id, flags, { workspaceId }) — the pin is stripped from the body')
+  await execute('mail.threads', 'batch', { ids: ['t1', 't2'], workspaceId: 'ws1', starred: true })
+  t.deepEqual(calls[3], { service: 'mail', method: 'batchThreads', args: [{ ids: ['t1', 't2'], starred: true }, { workspaceId: 'ws1' }] }, 'batch(body, { workspaceId })')
+  t.end()
+})
+
+test('mail.messages ops: body(id, { workspaceId }); attachment(id, aid, { workspaceId })', async t => {
+  const calls = []
+  const execute = createEntityDispatcher(makeSdk(calls))
+  await execute('mail.messages', 'body', { id: 'm1', workspaceId: 'ws1' })
+  t.deepEqual(calls[0], { service: 'mail', method: 'getBody', args: ['m1', { workspaceId: 'ws1' }] }, 'body → getBody(id, { workspaceId })')
+  await execute('mail.messages', 'attachment', { id: 'm1', aid: 'A1', workspaceId: 'ws1' })
+  t.deepEqual(calls[1], { service: 'mail', method: 'attachmentUrl', args: ['m1', 'A1', { workspaceId: 'ws1' }] }, 'attachment → attachmentUrl(id, aid, { workspaceId })')
+  await execute('mail.messages', 'attachment', { id: 'm1', attachmentId: 'A2' })
+  t.deepEqual(calls[2].args, ['m1', 'A2'], 'attachmentId is accepted as the aid alias; no pin → no options positional')
+  t.end()
+})
+
 // ─── The routes that must NOT be registered yet ──────────────────────────────
 
 test('no mail entity is registered for a route the server does not serve yet', async t => {
   const execute = createEntityDispatcher(makeSdk([]))
-  const absent = ['mail', 'mail.messages', 'mail.tenant', 'mail.shared']
+  // Bare `mail` stays absent on purpose: §7 named it for threads, the shipped
+  // read UI calls 'mail.threads', and two names for one entity is the drift
+  // this file exists to refuse.
+  const absent = ['mail', 'mail.tenant', 'mail.shared']
   for (const entity of absent) {
     t.equal(execute.getRoute(entity), null, `${entity} is not routed until its server routes land`)
   }
   // mail.drafts + mail.outbox joined `present` when MAIL-SERVER-SEND-OUTBOX-1
-  // registered the §5.7 routes.
-  const present = ['mail.setup', 'mail.accounts', 'mail.admin', 'mail.drafts', 'mail.outbox']
+  // registered the §5.7 routes; mail.threads + mail.messages when
+  // MAIL-SERVER-THREAD-READ-ROUTES-1 registered the §5.2/§5.6 reads.
+  const present = ['mail.setup', 'mail.accounts', 'mail.admin', 'mail.drafts', 'mail.outbox', 'mail.threads', 'mail.messages']
   for (const entity of present) {
     t.equal(execute.getRoute(entity)?.service, 'mail', `${entity} routes to the mail service`)
   }
