@@ -256,6 +256,75 @@ test('mail.adminAudit GETs /mail/admin/audit and threads limit', async t => {
   t.end()
 })
 
+// ─── Tenant + shared (§3.5, MAIL-SERVER-TENANT-SHARED-ROUTES-1) ──────────────
+
+test('mail.getTenant GETs /mail/tenant', async t => {
+  t.plan(3)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({ providers: [] })
+  await svc.getTenant({ workspaceId: 'ws1' })
+  t.equal(stub.firstCall.args[0], 'mail.getTenant', 'name')
+  t.equal(stub.firstCall.args[1], '/mail/tenant?workspaceId=ws1', 'path + pin')
+  t.equal(stub.firstCall.args[2], undefined, 'GET — no options')
+  sandbox.restore()
+  t.end()
+})
+
+test('mail.tenantConsentUrl / tenantTest POST their provider path with no body', async t => {
+  t.plan(6)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({})
+  await svc.tenantConsentUrl('microsoft', { workspaceId: 'ws1' })
+  t.equal(stub.firstCall.args[0], 'mail.tenantConsentUrl', 'consent name')
+  t.equal(stub.firstCall.args[1], '/mail/tenant/microsoft/consent?workspaceId=ws1', 'consent path')
+  t.equal(stub.firstCall.args[2].method, 'POST', 'consent POSTs')
+  await svc.tenantTest('google', { workspaceId: 'ws1' })
+  t.equal(stub.secondCall.args[0], 'mail.tenantTest', 'test name')
+  t.equal(stub.secondCall.args[1], '/mail/tenant/google/test?workspaceId=ws1', 'test path')
+  t.equal(stub.secondCall.args[2].body, undefined, 'no body on the test read')
+  sandbox.restore()
+  t.end()
+})
+
+test('mail.tenantProvision POSTs the dryRun body', async t => {
+  t.plan(3)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({ dryRun: true })
+  await svc.tenantProvision('google', { dryRun: true }, { workspaceId: 'ws1' })
+  t.equal(stub.firstCall.args[0], 'mail.tenantProvision', 'name')
+  t.equal(stub.firstCall.args[1], '/mail/tenant/google/provision?workspaceId=ws1', 'path')
+  t.deepEqual(stub.firstCall.args[2], { method: 'POST', body: { dryRun: true } }, 'the dry run rides the body')
+  sandbox.restore()
+  t.end()
+})
+
+test('mail.createShared POSTs /mail/shared; mail.updateShared PATCHes /mail/shared/:id', async t => {
+  t.plan(6)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({ account: {} })
+  const body = { address: 'support@acme.com', name: 'Support', access: [{ subjectType: 'role', subjectId: 'editor', level: 'write' }] }
+  await svc.createShared(body, { workspaceId: 'ws1' })
+  t.equal(stub.firstCall.args[0], 'mail.createShared', 'create name')
+  t.equal(stub.firstCall.args[1], '/mail/shared?workspaceId=ws1', 'create path')
+  t.deepEqual(stub.firstCall.args[2], { method: 'POST', body }, 'create body untouched')
+  await svc.updateShared('s1', { serviceDesk: { enabled: true } }, { workspaceId: 'ws1' })
+  t.equal(stub.secondCall.args[0], 'mail.updateShared', 'update name')
+  t.equal(stub.secondCall.args[1], '/mail/shared/s1?workspaceId=ws1', 'update path')
+  t.deepEqual(stub.secondCall.args[2], { method: 'PATCH', body: { serviceDesk: { enabled: true } } }, 'PATCH body')
+  sandbox.restore()
+  t.end()
+})
+
+// The /admin/mail buttons go live on exactly this probe (parent ticket
+// MAIL-ADMIN-TENANT-POLICY-1 renders them behind it) — pin every method.
+test('the admin UI probe: every tenant/shared method is a function on the service', t => {
+  const svc = new MailService()
+  for (const m of ['getTenant', 'tenantConsentUrl', 'tenantTest', 'tenantProvision', 'createShared', 'updateShared']) {
+    t.equal(typeof svc[m], 'function', `sdk.mail.${m} is a function`)
+  }
+  t.end()
+})
+
 // ─── workspaceId threading ───────────────────────────────────────────────────
 
 test('mail threads workspaceId as a query param on every route', async t => {

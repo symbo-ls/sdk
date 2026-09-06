@@ -158,6 +158,45 @@ test('mail.messages ops: body(id, { workspaceId }); attachment(id, aid, { worksp
   t.end()
 })
 
+// ─── mail.tenant + mail.shared — the §3.5 admin surface ──────────────────────
+
+test('mail.tenant ops resolve the tenant methods (provider positional, dryRun body)', async t => {
+  const calls = []
+  const execute = createEntityDispatcher(makeSdk(calls))
+  await execute('mail.tenant', 'get', { workspaceId: 'ws1' })
+  t.deepEqual(calls[0], { service: 'mail', method: 'getTenant', args: [{ workspaceId: 'ws1' }] }, 'get → getTenant({ workspaceId })')
+  await execute('mail.tenant', 'consent', { provider: 'microsoft', workspaceId: 'ws1' })
+  t.deepEqual(calls[1], { service: 'mail', method: 'tenantConsentUrl', args: ['microsoft', { workspaceId: 'ws1' }] }, 'consent(provider, { workspaceId })')
+  await execute('mail.tenant', 'test', { provider: 'google', workspaceId: 'ws1' })
+  t.deepEqual(calls[2], { service: 'mail', method: 'tenantTest', args: ['google', { workspaceId: 'ws1' }] }, 'test(provider, { workspaceId })')
+  await execute('mail.tenant', 'provision', { provider: 'google', dryRun: true, workspaceId: 'ws1' })
+  t.deepEqual(
+    calls[3],
+    { service: 'mail', method: 'tenantProvision', args: ['google', { dryRun: true }, { workspaceId: 'ws1' }] },
+    'provision(provider, { dryRun }, { workspaceId }) — the dry run rides the body'
+  )
+  await execute('mail.tenant', 'provision', { provider: 'google', workspaceId: 'ws1' })
+  t.deepEqual(calls[4].args, ['google', {}, { workspaceId: 'ws1' }], 'no dryRun key → an empty body, the server applies')
+  t.end()
+})
+
+test('mail.shared ops unpack their args (create strips the pin, update is id+patch)', async t => {
+  const calls = []
+  const execute = createEntityDispatcher(makeSdk(calls))
+  const access = [{ subjectType: 'role', subjectId: 'editor', level: 'write' }]
+  await execute('mail.shared', 'create', { workspaceId: 'ws1', address: 'support@acme.com', name: 'Support', access })
+  t.equal(calls[0].method, 'createShared', 'create → createShared')
+  t.deepEqual(calls[0].args[0], { address: 'support@acme.com', name: 'Support', access }, 'the routing pin is stripped from the body')
+  t.deepEqual(calls[0].args[1], { workspaceId: 'ws1' }, 'the pin rides in the options')
+  await execute('mail.shared', 'update', { id: 's1', workspaceId: 'ws1', access, serviceDesk: { enabled: true } })
+  t.deepEqual(
+    calls[1].args,
+    ['s1', { access, serviceDesk: { enabled: true } }, { workspaceId: 'ws1' }],
+    'update(id, patch, { workspaceId }) → updateShared'
+  )
+  t.end()
+})
+
 // ─── The routes that must NOT be registered yet ──────────────────────────────
 
 test('no mail entity is registered for a route the server does not serve yet', async t => {
@@ -165,14 +204,16 @@ test('no mail entity is registered for a route the server does not serve yet', a
   // Bare `mail` stays absent on purpose: §7 named it for threads, the shipped
   // read UI calls 'mail.threads', and two names for one entity is the drift
   // this file exists to refuse.
-  const absent = ['mail', 'mail.tenant', 'mail.shared']
+  const absent = ['mail']
   for (const entity of absent) {
     t.equal(execute.getRoute(entity), null, `${entity} is not routed until its server routes land`)
   }
   // mail.drafts + mail.outbox joined `present` when MAIL-SERVER-SEND-OUTBOX-1
   // registered the §5.7 routes; mail.threads + mail.messages when
-  // MAIL-SERVER-THREAD-READ-ROUTES-1 registered the §5.2/§5.6 reads.
-  const present = ['mail.setup', 'mail.accounts', 'mail.admin', 'mail.drafts', 'mail.outbox', 'mail.threads', 'mail.messages']
+  // MAIL-SERVER-THREAD-READ-ROUTES-1 registered the §5.2/§5.6 reads;
+  // mail.tenant + mail.shared when MAIL-SERVER-TENANT-SHARED-ROUTES-1
+  // registered the §3.5 admin tenant/shared surface.
+  const present = ['mail.setup', 'mail.accounts', 'mail.admin', 'mail.drafts', 'mail.outbox', 'mail.threads', 'mail.messages', 'mail.tenant', 'mail.shared']
   for (const entity of present) {
     t.equal(execute.getRoute(entity)?.service, 'mail', `${entity} routes to the mail service`)
   }

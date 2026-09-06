@@ -53,12 +53,25 @@ import { BaseService } from './BaseService.js'
 // (§5.11): treat a 404 from get/update/remove as "not visible to you", not
 // as proof the row is gone.
 //
+// Tenant + shared surface (MAIL-SERVER-TENANT-SHARED-ROUTES-1, §3.5 cards
+// 1+3 · §5.4 — every method below needs the mail admin gate):
+//   GET    /mail/tenant                       → getTenant          per-provider OrgIntegration facts (connected, domain, adminEmail, tenantId, mailEnabled, capabilities) + the §3.5 admin steps
+//   POST   /mail/tenant/:provider/consent     → tenantConsentUrl   microsoft { consentUrl } (signed kind:'tenant' state, 10 min); google 409 use_integration_page
+//   POST   /mail/tenant/:provider/test        → tenantTest         google: DWD getProfile + directory(1), green sets config.mail.enabled; microsoft: tenantProbe. Audited
+//   POST   /mail/tenant/:provider/provision   → tenantProvision    directory ⋈ members → kind 'tenant' rows + backfill; { dryRun: true } = preview, no writes
+//   POST   /mail/shared                       → createShared       { address, name, access[], serviceDesk?, provider? } — test-read gated, 201
+//   PATCH  /mail/shared/:id                   → updateShared       grants / serviceDesk / displayName
+//
+// NOT a method: GET /mail/tenant/:provider/callback. It is the BROWSER's
+// return leg from the Microsoft admin-consent screen (public, state-JWT-
+// guarded, answers a 302 to <shell>/admin/mail?tenantConnected= or
+// ?tenantError=) — the admin page opens `consentUrl` and reads those params.
+//
 // NOT here, on purpose: the provider-scope search (GET /search), thread
-// links + rsvp, attachment save-to-Files, the image proxy, the tenant
-// surface and the provider webhooks. Those routes are not registered yet;
-// each lands with its own server ticket and gains its SDK method there. A
-// method here for a route that does not exist would answer 404 and read as
-// a server fault.
+// links + rsvp, attachment save-to-Files, the image proxy and the provider
+// webhooks. Those routes are not registered yet; each lands with its own
+// server ticket and gains its SDK method there. A method here for a route
+// that does not exist would answer 404 and read as a server fault.
 //
 // Workspace-scoped server-side (active-workspace claim fallback); an explicit
 // `workspaceId` is threaded as a query param — a ROUTING param, never a body
@@ -216,6 +229,87 @@ export class MailService extends BaseService {
     if (limit !== undefined) extra.limit = limit
     const ws = filter.workspaceId || options.workspaceId
     return this._call('mail.adminAudit', `/mail/admin/audit${qs(ws, extra)}`)
+  }
+
+  // ── Tenant + shared inboxes (§3.5 cards 1+3 — mail admin only) ───────────
+
+  // GET /core/mail/tenant (mail admin) — per-provider tenant facts. Answers
+  // { workspace, providers: [{ provider, integrationKind, label, catalogued,
+  // capabilities, connected, connectionId, domain, adminEmail, tenantId,
+  // mailEnabled, testedAt, lastTestError, consentedAt, steps }] }. `steps`
+  // always rides (the route is admin-gated); `connected` is the D5 fact —
+  // google: config.mail.enabled (a green tenantTest), microsoft: a captured
+  // tenantId (admin consent landed).
+  getTenant ({ workspaceId } = {}) {
+    return this._call('mail.getTenant', `/mail/tenant${qs(workspaceId)}`)
+  }
+
+  // POST /core/mail/tenant/:provider/consent (mail admin) — microsoft only:
+  // { provider, consentUrl, connectionId, expiresIn: 600 }; the admin page
+  // opens `consentUrl` and the public callback captures the tenant id, then
+  // redirects back with ?tenantConnected= / ?tenantError=. Google answers
+  // 409 use_integration_page — its credential lives on
+  // /admin/integrations/google and mail turns on with a green tenantTest.
+  tenantConsentUrl (provider, { workspaceId } = {}) {
+    return this._call('mail.tenantConsentUrl', `/mail/tenant/${encodeURIComponent(provider)}/consent${qs(workspaceId)}`, {
+      method: 'POST'
+    })
+  }
+
+  // POST /core/mail/tenant/:provider/test (mail admin) — the §5.4 [Test]
+  // read, audited pass AND fail. google: impersonates the tenant admin,
+  // users.getProfile + one directory row — a green answer ALSO sets
+  // config.mail.enabled (that is what makes the tenant "connected"); answers
+  // { ok, provider, admin, profile, directory, enabled }. microsoft:
+  // client-credentials token + one directory page + the admin inbox —
+  // { ok, provider, admin, users, inbox }. Reauth-class failures answer 502
+  // with the exact admin step in the message; 404 no_tenant · 409
+  // tenant_not_ready before any probe.
+  tenantTest (provider, { workspaceId } = {}) {
+    return this._call('mail.tenantTest', `/mail/tenant/${encodeURIComponent(provider)}/test${qs(workspaceId)}`, {
+      method: 'POST'
+    })
+  }
+
+  // POST /core/mail/tenant/:provider/provision (mail admin) — match the
+  // tenant directory against the workspace members (email + aliases) and
+  // provision kind:'tenant' mailboxes. Body { dryRun?: true }: a dry run
+  // answers { dryRun: true, matched, toCreate, existing, members } and
+  // writes NOTHING; an apply answers { dryRun: false, matched, created,
+  // existing, members } — each created row already has its backfill queued.
+  // `directoryTruncated: true` flags a directory bigger than the sweep cap.
+  tenantProvision (provider, payload = {}, { workspaceId } = {}) {
+    return this._call('mail.tenantProvision', `/mail/tenant/${encodeURIComponent(provider)}/provision${qs(workspaceId)}`, {
+      method: 'POST',
+      body: payload
+    })
+  }
+
+  // POST /core/mail/shared (mail admin) — add a shared inbox: { address,
+  // name, access: [{ subjectType: 'user'|'team'|'role', subjectId, level:
+  // 'read'|'write'|'manage' }], serviceDesk?: { enabled, autoTicket,
+  // defaultAssignee, defaultTeam }, provider? (required only when BOTH
+  // tenants are connected). The server test-reads the mailbox through the
+  // tenant credential first — 404 mailbox_not_found when the tenant has no
+  // such address, 409 already_exists on a live duplicate. 201 { account,
+  // summary, sync } — `account` is the admin row + full access + full
+  // serviceDesk.
+  createShared (payload = {}, { workspaceId } = {}) {
+    return this._call('mail.createShared', `/mail/shared${qs(workspaceId)}`, {
+      method: 'POST',
+      body: payload
+    })
+  }
+
+  // PATCH /core/mail/shared/:id (mail admin) — edit grants (`access` is the
+  // FULL replacement list), serviceDesk fields (merged per key) and
+  // displayName. Answers { account, fields } with the fields that changed.
+  // 404 for an id that is not a shared inbox in this workspace.
+  updateShared (id, payload = {}, { workspaceId } = {}) {
+    return this._call('mail.updateShared', `/mail/shared/${encodeURIComponent(id)}${qs(workspaceId)}`, {
+      method: 'PATCH',
+      body: payload
+    })
   }
 
   // ── Read path (§5.2 threads) ──────────────────────────────────────────────

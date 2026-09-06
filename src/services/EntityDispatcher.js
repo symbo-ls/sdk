@@ -945,11 +945,11 @@ const ENTITY_ROUTES = {
   // reconnect / sync-now, the admin health + audit surface, the §5.7 send
   // path ('mail.drafts' + 'mail.outbox', MAIL-SERVER-SEND-OUTBOX-1) and the
   // §5.2/§5.6 read path ('mail.threads' + 'mail.messages',
-  // MAIL-SERVER-THREAD-READ-ROUTES-1). §7 named the thread entity bare
+  // MAIL-SERVER-THREAD-READ-ROUTES-1) and the §3.5 admin tenant + shared
+  // surface ('mail.tenant' + 'mail.shared',
+  // MAIL-SERVER-TENANT-SHARED-ROUTES-1). §7 named the thread entity bare
   // `mail`; the shipped read UI (workspace/packages/mail) calls
-  // 'mail.threads', so that is the registered name. 'mail.tenant' and
-  // 'mail.shared' are deliberately absent: those routes do not exist yet,
-  // so an entry for them would answer 404 and read as a server fault.
+  // 'mail.threads', so that is the registered name.
   //   sdk.execute('mail.setup', 'get', { workspaceId })
   //   sdk.execute('mail.accounts', 'list', { workspaceId })
   //   sdk.execute('mail.accounts', 'update', { id, workspaceId, signature })
@@ -1092,6 +1092,48 @@ const ENTITY_ROUTES = {
       list: argMaps.filterOptions,
       remove: wsArgMaps.id,
       audit: argMaps.filterOptions
+    }
+  },
+  'mail.tenant': {
+    service: 'mail',
+    methods: {
+      get: 'getTenant',
+      consent: 'tenantConsentUrl',
+      test: 'tenantTest',
+      provision: 'tenantProvision'
+    },
+    // All mail-admin-gated (§3.5). `consent`/`test` take the provider as a
+    // positional; `provision` also carries { dryRun } as its body — a dry
+    // run previews the directory ⋈ members match with no writes.
+    //   sdk.execute('mail.tenant', 'get', { workspaceId })
+    //   sdk.execute('mail.tenant', 'consent', { provider: 'microsoft', workspaceId })
+    //   sdk.execute('mail.tenant', 'test', { provider: 'google', workspaceId })
+    //   sdk.execute('mail.tenant', 'provision', { provider: 'google', dryRun: true, workspaceId })
+    argMap: {
+      get: mailScopeArgs,
+      consent: (a) => [a?.provider ?? (typeof a === 'string' ? a : undefined), ..._wsOpts(a)],
+      test: (a) => [a?.provider ?? (typeof a === 'string' ? a : undefined), ..._wsOpts(a)],
+      provision: (a) => [
+        a?.provider ?? (typeof a === 'string' ? a : undefined),
+        { ...(a?.dryRun !== undefined ? { dryRun: a.dryRun } : {}) },
+        ..._wsOpts(a)
+      ]
+    }
+  },
+  'mail.shared': {
+    service: 'mail',
+    methods: {
+      create: 'createShared',
+      update: 'updateShared'
+    },
+    // `create` is test-read gated server-side (404 mailbox_not_found when
+    // the tenant has no such address); `update`'s `access` is the FULL
+    // replacement grants list, serviceDesk merges per key.
+    //   sdk.execute('mail.shared', 'create', { workspaceId, address, name, access, serviceDesk })
+    //   sdk.execute('mail.shared', 'update', { id, workspaceId, access })
+    argMap: {
+      create: wsArgMaps.payload,
+      update: wsArgMaps.idPayload
     }
   },
 
