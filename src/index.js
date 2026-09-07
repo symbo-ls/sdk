@@ -58,6 +58,7 @@ import {
   createSharedAssetService,
   createCreditsService,
   createCanvasLayoutService,
+  createRefsService,
   createMeetService,
   createCalendarService,
   createBuildsService,
@@ -604,6 +605,15 @@ export class SDK {
           options: this._options
         })
       ),
+      // Entity references + workspace search — `sdk.getService('refs')`, and
+      // the `refs` / `search` dispatcher routes. See RefsService.js.
+      this._initService(
+        'refs',
+        createRefsService({
+          context: this._context,
+          options: this._options
+        })
+      ),
       // Builds & Deploy — /core/builds/* pipeline behind the /infra canvas.
       this._initService(
         'builds',
@@ -1091,6 +1101,7 @@ export {
   createSharedAssetService,
   createCreditsService,
   createCanvasLayoutService,
+  createRefsService,
   createMeetService,
   createCalendarService,
   createBuildsService,

@@ -117,6 +117,44 @@ export const INTENT_BUILD = 'build'
 export const INTENT_ANSWER = 'answer'
 export const INTENT_ACTION = 'action'
 
+// ==================== ASSISTANT-MESSAGE METADATA READERS ====================
+//
+// An assistant message carries three server-computed bags on its `metadata`,
+// and every one of them is read in more than one place (the live SSE frame, the
+// POST response, the fallback conversation read, and a consumer restoring
+// history). One reader each, exported, so a surface never re-derives the shape
+// and the four call sites can never disagree about it.
+//
+//   suggestions — [{ label, prompt }] follow-up buttons.
+//   sources     — [{ ref, type, id, title, use, verified }] (server spec §4.2).
+//                 `verified:false` = the model NAMED that ref but the turn never
+//                 actually read it. Kept on purpose so a reviewer sees the
+//                 unverifiable claim; a renderer should mark it, not hide it.
+//   confidence  — { score, band, bandLabel, tone, breakdown, caps, reason,
+//                   sourceCount, escalate, stated } (server spec §4.3). COMPUTED
+//                 server-side from the retrieval — never the model's own number.
+//
+// All three are absent on older messages and on non-workspace turns, so every
+// reader returns a safe empty value rather than throwing.
+
+/** Follow-up suggestion buttons, or []. */
+export const messageSuggestions = (msg) => {
+  const list = msg && msg.metadata && msg.metadata.suggestions
+  return Array.isArray(list) ? list : []
+}
+
+/** The answer's verified source list, or []. */
+export const messageSources = (msg) => {
+  const list = msg && msg.metadata && msg.metadata.sources
+  return Array.isArray(list) ? list : []
+}
+
+/** The computed confidence verdict, or null when the message carries none. */
+export const messageConfidence = (msg) => {
+  const c = msg && msg.metadata && msg.metadata.confidence
+  return c && typeof c === 'object' ? c : null
+}
+
 export class AiService extends BaseService {
   // ==================== MODEL MODE ====================
 
@@ -304,6 +342,18 @@ export class AiService extends BaseService {
               suggestions: Array.isArray(donePayload?.suggestions)
                 ? donePayload.suggestions
                 : [],
+              // The answer's SOURCES and its COMPUTED confidence verdict
+              // (server spec §4.2/§4.3). Surfaced on the dispatch result — not
+              // only on `metadata` — because they are first-class parts of the
+              // answer: a surface renders source chips and a confidence pill
+              // from these, and an "Intelligence"/decision-log page reads them
+              // to review what the assistant grounded an answer in. `sources`
+              // is [] and `confidence` is null for a turn that produced
+              // neither (an older server, or a non-workspace turn).
+              sources: Array.isArray(donePayload?.sources)
+                ? donePayload.sources
+                : [],
+              confidence: donePayload?.confidence || null,
               // The assistant message's own metadata (tickets/opus.md
               // "credits-exhausted UX") — carries `{ kind:'error', errorCode,
               // errorMessage, retryable, creditsExhausted }` when
@@ -646,15 +696,18 @@ export class AiService extends BaseService {
         conversationId: resolvedConvId,
         messageId: messageId || null,
         suggestions: Array.isArray(suggestions) ? suggestions : [],
+        // Sources + confidence are derived from `metadata` HERE, in the one
+        // place every delivery path funnels through (the SSE assistant frame,
+        // the POST response, a client-tool resume, and the fallback
+        // conversation read all call finishAnswer). Deriving them at each call
+        // site instead is how one path ends up silently dropping them — which
+        // is exactly what happened to `metadata` itself before it was threaded
+        // through. Empty list / null when the server sent none.
+        sources: messageSources({ metadata }),
+        confidence: messageConfidence({ metadata }),
         metadata: metadata || null
       })
       stopStream()
-    }
-
-    // Pull the follow-up suggestions off a serialized assistant message.
-    const messageSuggestions = (msg) => {
-      const list = msg && msg.metadata && msg.metadata.suggestions
-      return Array.isArray(list) ? list : []
     }
 
     // Pull the raw metadata object off a serialized assistant message — see
@@ -925,6 +978,16 @@ export class AiService extends BaseService {
           // Forward the caller's freeform per-turn context (page awareness:
           // currentPage / pageData / pageActions) so the server can surface it
           // in the agent's system instruction. Null when the caller passes none.
+          //
+          // STRUCTURED ATTACHMENTS ride here too: `context.attached =
+          // { refs: EntityRef[], canvas?: { projectId, boardPageId, title,
+          // nodes[], connections[] } }` (server spec §4.1). It is forwarded
+          // UNCHANGED and deliberately NOT re-shaped here — the server owns the
+          // validation and the caps, and a client that also trimmed the bag
+          // would be a second, drifting copy of that contract. Do not add an
+          // allowlist to this line: `context` is passed through whole, which is
+          // what lets a new context field ship server-side without an SDK
+          // release.
           context: (payload && payload.context) || null,
           // AI-EARLY-ACK-COMPAT-1 — declare that this client understands a 202
           // `{ accepted: true }` ack (handled below: return, let SSE deliver).

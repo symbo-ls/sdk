@@ -103,6 +103,10 @@ import { RecurrenceService } from './RecurrenceService.js'
 // URLs). Search, links, tenant and webhooks arrive with their own tickets.
 import { MailService } from './MailService.js'
 import { CanvasLayoutService } from './CanvasLayoutService.js'
+// Entity references — /core/workspaces/:wsId/refs/{resolve,relations}
+// plus the workspace search route beside them. One address form
+// (`ref:<type>:<id>`) for every workspace surface. See RefsService.js.
+import { RefsService } from './RefsService.js'
 import { MeetService } from './MeetService.js'
 import { CalendarService } from './CalendarService.js'
 import { BuildsService } from './BuildsService.js'
@@ -229,6 +233,9 @@ export const createCreditsService = (config) =>
 
 export const createCanvasLayoutService = (config) =>
   createService(CanvasLayoutService, config)
+
+// Entity refs + workspace search — see RefsService.js header.
+export const createRefsService = (config) => createService(RefsService, config)
 
 // Builds & Deploy — workspace-scoped /core/builds/* pipeline (GitHub App →
 // Cloud Build/buildpacks → Cloud Run). Backs the /infra deployment canvas.
@@ -384,6 +391,7 @@ export {
   SharedAssetService,
   CreditsService,
   CanvasLayoutService,
+  RefsService,
   MeetService,
   CalendarService,
   PersonaService,

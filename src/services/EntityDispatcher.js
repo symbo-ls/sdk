@@ -796,6 +796,30 @@ const ENTITY_ROUTES = {
       remove: argMaps.id
     }
   },
+  // ─── Entity references + workspace search ───────────────────────────────────
+  // One ADDRESS form for everything in a workspace: `ref:<type>:<id>` where
+  // type ∈ record | doc | mail | ticket | file | event | channel | canvas.
+  //
+  //   sdk.execute('search', 'workspace', { query, surfaces?, limit? })
+  //     → [{ ref, title, snippet, surface }] across tickets, documents, notes,
+  //       kb, chat, calendar, mail AND AI-enabled record collections.
+  //   sdk.execute('refs', 'resolve', { ref })      → the entity's content
+  //   sdk.execute('refs', 'relations', { ref, depth }) → its neighbours
+  //
+  // Both routes point at the SAME service (RefsService) — `search` is its own
+  // entity path because a caller searching does not think of it as a "ref"
+  // operation, and a declarative `fetch: [{ from: 'search', method: 'workspace',
+  // params: { query } }]` reads correctly that way. Args pass through as one
+  // options object (no argMap): every method takes a single named bag, and the
+  // active workspace defaults server-side of the SDK boundary.
+  refs: {
+    service: 'refs',
+    methods: { resolve: 'resolve', relations: 'relations' }
+  },
+  search: {
+    service: 'refs',
+    methods: { workspace: 'searchWorkspace' }
+  },
   attachments: {
     service: 'attachments',
     methods: { list: 'list', create: 'create', remove: 'remove' },
