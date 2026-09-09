@@ -729,16 +729,17 @@ export class TicketService extends BaseService {
      * Sends multipart/form-data; the server stores the file and appends the
      * attachment record to the ticket's attachments array.
      *
+     * @param {string} workspaceId - The workspace ID you are currently scoped to
      * @param {string} ticketId - The ticket's ticketId slug (e.g. 'SMBLS-42')
      * @param {File} file - Browser File object to upload
      * @returns {Promise<{attachments: Array}>} Updated attachments array
      */
-    upload: (ticketId, file) => {
+    upload: (workspaceId, ticketId, file) => {
       const formData = new FormData()
       formData.append('file', file)
       return this._call(
         'tickets.attachments.upload',
-        `/tickets/${encodeURIComponent(ticketId)}/attachments`,
+        `/workspaces/${encodeURIComponent(workspaceId)}/tickets/${encodeURIComponent(ticketId)}/attachments`,
         { method: 'POST', body: formData }
       )
     },
