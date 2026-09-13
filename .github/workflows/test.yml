@@ -4,12 +4,16 @@
 # All implementation lives in symbo-ls/release-manager — change there
 # once and every consumer's next push picks it up.
 #
-# Required secrets on this repo (read-only):
-#   - NPM_TOKEN          — npmjs Granular Access Token, read on @symbo.ls
-#   - GH_PACKAGES_TOKEN  — Classic PAT, read:packages only
-# Optional (for live API smoke tests like sdk):
-#   - INFISICAL_CLIENT_ID / INFISICAL_CLIENT_SECRET
-#   - INFISICAL_PROJECT_ID / INFISICAL_DOMAIN
+# Secrets this repo provides (all via `secrets: inherit` below):
+#   - INFISICAL_CLIENT_ID / INFISICAL_CLIENT_SECRET / INFISICAL_DOMAIN
+#       The reusable workflow logs in with these and reads the npm INSTALL
+#       token (NPM_TOKEN_PUBLISH) from Infisical, because the read-scoped
+#       NPM_TOKEN 404s on a cold `bun install` of restricted @symbo.ls/*
+#       packages. The same creds drive the live API smoke tests.
+#   - INFISICAL_PROJECT_ID — smoke tests only (scripts/test.sh)
+#   - NPM_TOKEN            — static fallback when Infisical is unreachable
+# GH_PACKAGES_TOKEN is gone: GitHub Packages was retired on 2026-08-25 and
+# every package resolves from registry.npmjs.org.
 
 name: Test
 
