@@ -5,7 +5,8 @@
 # What it does:
 #   1. Logs into Infisical (universal-auth machine identity)
 #   2. Builds with NODE_ENV=$CHANNEL (default `upcoming`)
-#   3. Runs the smoke suite against the matching live API channel
+#   3. Checks the build contract (src/build/tests: types + IIFE)
+#   4. Runs the smoke suite against the matching live API channel
 #
 # Channel routing (server/packages/channels/channels.json):
 #   main      → test.api.symbols.app    (isolated test API)
@@ -73,6 +74,13 @@ export INFISICAL_TOKEN
 
 echo "Building sdk for NODE_ENV=$CHANNEL..."
 NODE_ENV="$CHANNEL" bun run build
+
+# `build:types` swallows a failing tsc (publish proceeds) and nothing else
+# looks at what the build wrote, so a declaration layout that misses `types`
+# or an IIFE that stopped inlining a module would stay green. Assert the build
+# contract before the live suite (SDK-ANALYZING-TSCONFIG-TS5011-ROOTDIR-CI-RED-1).
+echo "Checking the build contract (types + IIFE)..."
+bun run test:build
 
 echo "Running test:$SUITE against $CHANNEL.api.symbols.app..."
 NODE_ENV="$CHANNEL" bun run "test:$SUITE"

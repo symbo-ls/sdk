@@ -30,6 +30,22 @@ test('sdk package exposes the host-registration IIFE build', (t) => {
   t.end()
 })
 
+// `@symbo.ls/utils` reaches `@symbo.ls/fetch` through `await import(...)` (the
+// fetch adapter's `initAdapterAuth`) but lists it only as an OPTIONAL peer, so
+// neither bun nor npm installs it. The IIFE bundles everything, so a cold
+// install died on `Could not resolve "@symbo.ls/fetch"` (sdk CI, 2026-09-12,
+// SDK-ANALYZING-TSCONFIG-TS5011-ROOTDIR-CI-RED-1) while every warm tree — where
+// a sibling workspace links the package — kept building. Marking it external
+// is not a fix: a published page has no module loader to serve that import,
+// and 3.14.788 and 3.14.789 shipped it inlined.
+test('sdk declares the optional peer its IIFE bundles', (t) => {
+  t.ok(
+    pkg.devDependencies?.['@symbo.ls/fetch'],
+    '@symbo.ls/fetch is a devDependency (utils lists it only as an optional peer)',
+  )
+  t.end()
+})
+
 // `dist/` is gitignored, so this half only runs after a build. Skipping when
 // absent keeps a source-only checkout green; asserting when present is what
 // catches a bundle that built but cannot be used.
@@ -43,5 +59,19 @@ test('built IIFE names the global the host registers', (t) => {
   t.ok(source.includes('export const globalName = "SymbolsSDK"'), 'globalName travels with the source')
   t.ok(source.includes('export const specifier = "@symbo.ls/sdk"'), 'specifier travels with the source')
   t.ok(source.includes('export default "'), 'the IIFE source is the default export')
+  t.end()
+})
+
+test('built IIFE inlines @symbo.ls/fetch instead of importing it at runtime', (t) => {
+  const iifePath = resolve(ROOT, 'dist/sdk.iife.js')
+  if (!existsSync(iifePath)) {
+    t.skip('dist/sdk.iife.js not built — run npm run build:iife')
+    return t.end()
+  }
+  const source = readFileSync(iifePath, 'utf8')
+  t.notOk(
+    /import\(\s*["']@symbo\.ls\/fetch["']\s*\)/.test(source),
+    'no runtime import("@symbo.ls/fetch") is left in the bundle',
+  )
   t.end()
 })

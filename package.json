@@ -75,7 +75,8 @@
     "test:favorite-project": "bun run _inf -- tape integration-tests/index.js integration-tests/favorite-project/*.test.js | tap-spec",
     "test:collab": "bun run _inf -- tape integration-tests/index.js integration-tests/collab/*.test.js | tap-spec",
     "test:user": "bun run _inf -- tape integration-tests/index.js integration-tests/user/*.test.js | tap-spec",
-    "test:unit-all": "tape src/services/tests/**/*.test.js src/build/tests/*.test.js | tap-spec"
+    "test:unit-all": "tape src/services/tests/**/*.test.js src/build/tests/*.test.js | tap-spec",
+    "test:build": "tape src/build/tests/*.test.js | tap-spec"
   },
   "dependencies": {
     "@symbo.ls/channels": "^3.14.675",
@@ -95,6 +96,7 @@
   },
   "devDependencies": {
     "@faker-js/faker": "^9.5.1",
+    "@symbo.ls/fetch": "^3.14.656",
     "esbuild": "^0.27.4",
     "esbuild-plugins-node-modules-polyfill": "^1.6.8",
     "glob": "^12.0.0",
@@ -103,7 +105,8 @@
     "sinon": "^21.0.0",
     "tap-parser": "^18.0.0",
     "tap-spec": "^5.0.0",
-    "tape": "^5.9.0"
+    "tape": "^5.9.0",
+    "typescript": "^6.0.3"
   },
   "gitHead": "0be12bcdd99c265fdeded6d756a1a3616a943ffc",
   "packageManager": "bun@1.3.6",
