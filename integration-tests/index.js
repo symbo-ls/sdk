@@ -4,59 +4,6 @@ import { getConfig } from '../src/config/environment.js'
 import { SDK } from '../src/index.js'
 import { faker } from '@faker-js/faker'
 import { JSDOM } from 'jsdom'
-import { BaseTransport, TransportItemType } from '@grafana/faro-core'
-
-const trackingRecords = {
-  events: [],
-  errors: [],
-  logs: [],
-  measurements: [],
-  others: [],
-  all: []
-}
-
-class IntegrationTestTransport extends BaseTransport {
-  constructor(records) {
-    super()
-    this.name = 'integration-test-transport'
-    this._records = records
-  }
-
-  send(item) {
-    const items = Array.isArray(item) ? item : [item]
-
-    items.forEach(currentItem => {
-      this._records.all.push(currentItem)
-
-      switch (currentItem.type) {
-        case TransportItemType.EVENT:
-          this._records.events.push(currentItem)
-          break
-        case TransportItemType.EXCEPTION:
-          this._records.errors.push(currentItem)
-          break
-        case TransportItemType.LOG:
-          this._records.logs.push(currentItem)
-          break
-        case TransportItemType.MEASUREMENT:
-          this._records.measurements.push(currentItem)
-          break
-        default:
-          this._records.others.push(currentItem)
-          break
-      }
-    })
-  }
-}
-
-function resetTrackingRecords() {
-  Object.values(trackingRecords).forEach(collection => {
-    collection.length = 0
-  })
-}
-
-global.__faroTestRecords = trackingRecords
-global.__resetFaroTestRecords = resetTrackingRecords
 
 async function initializeSdk(tempLocalInstance = false) {
   // Initialize sdk
