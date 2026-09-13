@@ -19,6 +19,15 @@
  * The legacy Grafana URL + transports + instrumentations config still work
  * as inert pass-through so consumers that override transports (e.g. local
  * dev demos) can plug their own fetcher in via `options.tracking.transport`.
+ *
+ * `options.tracking.kind` ('workspace' | 'project') declares the session
+ * FAMILY the consumer's telemetry belongs to (CORE-ANALYZED-KIND-UTC-
+ * TOTALS-ROLLUPS-1): the my.symbols shell passes 'workspace', a tenant app
+ * embedding the SDK passes 'project'. It is forwarded to createAnalyzing as
+ * `kind`, which stamps `envelope.kind` on every outbound envelope; the
+ * server files the session by it (AnalyzedWriteService.resolveSessionKind).
+ * Unset → the server's legacy projectId rule decides. May also arrive via
+ * `context.tracking.kind`; anything but the two family names is ignored.
  */
 
 import { BaseService } from './BaseService.js'
@@ -44,7 +53,9 @@ const DEFAULT_TRACKING_OPTIONS = {
   // client uses it instead of routing through the analyzed service.
   transport: null,
   globalAttributes: {},
-  user: null
+  user: null,
+  // Session family — see the header comment. null = let the server decide.
+  kind: null
 }
 
 const sanitizeAttributes = (value) => {
@@ -722,12 +733,23 @@ export class TrackingService extends BaseService {
       this._trackingOptions.workspaceId ||
       null
 
+    // Session family ('workspace' | 'project') — forwarded to createAnalyzing
+    // as `kind` so every envelope this consumer ships is filed in the right
+    // family. Anything else (typo, legacy value) → null → server fallback.
+    const kindRaw =
+      merged.kind ||
+      contextConfig.kind ||
+      this._trackingOptions.kind ||
+      null
+    const kind = kindRaw === 'workspace' || kindRaw === 'project' ? kindRaw : null
+
     return {
       appName,
       appVersion,
       environment: environmentName,
       globalAttributes,
       workspaceId,
+      kind,
       sessionTracking: merged.sessionTracking !== false,
       enableTracing: merged.enableTracing !== false,
       transport: typeof merged.transport === 'function' ? merged.transport : null,
@@ -779,14 +801,23 @@ export class TrackingService extends BaseService {
     }
   }
 
-  async _setupAnalyzingClient (runtimeConfig) {
+  // `deps.createClient` is a TEST SEAM (defaults to the real createAnalyzing):
+  // the unit test asserts what this service HANDS to the factory — the
+  // artifact behind `@symbo.ls/analyzing` in node_modules is a build/publish
+  // output, so a shipped envelope is not a stable thing to assert on here.
+  async _setupAnalyzingClient (runtimeConfig, deps = {}) {
     try {
       const transport = this._resolveTransport(runtimeConfig)
+      const createClient =
+        typeof deps.createClient === 'function' ? deps.createClient : createAnalyzing
 
-      this._analyzing = createAnalyzing({
+      this._analyzing = createClient({
         appKey: runtimeConfig.appName,
         release: runtimeConfig.appVersion || null,
         env: runtimeConfig.environment,
+        // Session family — stamps `envelope.kind` on every outbound
+        // envelope (see the header comment / _buildRuntimeConfig).
+        ...(runtimeConfig.kind ? { kind: runtimeConfig.kind } : {}),
         transport,
         level: 'info',
         sampleRate: 1,
