@@ -50,7 +50,7 @@ function applyProjectChangesIteratesVersionTest (positiveTest) {
     ? 'applyProjectChanges should'
     : 'applyProjectChanges should not'
   test(`${titlePreface} increase version number`, async t => {
-    const project = await base.createAndGetProject(true, sdkInstance)
+    const project = await base.createAndGetProject(false, sdkInstance)
     const testData = structuredClone(pageDataSets.pageContent.update)
     testData.key += performance.now()
     const { value, ...schema } = testData
