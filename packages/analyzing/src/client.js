@@ -27,6 +27,18 @@ const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefine
  *   tenantKey    string  multi-tenant partition key
  *   release      string  build version / git sha
  *   env          string  'production' | 'next' | 'staging' | 'dev'
+ *   kind         'workspace' | 'project'  session FAMILY. 'workspace' = the
+ *                my.symbols shell used by the team; 'project' = a visitor
+ *                of a published site / tenant app (bootAnalyzing's public
+ *                mode sets it). Stamped as `envelope.kind` on EVERY
+ *                outbound envelope so the server files the session in the
+ *                right family regardless of its projectId (a shell surface
+ *                booted as 'system--canvas' stays workspace telemetry).
+ *                Unset → the server falls back to its legacy rule
+ *                (projectId === 'workspace' → workspace, else project).
+ *                Every envelope also carries `page.utcOffset` (integer
+ *                minutes EAST of UTC, `-new Date().getTimezoneOffset()`)
+ *                and a `page.timezone` fill when the page block lacks one.
  *
  * Auth (pick one):
  *   apiKey       string                          X-Analyze-Key header
@@ -108,6 +120,7 @@ export const createAnalyzing = (opts = {}) => {
     sampleRate = 1,
     redact,
     beforeSend,
+    kind,
     debug = false,
     sessionId,
     consoleSink = false,
@@ -449,6 +462,47 @@ export const createAnalyzing = (opts = {}) => {
     ? crypto.randomUUID()
     : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`)
 
+  // ── Family + clock stamp ───────────────────────────────────────────────
+  // Every outbound envelope (batch AND the terminal beacon — both go through
+  // the remote sink's beforeSend) gets `kind` (when configured) and a page
+  // block carrying the client's UTC offset in integer minutes east
+  // (Tbilisi = 240, New York = -240) plus an IANA `timezone` fill. The
+  // server stores the offset fill-only (AnalyzedWriteService
+  // .resolveUtcOffset) and decides the family from `kind`
+  // (resolveSessionKind). Wraps the caller's own beforeSend: the stamp
+  // runs first, the caller's mutator sees the stamped envelope and keeps
+  // its drop-by-returning-null contract. Never throws — telemetry is
+  // best-effort, and a throw here would be caught by the sink and ship the
+  // UNstamped envelope, which is exactly the mislabelling this prevents.
+  const resolvedKind = kind === 'workspace' || kind === 'project' ? kind : null
+  const _stampEnvelope = (envelope) => {
+    try {
+      if (!envelope || typeof envelope !== 'object') return envelope
+      if (resolvedKind) envelope.kind = resolvedKind
+      const page = envelope.page && typeof envelope.page === 'object' ? envelope.page : {}
+      const utcOffset = -new Date().getTimezoneOffset()
+      const stamped = { ...page }
+      if (Number.isFinite(utcOffset)) stamped.utcOffset = utcOffset
+      if (!stamped.timezone) {
+        try {
+          const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+          if (tz) stamped.timezone = tz
+        } catch {}
+      }
+      envelope.page = stamped
+    } catch {}
+    return envelope
+  }
+  const resolvedBeforeSend = (envelope) => {
+    const stamped = _stampEnvelope(envelope)
+    if (typeof beforeSend !== 'function') return stamped
+    try {
+      return beforeSend(stamped)
+    } catch {
+      return stamped
+    }
+  }
+
   const remoteSinkConfig = {
     type: 'remote',
     url: endpoint,
@@ -468,7 +522,7 @@ export const createAnalyzing = (opts = {}) => {
       tags: { ...contextStore.tags }
     }),
     classify: classifyEvent,
-    beforeSend,
+    beforeSend: resolvedBeforeSend,
     sampleRate,
     batchMs,
     maxBatch,

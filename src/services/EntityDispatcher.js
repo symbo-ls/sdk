@@ -1257,7 +1257,14 @@ const ENTITY_ROUTES = {
       weekly: 'weekly',
       demographics: 'demographics',
       changes: 'changes',
-      activeUsers: 'activeUsers'
+      activeUsers: 'activeUsers',
+      // Overall-totals section (CORE-ANALYZED-KIND-UTC-TOTALS-ROLLUPS-1):
+      // `sdk.execute('analyzed', 'totals', { family: 'projects', tz })`,
+      // `('analyzed', 'pages', { filter, options })`, `('analyzed',
+      // 'referrers', { filter, options })`.
+      totals: 'totals',
+      pages: 'pages',
+      referrers: 'referrers'
     },
     argMap: {
       ingest: (a) => [a],
@@ -1273,7 +1280,10 @@ const ENTITY_ROUTES = {
       weekly: (a) => [a?.filter ?? a ?? {}],
       demographics: (a) => [a?.filter ?? a ?? {}],
       changes: (a) => [a?.filter ?? a ?? {}],
-      activeUsers: (a) => [a?.filter ?? {}, a?.options ?? {}]
+      activeUsers: (a) => [a?.filter ?? {}, a?.options ?? {}],
+      totals: (a) => [a?.filter ?? a ?? {}],
+      pages: (a) => [a?.filter ?? {}, a?.options ?? {}],
+      referrers: (a) => [a?.filter ?? {}, a?.options ?? {}]
     }
   },
   'docs.documents': {

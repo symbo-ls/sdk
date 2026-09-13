@@ -42,6 +42,11 @@ export const bootAnalyzing = (cfg = {}) => {
 
   const client = createAnalyzing({
     mode: 'public',
+    // Session family: everything booted through this public-mode seam is a
+    // visitor of a published site / tenant app — never the team's
+    // workspace shell. The server's ingest-public route forces the same
+    // label; stamping it here keeps the two halves honest with each other.
+    kind: 'project',
     appKey:
       cfg.projectId ||
       cfg.domain ||

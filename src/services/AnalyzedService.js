@@ -14,10 +14,42 @@ const _setWorkspace = (params, filter, options) => {
   if (ws != null && ws !== '') params.set('workspaceId', String(ws))
 }
 
+// `family` — the session FAMILY every analyzed read narrows to
+// (CORE-ANALYZED-KIND-UTC-TOTALS-ROLLUPS-1): 'workspace' = the my.symbols
+// shell used by the team, 'projects' = visitors of published sites /
+// tenant apps. The server (AnalyzedController._familyMatch) keeps the two
+// apart on the write-time `kind` label and classifies pre-label rows by
+// the legacy projectId rule; absent → unfiltered (legacy behaviour).
+const _setFamily = (params, filter) => {
+  const family = filter?.family
+  if (family != null && family !== '') params.set('family', String(family))
+}
+
+// `tz` — the viewer's IANA zone for the calendar rollups (now / weekly /
+// changes / totals). The server validates it against its own zone list
+// and falls back to UTC; every such response echoes the zone it used.
+const _setTz = (params, filter) => {
+  const tz = filter?.tz
+  if (tz != null && tz !== '') params.set('tz', String(tz))
+}
+
+// `since` for the window-scoped reads — accepts a Date or an ISO string.
+const _setSince = (params, filter) => {
+  const since = filter?.since
+  if (since == null || since === '') return
+  params.set('since', since instanceof Date ? since.toISOString() : String(since))
+}
+
 // AnalyzedService wraps the main server's /core/analyzed/* routes (Mongo-
 // backed). First-class main-server surface, NOT workspace-project worker
 // routes — all calls go through _call() which routes to ${apiUrl}/core/
 // analyzed/*.
+//
+// Every read forwards `filter.family` ('workspace' | 'projects') and the
+// calendar rollups (now / weekly / changes / totals) forward `filter.tz`
+// (IANA zone) — see _setFamily / _setTz above. `totals`, `pages` and
+// `referrers` are the overall-totals section (CORE-ANALYZED-KIND-UTC-
+// TOTALS-ROLLUPS-1).
 //
 // Peer service to sdk.tickets and sdk.docs. See architecture/MODEL.md
 // §"Visitor telemetry — Mongo migration".
@@ -44,10 +76,11 @@ export class AnalyzedService extends BaseService {
     })
   }
 
-  // GET /core/analyzed/sessions?userId=&projectId=&since=&country=&limit=&offset=
+  // GET /core/analyzed/sessions?userId=&projectId=&family=&since=&country=&limit=&offset=
   listSessions (filter = {}, options = {}) {
     const params = new URLSearchParams()
     _setWorkspace(params, filter, options)
+    _setFamily(params, filter)
     if (filter.userId) params.set('userId', filter.userId)
     if (filter.projectId) params.set('projectId', filter.projectId)
     if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
@@ -73,10 +106,11 @@ export class AnalyzedService extends BaseService {
     )
   }
 
-  // GET /core/analyzed/events?sessionId=&logType=&projectId=&since=&order=&limit=&offset=
+  // GET /core/analyzed/events?sessionId=&logType=&projectId=&family=&since=&order=&limit=&offset=
   listEvents (filter = {}, options = {}) {
     const params = new URLSearchParams()
     _setWorkspace(params, filter, options)
+    _setFamily(params, filter)
     if (filter.sessionId) params.set('sessionId', filter.sessionId)
     if (filter.logType) params.set('logType', filter.logType)
     if (filter.projectId) params.set('projectId', filter.projectId)
@@ -89,11 +123,12 @@ export class AnalyzedService extends BaseService {
     return this._call('analyzed.listEvents', `/analyzed/events${qs ? `?${qs}` : ''}`)
   }
 
-  // GET /core/analyzed/users?projectId=&since=&limit=&offset=
+  // GET /core/analyzed/users?projectId=&family=&since=&limit=&offset=
   // Server-side aggregation (legacy analyzed_user_summaries shape).
   listUsers (filter = {}, options = {}) {
     const params = new URLSearchParams()
     _setWorkspace(params, filter, options)
+    _setFamily(params, filter)
     if (filter.projectId) params.set('projectId', filter.projectId)
     if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
     if (filter.since) params.set('since', filter.since)
@@ -103,11 +138,12 @@ export class AnalyzedService extends BaseService {
     return this._call('analyzed.listUsers', `/analyzed/users${qs ? `?${qs}` : ''}`)
   }
 
-  // GET /core/analyzed/active-users?projectId=&limit=&offset=
+  // GET /core/analyzed/active-users?projectId=&family=&limit=&offset=
   // Org-scoped active users — returns [{userId, userName, userEmail, lastSeenAt}].
   activeUsers (filter = {}, options = {}) {
     const params = new URLSearchParams()
     _setWorkspace(params, filter, options)
+    _setFamily(params, filter)
     if (filter.projectId) params.set('projectId', filter.projectId)
     if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
     if (options.limit != null) params.set('limit', String(options.limit))
@@ -116,12 +152,14 @@ export class AnalyzedService extends BaseService {
     return this._call('analyzed.activeUsers', `/analyzed/active-users${qs ? `?${qs}` : ''}`)
   }
 
-  // GET /core/analyzed/changes?range=<filter.range>&projectId=
-  // Monthly signups/activity over a range (defaults to last 12 months).
-  // Returns { monthly: [{label, count}] }.
+  // GET /core/analyzed/changes?range=<filter.range>&projectId=&family=&tz=
+  // Monthly signups/activity over a range (defaults to last 12 months),
+  // month boundaries on the `tz` calendar. Returns { tz, monthly: [{label, count}] }.
   changes (filter = {}) {
     const params = new URLSearchParams()
     _setWorkspace(params, filter)
+    _setFamily(params, filter)
+    _setTz(params, filter)
     if (filter.range) params.set('range', filter.range)
     if (filter.projectId) params.set('projectId', filter.projectId)
     if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
@@ -129,11 +167,12 @@ export class AnalyzedService extends BaseService {
     return this._call('analyzed.changes', `/analyzed/changes${qs ? `?${qs}` : ''}`)
   }
 
-  // GET /core/analyzed/demographics?projectId=&since=
+  // GET /core/analyzed/demographics?projectId=&family=&since=
   // Country-level visitor breakdown. Returns { countries: [{country, count, code}] }.
   demographics (filter = {}) {
     const params = new URLSearchParams()
     _setWorkspace(params, filter)
+    _setFamily(params, filter)
     if (filter.projectId) params.set('projectId', filter.projectId)
     if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
     if (filter.since) params.set('since', filter.since)
@@ -141,35 +180,42 @@ export class AnalyzedService extends BaseService {
     return this._call('analyzed.demographics', `/analyzed/demographics${qs ? `?${qs}` : ''}`)
   }
 
-  // GET /core/analyzed/now?projectId=
-  // Real-time dashboard snapshot. Returns { usersNow, usersToday, hourly: [{hour, count}],
+  // GET /core/analyzed/now?projectId=&family=&tz=
+  // Real-time dashboard snapshot. Returns { tz, usersNow, usersToday (since local
+  // midnight in tz), hourly: [{hour (0..23 in tz), count}],
   // activeSessions: [{id, name, email, awake, browser, os, resolution, location,
   // duration, sessionCount, path, updates, ip, referrer}] }.
   now (filter = {}) {
     const params = new URLSearchParams()
     _setWorkspace(params, filter)
+    _setFamily(params, filter)
+    _setTz(params, filter)
     if (filter.projectId) params.set('projectId', filter.projectId)
     if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
     const qs = params.toString()
     return this._call('analyzed.now', `/analyzed/now${qs ? `?${qs}` : ''}`)
   }
 
-  // GET /core/analyzed/weekly?projectId=
-  // Week-over-week comparison. Returns { pastWeek: [{label, count}], thisWeek: [{label, count}] }.
+  // GET /core/analyzed/weekly?projectId=&family=&tz=
+  // Week-over-week comparison on the `tz` calendar.
+  // Returns { tz, pastWeek: [{label, count}], thisWeek: [{label, count}] }.
   weekly (filter = {}) {
     const params = new URLSearchParams()
     _setWorkspace(params, filter)
+    _setFamily(params, filter)
+    _setTz(params, filter)
     if (filter.projectId) params.set('projectId', filter.projectId)
     if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
     const qs = params.toString()
     return this._call('analyzed.weekly', `/analyzed/weekly${qs ? `?${qs}` : ''}`)
   }
 
-  // GET /core/analyzed/bugs?projectId=&since=&limit=&offset=
+  // GET /core/analyzed/bugs?projectId=&family=&since=&limit=&offset=
   // Bug clusters — $group by message, sorted by frequency desc.
   listBugs (filter = {}, options = {}) {
     const params = new URLSearchParams()
     _setWorkspace(params, filter, options)
+    _setFamily(params, filter)
     if (filter.projectId) params.set('projectId', filter.projectId)
     if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
     if (filter.since) params.set('since', filter.since)
@@ -177,5 +223,54 @@ export class AnalyzedService extends BaseService {
     if (options.offset != null) params.set('offset', String(options.offset))
     const qs = params.toString()
     return this._call('analyzed.listBugs', `/analyzed/bugs${qs ? `?${qs}` : ''}`)
+  }
+
+  // GET /core/analyzed/totals?family=&projectId=&excludeProjectId=&since=&tz=
+  // Overall totals for one window (`since` → now; absent = all retained
+  // history) over the chosen family / project scope. Returns
+  // { tz, window: { since, until }, sessions, uniqueUsers, uniqueVisitors,
+  //   pageViews, events, bugs, errors, avgDurationMs, countries, projects,
+  //   activeNow, allTime: { sessions, uniqueVisitors, pageViews } }.
+  totals (filter = {}) {
+    const params = new URLSearchParams()
+    _setWorkspace(params, filter)
+    _setFamily(params, filter)
+    _setTz(params, filter)
+    if (filter.projectId) params.set('projectId', filter.projectId)
+    if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
+    _setSince(params, filter)
+    const qs = params.toString()
+    return this._call('analyzed.totals', `/analyzed/totals${qs ? `?${qs}` : ''}`)
+  }
+
+  // GET /core/analyzed/pages?family=&projectId=&excludeProjectId=&since=&limit=&offset=
+  // Top page paths from page-view events. Returns { data: [{ path, views, sessions }] }
+  // sorted views desc; limit default 10, max 50.
+  pages (filter = {}, options = {}) {
+    const params = new URLSearchParams()
+    _setWorkspace(params, filter, options)
+    _setFamily(params, filter)
+    if (filter.projectId) params.set('projectId', filter.projectId)
+    if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
+    _setSince(params, filter)
+    if (options.limit != null) params.set('limit', String(options.limit))
+    if (options.offset != null) params.set('offset', String(options.offset))
+    const qs = params.toString()
+    return this._call('analyzed.pages', `/analyzed/pages${qs ? `?${qs}` : ''}`)
+  }
+
+  // GET /core/analyzed/referrers?family=&projectId=&excludeProjectId=&since=&limit=
+  // Sessions per referrer host. Returns { data: [{ host, sessions }], direct }
+  // where `direct` counts sessions with no referrer; limit default 10, max 50.
+  referrers (filter = {}, options = {}) {
+    const params = new URLSearchParams()
+    _setWorkspace(params, filter, options)
+    _setFamily(params, filter)
+    if (filter.projectId) params.set('projectId', filter.projectId)
+    if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
+    _setSince(params, filter)
+    if (options.limit != null) params.set('limit', String(options.limit))
+    const qs = params.toString()
+    return this._call('analyzed.referrers', `/analyzed/referrers${qs ? `?${qs}` : ''}`)
   }
 }
