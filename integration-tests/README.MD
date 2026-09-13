@@ -33,8 +33,10 @@ Reusable functions are located in `base.js`. Review these and leverage them as a
 - Add `.env` to the root of SDK with for secrets. File content should look like:
 
 ```.env
-GUEST_USER=<valid email on the workspace>
 GUEST_PASSWORD=<valid password for the user on the workspace>
+# Optional: defaults to the guest account that the server's
+# scripts/provision-guest-test-account.mjs creates (see setup-env.js)
+GUEST_USER=<valid email on the workspace>
 ```
 
 To use a different account for testing add the following flag to the `.env`:
