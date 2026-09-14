@@ -1,6 +1,6 @@
 {
   "name": "@symbo.ls/sdk",
-  "version": "3.14.791",
+  "version": "3.14.792",
   "type": "module",
   "source": "./src/index.js",
   "module": "./dist/esm/src/index.js",
@@ -56,7 +56,7 @@
     "build:esm": "esbuild $(find . -type f -name \"*.js\" -not -path \"*/dist/*\" -not -path \"*/node_modules/*\" -not -path \"*/__tests__/*\" -not -path \"*/test/*\" -not -path \"*/demo/*\" -not -path \"*/demos/*\" -not -path \"*/examples/*\" -not -path \"*/fixtures/*\" -not -name \"*.test.js\") --target=es2022 --format=esm --outbase=. --outdir=dist/esm --minify --log-level=warning",
     "build:node": "esbuild $(find src -name '*.js' ! -name '*.test.js') --target=node16 --format=esm --platform=node --outdir=dist/node --define:process.env.NODE_ENV=process.env.NODE_ENV",
     "build:iife": "node build-iife.mjs && node scripts/build-iife-string.mjs",
-    "build:types": "tsc -p tsconfig.json || echo '::warning::tsc exited non-zero \u2014 type declarations may be incomplete (publish proceeds; fix as separate work)'",
+    "build:types": "tsc -p tsconfig.json || echo '::warning::tsc exited non-zero — type declarations may be incomplete (publish proceeds; fix as separate work)'",
     "build": "rimraf dist && npm run build:esm && npm run build:iife && npm run build:types",
     "watch": "esbuild $(find . -type f -name \"*.js\" -not -path \"*/dist/*\" -not -path \"*/node_modules/*\" -not -path \"*/__tests__/*\" -not -path \"*/test/*\" -not -path \"*/demo/*\" -not -path \"*/demos/*\" -not -path \"*/examples/*\" -not -path \"*/fixtures/*\" -not -name \"*.test.js\") --target=es2022 --format=esm --outbase=. --outdir=dist/esm --watch=forever --log-level=warning",
     "prepublishOnly": "npm run build",
@@ -81,7 +81,7 @@
   "dependencies": {
     "@symbo.ls/channels": "^3.14.675",
     "@symbo.ls/utils": "^3.14.743",
-    "@symbo.ls/analyzing": "^3.14.779",
+    "@symbo.ls/analyzing": "^3.14.780",
     "acorn": "^8.14.0",
     "acorn-walk": "^8.3.4",
     "chalk": "^5.4.1",
