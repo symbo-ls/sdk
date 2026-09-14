@@ -280,6 +280,76 @@ test('an event refreshes lastActivityAt; an event past the timeout rotates the s
   }
 })
 
+test('the terminal envelope of the OLD id carries the OLD stamp (seq n); the first envelope of the new id carries n + 1', async () => {
+  const ls = fakeStorage()
+  const ss = fakeStorage()
+  let now = 1_700_000_000_000
+  const { captured } = await ship({
+    storage: { localStorage: ls, sessionStorage: ss, now: () => now },
+    act: async (c) => {
+      c.captureMessage('one', 'info')
+      await new Promise((r) => setTimeout(r, 20))
+      now += 31 * MIN
+      c.captureMessage('click', 'info')
+      await new Promise((r) => setTimeout(r, 20))
+    }
+  })
+  const first = captured[0].session.id
+  const terminal = captured.find((e) => e.session.endedAt != null)
+  assert.ok(terminal, 'terminal envelope shipped')
+  assert.equal(terminal.session.id, first)
+  assert.deepEqual(
+    { seq: terminal.page.visitor.seq, returning: terminal.page.visitor.returning },
+    { seq: 1, returning: false },
+    'the closing envelope is stamped with the session it closes'
+  )
+  const click = captured.find((e) => e.events.some((ev) => ev.message === 'click'))
+  assert.notEqual(click.session.id, first)
+  assert.deepEqual({ seq: click.page.visitor.seq, returning: click.page.visitor.returning }, { seq: 2, returning: true })
+  assert.equal(ss.dump()[SESSION_KEY].sessionId, click.session.id, 'the store holds the new id')
+})
+
+test('a flush is NOT activity: an idle tab whose timer flushes still expires; only events refresh the clock', () => {
+  const ls = fakeStorage()
+  const ss = fakeStorage()
+  let t = 1_700_000_000_000
+  const store = createVisitorStore({ localStorage: ls, sessionStorage: ss, now: () => t })
+  const captured = []
+  const a = createAnalyzing({
+    appKey: 'app',
+    transport: (envelope) => {
+      captured.push(envelope)
+      return { ok: true }
+    },
+    storage: { localStorage: ls, sessionStorage: ss, now: () => t },
+    batchMs: 5
+  })
+  a.state.activate(null)
+  const before = ss.dump()[SESSION_KEY].lastActivityAt
+  t += 10 * MIN
+  a.flush()
+  assert.equal(ss.dump()[SESSION_KEY].lastActivityAt, before, 'flush did not touch the clock')
+  a.captureMessage('evt', 'info')
+  assert.equal(ss.dump()[SESSION_KEY].lastActivityAt, t, 'an event did')
+  a.shutdown()
+  assert.ok(store.sessionId)
+})
+
+test('two tabs share the visitor counter: the second tab rotation continues the count (read-modify-write)', () => {
+  const ls = fakeStorage()
+  let t = 1_700_000_000_000
+  const tabA = createVisitorStore({ localStorage: ls, sessionStorage: fakeStorage(), now: () => t })
+  const tabB = createVisitorStore({ localStorage: ls, sessionStorage: fakeStorage(), now: () => t })
+  assert.equal(tabA.visitor().seq, 1)
+  assert.equal(tabB.visitor().seq, 2)
+  t += 31 * MIN
+  tabA.rotate()
+  assert.equal(tabA.visitor().seq, 3, 'A re-read B increment before its own')
+  tabB.rotate()
+  assert.equal(tabB.visitor().seq, 4, 'B re-read A increment before its own')
+  assert.equal(ls.dump()[VISITOR_KEY].seq, 4)
+})
+
 test('flush() past the timeout rotates too; a caller startNewSession() advances seq', async () => {
   const ls = fakeStorage()
   const ss = fakeStorage()

@@ -55,8 +55,11 @@ const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefine
  *                id (one visit = one session across page loads), a boot
  *                or an event past it mints a new one (seq + 1) — mid-page
  *                through state.startNewSession, which ships the old id's
- *                terminal envelope first. An explicit `sessionId` wins and
- *                disables the continuity logic.
+ *                terminal envelope first (stamped with the OLD visitor
+ *                seq). Only captured EVENTS refresh the activity clock — a
+ *                flush (pagehide, timer) does not, so an idle tab's own
+ *                beacons never keep its session alive. An explicit
+ *                `sessionId` wins and disables the continuity logic.
  *   storage      { localStorage, sessionStorage }  injection for tests /
  *                non-browser hosts (defaults to the globals).
  *   landing      object  FIRST-TOUCH override (tests + SSR consumers):
@@ -275,7 +278,18 @@ export const createVisitorStore = ({
   }
   // Mint a NEW session for this visitor: seq + 1 on the visitor record;
   // `returning` = the visitor had a session before this one.
+  // Two tabs each hold a copy of the visitor record; the counter is
+  // re-read from localStorage at mint time so the second tab's rotation
+  // continues the shared count instead of repeating a number.
+  const syncVisitorSeq = () => {
+    if (!vid || (injected && typeof injected === 'object')) return
+    const stored = _readJson(ls, VISITOR_KEY)
+    if (stored && stored.id === vid.id && Number.isInteger(stored.seq) && stored.seq > vid.seq) {
+      vid.seq = stored.seq
+    }
+  }
   const mint = (t, nextId) => {
+    syncVisitorSeq()
     const returning = vid ? vid.seq > 0 || existed : false
     if (vid) vid.seq += 1
     session = {
@@ -293,6 +307,7 @@ export const createVisitorStore = ({
   if (explicitSessionId) {
     // Caller-owned id: no continuity, but still a session of this visitor.
     const returning = vid ? existed : false
+    syncVisitorSeq()
     session = { sessionId: String(explicitSessionId), lastActivityAt: now(), startedAt: now(), seq: vid ? vid.seq + 1 : 1, returning }
     if (vid) {
       vid.seq += 1
@@ -733,6 +748,7 @@ export const createAnalyzing = (opts = {}) => {
     visitorStore = null
   }
   const resolvedSessionId = sessionId || visitorStore?.sessionId || mintId()
+  let _visitorStampFreeze = null
 
   // ── Family + clock stamp ───────────────────────────────────────────────
   // Every outbound envelope (batch AND the terminal beacon — both go through
@@ -770,7 +786,10 @@ export const createAnalyzing = (opts = {}) => {
       }
       stamped.landing = resolvedLanding
       try {
-        const v = visitorStore?.visitor()
+        // During a rotation the OLD session's terminal envelope is built
+        // synchronously inside state.startNewSession — it must carry the
+        // stamp of the session it closes (seq n), not the next one's.
+        const v = _visitorStampFreeze || visitorStore?.visitor()
         if (v) stamped.visitor = v
       } catch {}
       envelope.page = stamped
@@ -843,11 +862,27 @@ export const createAnalyzing = (opts = {}) => {
   // rotates the session (state.startNewSession ships the OLD id's terminal
   // envelope — endedAt — then every later envelope carries the new id).
   let currentSessionId = resolvedSessionId
+  // Rotate: freeze the current visitor stamp, start the new session under
+  // a pre-minted id (the remote sink ships the OLD id's terminal envelope
+  // right there, stamped seq n), THEN advance the store (seq n + 1,
+  // returning true) so every later envelope carries the new stamp.
+  const _rotateSession = () => {
+    const next = mintId()
+    try {
+      _visitorStampFreeze = visitorStore?.visitor() || null
+      currentSessionId = state.startNewSession(next)
+    } finally {
+      _visitorStampFreeze = null
+    }
+    try {
+      visitorStore?.rotate(undefined, next)
+    } catch {}
+    return currentSessionId
+  }
   const _rotateIfExpired = () => {
     try {
       if (!visitorStore || !visitorStore.expired()) return false
-      const next = visitorStore.rotate()
-      currentSessionId = state.startNewSession(next)
+      _rotateSession()
       return true
     } catch {
       return false
@@ -865,10 +900,11 @@ export const createAnalyzing = (opts = {}) => {
       _touch()
       return _stateEmit(event)
     }
+    // A flush is not activity: it only rotates a session that already
+    // expired (so the batch it ships rides the right id).
     const _stateFlush = state.flush
     state.flush = () => {
       _rotateIfExpired()
-      _touch()
       return _stateFlush()
     }
   }
@@ -993,12 +1029,11 @@ export const createAnalyzing = (opts = {}) => {
   // setAnalyzingWorkspace) must call this: the old session is ended
   // (terminal envelope) and every later envelope carries the new id.
   const startNewSession = () => {
-    // A caller-driven rotation is a new session of the same visitor too.
-    let next
-    try {
-      next = visitorStore?.rotate()
-    } catch {}
-    currentSessionId = state.startNewSession(next)
+    // A caller-driven rotation is a new session of the same visitor too —
+    // same order as the timeout rotation (old stamp on the terminal
+    // envelope, then the store advances).
+    if (visitorStore) return _rotateSession()
+    currentSessionId = state.startNewSession()
     return currentSessionId
   }
 
