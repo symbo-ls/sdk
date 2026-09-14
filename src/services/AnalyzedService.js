@@ -40,6 +40,22 @@ const _setSince = (params, filter) => {
   params.set('since', since instanceof Date ? since.toISOString() : String(since))
 }
 
+// First-touch UTM filters (CORE-ANALYZED-UTM-ATTRIBUTION-1) on listSessions
+// / totals: `filter.utmSource` / `utmMedium` / `utmCampaign` → the same-
+// named query params. The server matches EXACTLY after its own write-side
+// normalisation (trim, source / medium lower-cased), so a row value echoed
+// back always matches; the `__none__` sentinel selects sessions with no
+// such field (the direct bucket — like `__anonymous__` for userId).
+export const UTM_FILTER_KEYS = ['utmSource', 'utmMedium', 'utmCampaign']
+export const UTM_NONE = '__none__'
+
+const _setUtm = (params, filter) => {
+  for (const key of UTM_FILTER_KEYS) {
+    const v = filter?.[key]
+    if (v != null && v !== '') params.set(key, String(v))
+  }
+}
+
 // AnalyzedService wraps the main server's /core/analyzed/* routes (Mongo-
 // backed). First-class main-server surface, NOT workspace-project worker
 // routes — all calls go through _call() which routes to ${apiUrl}/core/
@@ -76,7 +92,7 @@ export class AnalyzedService extends BaseService {
     })
   }
 
-  // GET /core/analyzed/sessions?userId=&projectId=&family=&since=&country=&limit=&offset=
+  // GET /core/analyzed/sessions?userId=&visitorId=&projectId=&family=&since=&country=&utmSource=&utmMedium=&utmCampaign=&limit=&offset=
   listSessions (filter = {}, options = {}) {
     const params = new URLSearchParams()
     _setWorkspace(params, filter, options)
@@ -86,6 +102,9 @@ export class AnalyzedService extends BaseService {
     if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
     if (filter.since) params.set('since', filter.since)
     if (filter.country) params.set('country', filter.country)
+    _setUtm(params, filter)
+    // One visitor's sessions (the first-party visitor id — addendum).
+    if (filter.visitorId) params.set('visitorId', String(filter.visitorId))
     if (options.limit != null) params.set('limit', String(options.limit))
     if (options.offset != null) params.set('offset', String(options.offset))
     const qs = params.toString()
@@ -225,12 +244,14 @@ export class AnalyzedService extends BaseService {
     return this._call('analyzed.listBugs', `/analyzed/bugs${qs ? `?${qs}` : ''}`)
   }
 
-  // GET /core/analyzed/totals?family=&projectId=&excludeProjectId=&since=&tz=
+  // GET /core/analyzed/totals?family=&projectId=&excludeProjectId=&since=&tz=&utmSource=&utmMedium=&utmCampaign=
   // Overall totals for one window (`since` → now; absent = all retained
   // history) over the chosen family / project scope. Returns
   // { tz, window: { since, until }, sessions, uniqueUsers, uniqueVisitors,
   //   pageViews, events, bugs, errors, avgDurationMs, countries, projects,
-  //   activeNow, allTime: { sessions, uniqueVisitors, pageViews } }.
+  //   attributed, activeNow, allTime: { sessions, uniqueVisitors, pageViews } }.
+  // `attributed` = sessions with a first-touch utmSource / utmCampaign; a
+  // utm filter narrows the whole response to one campaign's sessions.
   totals (filter = {}) {
     const params = new URLSearchParams()
     _setWorkspace(params, filter)
@@ -239,6 +260,7 @@ export class AnalyzedService extends BaseService {
     if (filter.projectId) params.set('projectId', filter.projectId)
     if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
     _setSince(params, filter)
+    _setUtm(params, filter)
     const qs = params.toString()
     return this._call('analyzed.totals', `/analyzed/totals${qs ? `?${qs}` : ''}`)
   }
@@ -272,5 +294,48 @@ export class AnalyzedService extends BaseService {
     if (options.limit != null) params.set('limit', String(options.limit))
     const qs = params.toString()
     return this._call('analyzed.referrers', `/analyzed/referrers${qs ? `?${qs}` : ''}`)
+  }
+
+  // GET /core/analyzed/daily?family=&projectId=&excludeProjectId=&days=&tz=
+  // Per-local-day series (addendum 2): the last `filter.days` (default 12,
+  // max 90) calendar days in `filter.tz` ending today, zero-filled. Returns
+  // { tz, days: [{ date: 'YYYY-MM-DD', visitors, sessions, pageViews }] } —
+  // visitors = distinct visitor keys that day.
+  daily (filter = {}) {
+    const params = new URLSearchParams()
+    _setWorkspace(params, filter)
+    _setFamily(params, filter)
+    _setTz(params, filter)
+    if (filter.days != null && filter.days !== '') params.set('days', String(filter.days))
+    if (filter.projectId) params.set('projectId', filter.projectId)
+    if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
+    const qs = params.toString()
+    return this._call('analyzed.daily', `/analyzed/daily${qs ? `?${qs}` : ''}`)
+  }
+
+  // GET /core/analyzed/campaigns?family=&projectId=&excludeProjectId=&since=&groupBy=&limit=&offset=
+  // First-touch campaign attribution (CORE-ANALYZED-UTM-ATTRIBUTION-1):
+  // attributed sessions (a utmSource or utmCampaign) in the window grouped
+  // by `filter.groupBy` = 'campaign' (default) | 'source' | 'medium' |
+  // 'content' | 'term'. Returns
+  // { groupBy, window: { since, until }, direct,
+  //   data: [{ key, source, medium, campaign, sessions, uniqueVisitors,
+  //            pageViews, bugs }] }
+  // sorted sessions desc (key asc on ties); `direct` = sessions with no
+  // attribution; limit default 20, max 100; 30-day default window. No tz —
+  // nothing here is a calendar bucket.
+  campaigns (filter = {}, options = {}) {
+    const params = new URLSearchParams()
+    _setWorkspace(params, filter, options)
+    _setFamily(params, filter)
+    if (filter.groupBy) params.set('groupBy', String(filter.groupBy))
+    if (filter.projectId) params.set('projectId', filter.projectId)
+    if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
+    _setSince(params, filter)
+    _setUtm(params, filter)
+    if (options.limit != null) params.set('limit', String(options.limit))
+    if (options.offset != null) params.set('offset', String(options.offset))
+    const qs = params.toString()
+    return this._call('analyzed.campaigns', `/analyzed/campaigns${qs ? `?${qs}` : ''}`)
   }
 }

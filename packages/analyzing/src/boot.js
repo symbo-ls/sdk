@@ -58,7 +58,12 @@ export const bootAnalyzing = (cfg = {}) => {
     ingestUrl: cfg.ingestUrl || '/v1/analytics/ingest',
     // Visitor sessions are short — flush well before the app-mode default
     // so a bounce still lands its page_view.
-    batchMs: typeof cfg.batchMs === 'number' ? cfg.batchMs : 5000
+    batchMs: typeof cfg.batchMs === 'number' ? cfg.batchMs : 5000,
+    // Visitor identity + 30-min session continuity (addendum) — the stub
+    // may turn identity off (`data-visitor="false"`) or shorten the
+    // timeout; the client's defaults apply otherwise.
+    ...(cfg.visitor === false || cfg.visitor === 'false' ? { visitor: false } : {}),
+    ...(typeof cfg.sessionTimeoutMs === 'number' ? { sessionTimeoutMs: cfg.sessionTimeoutMs } : {})
   })
   _instance = client
 

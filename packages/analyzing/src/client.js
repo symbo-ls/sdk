@@ -39,6 +39,37 @@ const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefine
  *                Every envelope also carries `page.utcOffset` (integer
  *                minutes EAST of UTC, `-new Date().getTimezoneOffset()`)
  *                and a `page.timezone` fill when the page block lacks one.
+ *   visitor      false | object  VISITOR IDENTITY (addendum). Default: a
+ *                first-party random id per origin in localStorage
+ *                (`smbls_vid` — never a cookie, never a fingerprint) with
+ *                `firstSeenAt` + the visitor's session counter; stamped as
+ *                `page.visitor = { id, firstSeenAt, returning, seq }` on
+ *                EVERY envelope (inside `page`, like landing). `false`
+ *                disables it (no stamp, per-boot session id as before);
+ *                an object `{ id, firstSeenAt, returning?, seq? }` injects
+ *                one (tests / SSR). Storage unavailable → no stamp, no
+ *                throw. See createVisitorStore.
+ *   sessionTimeoutMs  number  session continuity (default 30 min): the
+ *                session id lives in sessionStorage (`smbls_sid`) with
+ *                its last activity; a boot inside the timeout REUSES the
+ *                id (one visit = one session across page loads), a boot
+ *                or an event past it mints a new one (seq + 1) — mid-page
+ *                through state.startNewSession, which ships the old id's
+ *                terminal envelope first. An explicit `sessionId` wins and
+ *                disables the continuity logic.
+ *   storage      { localStorage, sessionStorage }  injection for tests /
+ *                non-browser hosts (defaults to the globals).
+ *   landing      object  FIRST-TOUCH override (tests + SSR consumers):
+ *                `{ url, referrer, utm: { source, medium, campaign, term,
+ *                content } }`. Unset → captured ONCE at createAnalyzing
+ *                time from location.href / document.referrer / the utm_*
+ *                query params (captureLanding) and stamped as
+ *                `page.landing` on EVERY envelope, so the server records
+ *                the session's first touch (AnalyzedWriteService
+ *                .resolveLanding, $setOnInsert) whichever envelope of the
+ *                session lands first. Rides INSIDE `page` because the
+ *                mermaid relay rebuilds the envelope from a fixed field
+ *                list and passes `page` through whole.
  *
  * Auth (pick one):
  *   apiKey       string                          X-Analyze-Key header
@@ -104,6 +135,230 @@ export const resolveNetworkCapture = ({ debug, captureOverrides } = {}) => {
   return false
 }
 
+// ── First-touch landing capture ─────────────────────────────────────────
+// `{ url, referrer, utm: { source, medium, campaign, term, content } }` as
+// seen at the moment the client is created (the page load — the first
+// touch). Each utm field comes from the utm_<name> query param of
+// `location.search`, trimmed, capped at LANDING_MAX_LEN, omitted when
+// empty; the `utm` key is omitted when no field resolved; `url` /
+// `referrer` are omitted when unavailable. Never throws — outside a
+// browser (SSR, tests without globals) it returns `{}`. Pure over the
+// globals it reads; exported for direct unit testing.
+export const LANDING_MAX_LEN = 200
+export const UTM_PARAMS = ['source', 'medium', 'campaign', 'term', 'content']
+
+const _capLanding = (v) => {
+  if (typeof v !== 'string') return null
+  const t = v.trim()
+  if (!t) return null
+  return t.length > LANDING_MAX_LEN ? t.slice(0, LANDING_MAX_LEN) : t
+}
+
+export const captureLanding = ({ location: loc, document: doc } = {}) => {
+  const out = {}
+  try {
+    const l = loc || (typeof location !== 'undefined' ? location : null)
+    const d = doc || (typeof document !== 'undefined' ? document : null)
+    const url = _capLanding(l?.href)
+    if (url) out.url = url
+    const referrer = _capLanding(d?.referrer)
+    if (referrer) out.referrer = referrer
+    const search = typeof l?.search === 'string' ? l.search : ''
+    if (search) {
+      const params = new URLSearchParams(search)
+      const utm = {}
+      for (const name of UTM_PARAMS) {
+        const v = _capLanding(params.get(`utm_${name}`))
+        if (v) utm[name] = v
+      }
+      if (Object.keys(utm).length) out.utm = utm
+    }
+  } catch {}
+  return out
+}
+
+// ── Visitor identity + session continuity ──────────────────────────────
+// Two first-party records, both JSON, both best-effort (every storage
+// access is guarded — a private-mode / sandboxed page simply gets no
+// visitor stamp and a per-boot session id):
+//   localStorage   smbls_vid  { id, firstSeenAt, seq }   the VISITOR (per
+//                  origin; `seq` = how many sessions this visitor has had)
+//   sessionStorage smbls_sid  { sessionId, lastActivityAt, seq, returning }
+//                  the CURRENT session of this tab
+// `createVisitorStore` is pure over the storages it is handed; exported
+// for direct unit testing with fake storages.
+export const VISITOR_KEY = 'smbls_vid'
+export const SESSION_KEY = 'smbls_sid'
+export const DEFAULT_SESSION_TIMEOUT_MS = 30 * 60 * 1000
+
+const mintId = () =>
+  typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+
+const _readJson = (storage, key) => {
+  try {
+    const raw = storage?.getItem?.(key)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' ? parsed : null
+  } catch {
+    return null
+  }
+}
+const _writeJson = (storage, key, value) => {
+  try {
+    storage?.setItem?.(key, JSON.stringify(value))
+    return true
+  } catch {
+    return false
+  }
+}
+const _global = (name) => {
+  try {
+    return typeof globalThis !== 'undefined' ? globalThis[name] : undefined
+  } catch {
+    return undefined
+  }
+}
+
+export const createVisitorStore = ({
+  localStorage: ls = _global('localStorage'),
+  sessionStorage: ss = _global('sessionStorage'),
+  now = () => Date.now(),
+  sessionTimeoutMs = DEFAULT_SESSION_TIMEOUT_MS,
+  visitor: injected = undefined,
+  sessionId: explicitSessionId = undefined
+} = {}) => {
+  const timeout =
+    typeof sessionTimeoutMs === 'number' && sessionTimeoutMs > 0
+      ? sessionTimeoutMs
+      : DEFAULT_SESSION_TIMEOUT_MS
+  const enabled = injected !== false
+
+  // ── the visitor record ──
+  // `existed` = the record was there before this boot (the visitor had
+  // been here before).
+  let vid = null
+  let existed = false
+  if (enabled) {
+    if (injected && typeof injected === 'object' && injected.id) {
+      vid = {
+        id: String(injected.id),
+        firstSeenAt: Number(injected.firstSeenAt) || now(),
+        seq: Number.isInteger(injected.seq) && injected.seq > 0 ? injected.seq : 0
+      }
+      existed = injected.returning === true || vid.seq > 0
+    } else {
+      const stored = _readJson(ls, VISITOR_KEY)
+      if (stored && typeof stored.id === 'string' && stored.id) {
+        vid = {
+          id: stored.id,
+          firstSeenAt: Number(stored.firstSeenAt) || now(),
+          seq: Number.isInteger(stored.seq) && stored.seq > 0 ? stored.seq : 0
+        }
+        existed = true
+      } else if (ls) {
+        vid = { id: mintId(), firstSeenAt: now(), seq: 0 }
+        if (!_writeJson(ls, VISITOR_KEY, vid)) vid = null
+      }
+    }
+  }
+
+  // ── the session record ──
+  let session = null // { sessionId, lastActivityAt, seq, returning }
+  const persistSession = () => {
+    if (session && ss) _writeJson(ss, SESSION_KEY, session)
+  }
+  const persistVisitor = () => {
+    if (vid && ls && !(injected && typeof injected === 'object')) _writeJson(ls, VISITOR_KEY, vid)
+  }
+  // Mint a NEW session for this visitor: seq + 1 on the visitor record;
+  // `returning` = the visitor had a session before this one.
+  const mint = (t, nextId) => {
+    const returning = vid ? vid.seq > 0 || existed : false
+    if (vid) vid.seq += 1
+    session = {
+      sessionId: nextId || mintId(),
+      lastActivityAt: t,
+      startedAt: t,
+      seq: vid ? vid.seq : 1,
+      returning
+    }
+    persistVisitor()
+    persistSession()
+    return session
+  }
+
+  if (explicitSessionId) {
+    // Caller-owned id: no continuity, but still a session of this visitor.
+    const returning = vid ? existed : false
+    session = { sessionId: String(explicitSessionId), lastActivityAt: now(), startedAt: now(), seq: vid ? vid.seq + 1 : 1, returning }
+    if (vid) {
+      vid.seq += 1
+      persistVisitor()
+    }
+  } else {
+    const t = now()
+    const stored = _readJson(ss, SESSION_KEY)
+    const fresh =
+      stored &&
+      typeof stored.sessionId === 'string' &&
+      stored.sessionId &&
+      typeof stored.lastActivityAt === 'number' &&
+      t - stored.lastActivityAt >= 0 &&
+      t - stored.lastActivityAt < timeout
+    if (fresh) {
+      session = {
+        sessionId: stored.sessionId,
+        lastActivityAt: t,
+        startedAt: Number(stored.startedAt) || stored.lastActivityAt,
+        seq: Number.isInteger(stored.seq) && stored.seq > 0 ? stored.seq : vid ? vid.seq || 1 : 1,
+        returning: stored.returning === true
+      }
+      persistSession()
+    } else {
+      mint(t)
+    }
+  }
+
+  return {
+    enabled: !!vid,
+    get sessionId () {
+      return session.sessionId
+    },
+    // The stamp: null when identity is off / storage unavailable.
+    visitor () {
+      if (!vid) return null
+      return {
+        id: vid.id,
+        firstSeenAt: vid.firstSeenAt,
+        returning: session.returning === true,
+        seq: session.seq
+      }
+    },
+    // Activity keeps the session alive (called on every event + flush).
+    touch (t = now()) {
+      if (!session) return
+      session.lastActivityAt = t
+      persistSession()
+    },
+    // Past the timeout since the last activity?
+    expired (t = now()) {
+      if (!session || explicitSessionId) return false
+      return t - session.lastActivityAt >= timeout
+    },
+    // Start the next session (seq + 1, returning true); returns its id.
+    rotate (t = now(), nextId) {
+      return mint(t, nextId).sessionId
+    },
+    // Test seam.
+    _debug () {
+      return { vid: vid ? { ...vid } : null, session: session ? { ...session } : null, existed }
+    }
+  }
+}
+
 export const createAnalyzing = (opts = {}) => {
   const {
     endpoint,
@@ -121,6 +376,10 @@ export const createAnalyzing = (opts = {}) => {
     redact,
     beforeSend,
     kind,
+    landing: landingOverride,
+    visitor: visitorOpt,
+    sessionTimeoutMs,
+    storage: storageOpt,
     debug = false,
     sessionId,
     consoleSink = false,
@@ -458,9 +717,22 @@ export const createAnalyzing = (opts = {}) => {
     tags: {}
   }
 
-  const resolvedSessionId = sessionId || (typeof crypto !== 'undefined' && crypto.randomUUID
-    ? crypto.randomUUID()
-    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`)
+  // Visitor identity + session continuity (addendum): the store decides
+  // the session id (an explicit `sessionId` wins) and owns the visitor
+  // stamp. Never throws — a broken storage yields a per-boot id and no
+  // visitor stamp, exactly the pre-addendum behaviour.
+  let visitorStore = null
+  try {
+    visitorStore = createVisitorStore({
+      ...(storageOpt && typeof storageOpt === 'object' ? storageOpt : {}),
+      sessionTimeoutMs,
+      visitor: visitorOpt,
+      sessionId
+    })
+  } catch {
+    visitorStore = null
+  }
+  const resolvedSessionId = sessionId || visitorStore?.sessionId || mintId()
 
   // ── Family + clock stamp ───────────────────────────────────────────────
   // Every outbound envelope (batch AND the terminal beacon — both go through
@@ -475,6 +747,13 @@ export const createAnalyzing = (opts = {}) => {
   // best-effort, and a throw here would be caught by the sink and ship the
   // UNstamped envelope, which is exactly the mislabelling this prevents.
   const resolvedKind = kind === 'workspace' || kind === 'project' ? kind : null
+  // First touch — captured ONCE, here, and frozen: an SPA navigation later
+  // in the session changes location, never the landing. `opts.landing`
+  // (an object) replaces the capture for SSR consumers + tests.
+  const resolvedLanding =
+    landingOverride && typeof landingOverride === 'object' && !Array.isArray(landingOverride)
+      ? landingOverride
+      : captureLanding()
   const _stampEnvelope = (envelope) => {
     try {
       if (!envelope || typeof envelope !== 'object') return envelope
@@ -489,6 +768,11 @@ export const createAnalyzing = (opts = {}) => {
           if (tz) stamped.timezone = tz
         } catch {}
       }
+      stamped.landing = resolvedLanding
+      try {
+        const v = visitorStore?.visitor()
+        if (v) stamped.visitor = v
+      } catch {}
       envelope.page = stamped
     } catch {}
     return envelope
@@ -551,6 +835,43 @@ export const createAnalyzing = (opts = {}) => {
   // The plugin lifecycle will pick this same state up via context.analyze
   // when smbls calls prepareContext — see analyzePlugin / context wiring.
   const state = createAnalyzeState(analyzeConfig)
+
+  // ── Session continuity hooks ───────────────────────────────────────────
+  // Every captured event (whatever path emitted it — the manual API, the
+  // browser listeners, the router) and every flush refresh the session's
+  // last activity; an event or a flush that arrives past the timeout first
+  // rotates the session (state.startNewSession ships the OLD id's terminal
+  // envelope — endedAt — then every later envelope carries the new id).
+  let currentSessionId = resolvedSessionId
+  const _rotateIfExpired = () => {
+    try {
+      if (!visitorStore || !visitorStore.expired()) return false
+      const next = visitorStore.rotate()
+      currentSessionId = state.startNewSession(next)
+      return true
+    } catch {
+      return false
+    }
+  }
+  const _touch = () => {
+    try {
+      visitorStore?.touch()
+    } catch {}
+  }
+  if (visitorStore) {
+    const _stateEmit = state.emit
+    state.emit = (event) => {
+      _rotateIfExpired()
+      _touch()
+      return _stateEmit(event)
+    }
+    const _stateFlush = state.flush
+    state.flush = () => {
+      _rotateIfExpired()
+      _touch()
+      return _stateFlush()
+    }
+  }
 
   // ── Emitter-side network gate ──────────────────────────────────────────
   // The server discards un-opted-in logType='network' envelopes at ingest
@@ -671,9 +992,13 @@ export const createAnalyzing = (opts = {}) => {
   // that switches the tenant scope mid-page (the workspace shell's
   // setAnalyzingWorkspace) must call this: the old session is ended
   // (terminal envelope) and every later envelope carries the new id.
-  let currentSessionId = resolvedSessionId
   const startNewSession = () => {
-    currentSessionId = state.startNewSession()
+    // A caller-driven rotation is a new session of the same visitor too.
+    let next
+    try {
+      next = visitorStore?.rotate()
+    } catch {}
+    currentSessionId = state.startNewSession(next)
     return currentSessionId
   }
 

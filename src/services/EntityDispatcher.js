@@ -1264,7 +1264,13 @@ const ENTITY_ROUTES = {
       // 'referrers', { filter, options })`.
       totals: 'totals',
       pages: 'pages',
-      referrers: 'referrers'
+      referrers: 'referrers',
+      // First-touch campaign rollup (CORE-ANALYZED-UTM-ATTRIBUTION-1):
+      // `('analyzed', 'campaigns', { filter: { family, groupBy }, options })`.
+      campaigns: 'campaigns',
+      // Per-local-day series (addendum 2): `('analyzed', 'daily', { family,
+      // tz, days })` — a bare filter like totals.
+      daily: 'daily'
     },
     argMap: {
       ingest: (a) => [a],
@@ -1283,7 +1289,9 @@ const ENTITY_ROUTES = {
       activeUsers: (a) => [a?.filter ?? {}, a?.options ?? {}],
       totals: (a) => [a?.filter ?? a ?? {}],
       pages: (a) => [a?.filter ?? {}, a?.options ?? {}],
-      referrers: (a) => [a?.filter ?? {}, a?.options ?? {}]
+      referrers: (a) => [a?.filter ?? {}, a?.options ?? {}],
+      campaigns: (a) => [a?.filter ?? {}, a?.options ?? {}],
+      daily: (a) => [a?.filter ?? a ?? {}]
     }
   },
   'docs.documents': {

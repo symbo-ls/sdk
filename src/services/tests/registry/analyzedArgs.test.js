@@ -10,7 +10,7 @@ import { createEntityDispatcher } from '../../EntityDispatcher.js'
 const harness = () => {
   const calls = {}
   const svc = {}
-  for (const m of ['totals', 'pages', 'referrers']) {
+  for (const m of ['totals', 'pages', 'referrers', 'campaigns', 'daily']) {
     svc[m] = (...args) => {
       calls[m] = args
       return Promise.resolve({ ok: true })
@@ -50,5 +50,33 @@ test('analyzed.pages / referrers: [filter, options], each defaulting to {}', asy
   t.deepEqual(calls.referrers, [{ family: 'workspace' }, { limit: 3 }])
   await execute('analyzed', 'referrers')
   t.deepEqual(calls.referrers, [{}, {}])
+  t.end()
+})
+
+// CORE-ANALYZED-UTM-ATTRIBUTION-1: campaigns takes { filter, options } like
+// pages / referrers.
+test('analyzed.campaigns: [filter, options], each defaulting to {}', async (t) => {
+  const { calls, execute } = harness()
+  await execute('analyzed', 'campaigns', {
+    filter: { family: 'projects', groupBy: 'source' },
+    options: { limit: 10, offset: 20 }
+  })
+  t.deepEqual(calls.campaigns, [{ family: 'projects', groupBy: 'source' }, { limit: 10, offset: 20 }])
+  await execute('analyzed', 'campaigns', {})
+  t.deepEqual(calls.campaigns, [{}, {}])
+  await execute('analyzed', 'campaigns')
+  t.deepEqual(calls.campaigns, [{}, {}])
+  t.end()
+})
+
+// Addendum 2: daily takes a bare filter (or `{ filter }`) like totals.
+test('analyzed.daily: a bare arg IS the filter; an explicit { filter } wins; nothing → {}', async (t) => {
+  const { calls, execute } = harness()
+  await execute('analyzed', 'daily', { family: 'projects', tz: 'Asia/Tbilisi', days: 30 })
+  t.deepEqual(calls.daily, [{ family: 'projects', tz: 'Asia/Tbilisi', days: 30 }])
+  await execute('analyzed', 'daily', { filter: { family: 'workspace' } })
+  t.deepEqual(calls.daily, [{ family: 'workspace' }])
+  await execute('analyzed', 'daily')
+  t.deepEqual(calls.daily, [{}])
   t.end()
 })
