@@ -313,7 +313,7 @@ export class AnalyzedService extends BaseService {
     return this._call('analyzed.daily', `/analyzed/daily${qs ? `?${qs}` : ''}`)
   }
 
-  // GET /core/analyzed/campaigns?family=&projectId=&excludeProjectId=&since=&groupBy=&limit=&offset=
+  // GET /core/analyzed/campaigns?family=&projectId=&excludeProjectId=&since=&groupBy=&utmSource=&utmMedium=&utmCampaign=&limit=&offset=
   // First-touch campaign attribution (CORE-ANALYZED-UTM-ATTRIBUTION-1):
   // attributed sessions (a utmSource or utmCampaign) in the window grouped
   // by `filter.groupBy` = 'campaign' (default) | 'source' | 'medium' |

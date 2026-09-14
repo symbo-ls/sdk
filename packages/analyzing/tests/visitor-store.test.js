@@ -379,3 +379,35 @@ test('flush() past the timeout rotates too; a caller startNewSession() advances 
   assert.equal(a.sessionId, three.session.id)
   assert.equal(ls.dump()[VISITOR_KEY].seq, 3)
 })
+
+test('a throwing startNewSession never advances the store: the old id stays live, seq stays n, and the next event retries the rotation', async () => {
+  const ls = fakeStorage()
+  const ss = fakeStorage()
+  let now = 1_700_000_000_000
+  const { captured, a } = await ship({
+    storage: { localStorage: ls, sessionStorage: ss, now: () => now },
+    act: async (c) => {
+      c.captureMessage('one', 'info')
+      await new Promise((r) => setTimeout(r, 20))
+      const oldId = c.sessionId
+      now += 31 * MIN
+      const real = c.state.startNewSession
+      c.state.startNewSession = () => {
+        throw new Error('sink refused')
+      }
+      assert.equal(c.startNewSession(), oldId, 'the rotation returns the CURRENT id')
+      assert.equal(c.sessionId, oldId, 'the old id stays live')
+      assert.equal(ss.dump()[SESSION_KEY].sessionId, oldId, 'the store did not advance past the session')
+      assert.equal(ls.dump()[VISITOR_KEY].seq, 1, 'the visitor counter did not advance')
+      c.state.startNewSession = real
+      c.captureMessage('two', 'info')
+      await new Promise((r) => setTimeout(r, 20))
+    }
+  })
+  const one = captured.find((e) => e.events.some((ev) => ev.message === 'one'))
+  const two = captured.find((e) => e.events.some((ev) => ev.message === 'two'))
+  assert.notEqual(two.session.id, one.session.id, 'the next event rotated')
+  assert.equal(two.page.visitor.seq, 2, 'exactly one advance')
+  assert.equal(ss.dump()[SESSION_KEY].sessionId, two.session.id)
+  assert.equal(a.sessionId, two.session.id)
+})

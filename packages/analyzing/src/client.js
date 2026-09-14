@@ -866,11 +866,16 @@ export const createAnalyzing = (opts = {}) => {
   // a pre-minted id (the remote sink ships the OLD id's terminal envelope
   // right there, stamped seq n), THEN advance the store (seq n + 1,
   // returning true) so every later envelope carries the new stamp.
+  // A throwing startNewSession leaves the state on the OLD session, so the
+  // store must not advance either: return the current id BEFORE rotate()
+  // (the store stays expired and the next event retries the rotation).
   const _rotateSession = () => {
     const next = mintId()
     try {
       _visitorStampFreeze = visitorStore?.visitor() || null
       currentSessionId = state.startNewSession(next)
+    } catch {
+      return currentSessionId
     } finally {
       _visitorStampFreeze = null
     }
