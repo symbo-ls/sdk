@@ -102,6 +102,32 @@ export class OrganizationService extends BaseService {
     throw new Error(response.message)
   }
 
+  /**
+   * Update the org's white-label presentation (name, tagline, logoSvg,
+   * loaderLogoSvg, accent, background, backgroundLight, theme, lang).
+   * Server allowlists these keys, sanitizes the two svg fields, and
+   * validates accent/background/backgroundLight as hex colours — org
+   * owner/co-owner/admin/maintainer only.
+   *
+   * @param {string} orgId
+   * @param {{name?: string, tagline?: string, logoSvg?: string,
+   *   loaderLogoSvg?: string, accent?: string, background?: string,
+   *   backgroundLight?: string, theme?: 'light'|'dark'|'auto',
+   *   lang?: string}} branding
+   */
+  async updateOrganizationBranding (orgId, branding) {
+    this._requireReady('updateOrganizationBranding')
+    if (!orgId) throw new Error('orgId is required')
+
+    const response = await this._request(`/organizations/${orgId}/branding`, {
+      method: 'PATCH',
+      body: JSON.stringify(branding),
+      methodName: 'updateOrganizationBranding'
+    })
+    if (response.success) return response.data
+    throw new Error(response.message)
+  }
+
   async transferOrgOwnership (orgId, { userId }) {
     this._requireReady('transferOrgOwnership')
     if (!orgId) throw new Error('orgId is required')
