@@ -412,6 +412,7 @@ export const SERVICE_METHODS = {
   checkOrganizationSlug: 'organization',
   getOrganization: 'organization',
   updateOrganization: 'organization',
+  updateOrganizationBranding: 'organization',
   transferOrgOwnership: 'organization',
   deleteOrganization: 'organization',
   listOrgMembers: 'organization',

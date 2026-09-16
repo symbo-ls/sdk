@@ -57,6 +57,7 @@
     "build:node": "esbuild $(find src -name '*.js' ! -name '*.test.js') --target=node16 --format=esm --platform=node --outdir=dist/node --define:process.env.NODE_ENV=process.env.NODE_ENV",
     "build:iife": "node build-iife.mjs && node scripts/build-iife-string.mjs",
     "build:types": "tsc -p tsconfig.json || echo '::warning::tsc exited non-zero — type declarations may be incomplete (publish proceeds; fix as separate work)'",
+    "prebuild": "npm run build --workspaces --if-present",
     "build": "rimraf dist && npm run build:esm && npm run build:iife && npm run build:types",
     "watch": "esbuild $(find . -type f -name \"*.js\" -not -path \"*/dist/*\" -not -path \"*/node_modules/*\" -not -path \"*/__tests__/*\" -not -path \"*/test/*\" -not -path \"*/demo/*\" -not -path \"*/demos/*\" -not -path \"*/examples/*\" -not -path \"*/fixtures/*\" -not -name \"*.test.js\") --target=es2022 --format=esm --outbase=. --outdir=dist/esm --watch=forever --log-level=warning",
     "prepublishOnly": "npm run build",
@@ -75,6 +76,7 @@
     "test:favorite-project": "bun run _inf -- tape integration-tests/index.js integration-tests/favorite-project/*.test.js | tap-spec",
     "test:collab": "bun run _inf -- tape integration-tests/index.js integration-tests/collab/*.test.js | tap-spec",
     "test:user": "bun run _inf -- tape integration-tests/index.js integration-tests/user/*.test.js | tap-spec",
+    "test": "npm run test:unit-all",
     "test:unit-all": "tape src/services/tests/**/*.test.js src/build/tests/*.test.js | tap-spec",
     "test:build": "tape src/build/tests/*.test.js | tap-spec"
   },
