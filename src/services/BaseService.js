@@ -615,14 +615,35 @@ export class BaseService {
     return resp.json()
   }
 
+  // POST /core/auth/stream-ticket → { ticket, expiresIn }. Mints a ≤60s,
+  // SINGLE-USE SSE stream ticket bound to the caller's session (and to
+  // `workspace` when given) over normal header auth. Used only by
+  // _sseSubscribe — one fresh ticket per (re)connect, because the server
+  // redeems each ticket exactly once (CORE-SSE-BEARER-TOKEN-IN-QUERY-STRING-1).
+  async _mintStreamTicket (workspace) {
+    const body = workspace ? { workspace: String(workspace) } : {}
+    const data = await this._call('mintStreamTicket', '/auth/stream-ticket', {
+      method: 'POST',
+      body
+    })
+    const ticket = data?.ticket
+    if (!ticket) throw new Error('stream-ticket mint returned no ticket')
+    return ticket
+  }
+
   // SSE subscription helper for streaming endpoints (e.g. /tickets/stream).
   //
   // Constructs the full URL as:
-  //   ${apiUrl}/core${path}?access_token=<jwt>[&filter[key]=val...]
+  //   ${apiUrl}/core${path}?ticket=<single-use stream ticket>[&filter[key]=val...]
   //
-  // EventSource does not support custom headers, so the auth token is passed
-  // as `access_token` query param. The main server's SSE handler must accept
-  // either Authorization header OR access_token query param.
+  // EventSource does not support custom headers, and the long-lived bearer
+  // must never ride a URL — query strings land in CDN/proxy access logs,
+  // browser history and Referer headers
+  // (CORE-SSE-BEARER-TOKEN-IN-QUERY-STRING-1). Each (re)connect therefore
+  // first mints a ≤60s SINGLE-USE stream ticket via an authenticated POST
+  // (_mintStreamTicket above) and passes THAT as the query param; the
+  // server's sseStreamAuth redeems it exactly once, so a replayed stream
+  // URL is dead on arrival. No `access_token=` query is ever built.
   //
   // Browser: uses native EventSource.
   // Node.js: dynamically imports the optional `eventsource` package. If it is
@@ -676,13 +697,17 @@ export class BaseService {
     let attempt = 0
     const MAX_BACKOFF_MS = 8000
 
-    const _buildUrl = () => {
+    // Workspace binding for the ticket mint: streams that scope by
+    // workspace carry it in the filter (tickets/mail send flat
+    // `workspaceId`); the server stamps it into the ticket and rejects a
+    // redeem whose query names a different workspace.
+    const streamWorkspace = filter?.workspaceId || filter?.workspace || null
+
+    const _buildUrl = (ticket) => {
       const params = new URLSearchParams()
-      // Auth token as query param — EventSource cannot set headers.
-      if (this._tokenManager) {
-        const token = this._tokenManager.getAccessToken?.()
-        if (token) params.set('access_token', token)
-      }
+      // Single-use stream ticket as query param — never the bearer
+      // (EventSource cannot set headers; see _mintStreamTicket).
+      if (ticket) params.set('ticket', ticket)
       // Serialize filter — flat `key=value` (meet stream route) or the
       // historical nested `filter[key]=value` (tickets/docs routes).
       for (const [k, v] of Object.entries(filter || {})) {
@@ -692,6 +717,14 @@ export class BaseService {
       }
       const qs = params.toString()
       return `${this._apiUrl}/core${path}${qs ? `?${qs}` : ''}`
+    }
+
+    const _scheduleReconnect = () => {
+      attempt += 1
+      const delay = Math.min(1000 * Math.pow(2, attempt - 1), MAX_BACKOFF_MS)
+      reconnectTimer = setTimeout(() => {
+        if (!destroyed) _connect()
+      }, delay)
     }
 
     const _connect = async () => {
@@ -720,7 +753,23 @@ export class BaseService {
         }
       }
 
-      const url = _buildUrl()
+      // Fresh single-use ticket per (re)connect — the server redeems each
+      // ticket exactly once, so a reconnect must never reuse the last URL.
+      // An unauthenticated session skips the mint (parity with the old
+      // no-token URL: the server answers 401 and the backoff retries).
+      let ticket = null
+      if (this._tokenManager?.getAccessToken?.()) {
+        try {
+          ticket = await this._mintStreamTicket(streamWorkspace)
+        } catch {
+          if (destroyed) return
+          _scheduleReconnect()
+          return
+        }
+      }
+      if (destroyed) return
+
+      const url = _buildUrl(ticket)
       es = new EventSourceImpl(url)
 
       // Wire each declared event name → parse JSON `data` → frame → onEvent.
@@ -737,14 +786,12 @@ export class BaseService {
 
       es.addEventListener('error', () => {
         if (destroyed) return
-        // Close current source before reconnecting.
+        // Close current source before reconnecting. Closing matters twice
+        // over now: the native EventSource's OWN retry would replay the
+        // already-redeemed ticket URL and can only 401.
         try { es.close() } catch {}
         es = null
-        attempt += 1
-        const delay = Math.min(1000 * Math.pow(2, attempt - 1), MAX_BACKOFF_MS)
-        reconnectTimer = setTimeout(() => {
-          if (!destroyed) _connect()
-        }, delay)
+        _scheduleReconnect()
       })
 
       // Reset backoff on first successful message.

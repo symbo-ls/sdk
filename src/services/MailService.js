@@ -520,7 +520,8 @@ export class MailService extends BaseService {
   // exactly as listAccounts answers them, ACL-filtered server-side; unread
   // is [{ accountId, n }]), then ACL-masked live events with the
   // producer's REST-shaped row + { accountId, workspaceId } merged on top.
-  // Auth rides `?access_token=` (EventSource cannot set headers);
+  // Auth rides a single-use `?ticket=` minted per connect (EventSource
+  // cannot set headers; CORE-SSE-BEARER-TOKEN-IN-QUERY-STRING-1);
   // `workspaceId` is threaded as a FLAT query param so the server's member
   // chain pins the stream to that workspace. Every event object passed to
   // `onEvent` carries `type` (the SSE event name) + the frame's data.
