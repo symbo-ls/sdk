@@ -583,7 +583,13 @@ export class BaseService {
       'requestStorefrontCustomerOtp',
       'verifyStorefrontCustomerOtp',
       'resetStorefrontCustomerPassword',
-      'getStorefrontCustomerMe'
+      'getStorefrontCustomerMe',
+      // Storefront customer SOCIAL sign-in — public provider list + the
+      // token-exchange POST; same anonymous-visitor surface as login. (The
+      // owner-side `setStorefrontAuthProviders` is deliberately NOT here: it
+      // is a platform-user write and needs the session's bearer token.)
+      'getStorefrontAuthProviders',
+      'signInStorefrontCustomerWithOAuth'
     ])
     return !noInitMethods.has(methodName)
   }
