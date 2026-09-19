@@ -746,6 +746,9 @@ export const SERVICE_METHODS = {
   getStorefrontAuthProviders: 'storefront',
   signInStorefrontCustomerWithOAuth: 'storefront',
   setStorefrontAuthProviders: 'storefront',
+  // Storefront schema selection (owner|admin, platform-user session).
+  getStorefrontSchema: 'storefront',
+  setStorefrontSchema: 'storefront',
 
   // External company-registry proxy (bellforge D2-1) — authenticated,
   // NOT workspace-scoped; rides the server's provider chain + 1h cache.

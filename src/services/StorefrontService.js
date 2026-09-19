@@ -257,6 +257,36 @@ export class StorefrontService extends BaseService {
     )
   }
 
+  // GET /core/storefront/:workspaceId/settings/schema
+  // AUTHENTICATED platform user (workspace owner|admin). Which record
+  // collections this storefront uses: `{ setting, preset, collections,
+  // presets }` — the stored `settings.storefront.schema`, the preset it
+  // resolves to ('default' when unconfigured), the effective logical→collection
+  // map and the registered preset names.
+  getStorefrontSchema (workspaceId) {
+    this._requireReady('getStorefrontSchema')
+    if (!workspaceId) throw new Error('workspaceId is required')
+    return this._call(
+      'getStorefrontSchema',
+      `/storefront/${encodeURIComponent(workspaceId)}/settings/schema`,
+      { method: 'GET' }
+    )
+  }
+
+  // PUT /core/storefront/:workspaceId/settings/schema — owner|admin.
+  // `{ preset: 'default' | 'natali', collections?: { <logicalKey>: <collectionKey> } }`,
+  // or `{ preset: null }` to clear back to the default preset.
+  setStorefrontSchema (workspaceId, schema) {
+    this._requireReady('setStorefrontSchema')
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!schema || typeof schema !== 'object') throw new Error('schema is required')
+    return this._call(
+      'setStorefrontSchema',
+      `/storefront/${encodeURIComponent(workspaceId)}/settings/schema`,
+      { method: 'PUT', body: schema }
+    )
+  }
+
   // GET /core/storefront/:workspaceId/auth/me
   // Behind `requireCustomer` on the server — pass the storefront-customer
   // token returned by `loginStorefrontCustomer` explicitly. See the class

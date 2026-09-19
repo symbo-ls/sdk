@@ -397,3 +397,22 @@ test('BaseService._requiresInit: social sign-in is anonymous; the owner config w
   t.equal(svc._requiresInit('setStorefrontAuthProviders'), true, 'rides the platform-user session')
   t.end()
 })
+
+// ── storefront schema selection (owner|admin) ─────────────────────────────
+
+test('getStorefrontSchema / setStorefrontSchema hit /settings/schema on the platform session', async t => {
+  t.plan(6)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({})
+  await svc.getStorefrontSchema('ws1')
+  t.equal(stub.firstCall.args[1], '/storefront/ws1/settings/schema')
+  t.equal(stub.firstCall.args[2].method, 'GET')
+  await svc.setStorefrontSchema('ws1', { preset: 'natali' })
+  t.equal(stub.secondCall.args[2].method, 'PUT')
+  t.deepEqual(stub.secondCall.args[2].body, { preset: 'natali' })
+  const base = new BaseService()
+  t.equal(base._requiresInit('getStorefrontSchema'), true)
+  t.equal(base._requiresInit('setStorefrontSchema'), true)
+  sandbox.restore()
+  t.end()
+})
