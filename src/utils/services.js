@@ -740,6 +740,15 @@ export const SERVICE_METHODS = {
   verifyStorefrontCustomerOtp: 'storefront',
   resetStorefrontCustomerPassword: 'storefront',
   getStorefrontCustomerMe: 'storefront',
+  // Social sign-in (Google / Apple / Facebook) — providers read + token
+  // exchange are public; setStorefrontAuthProviders is an owner|admin write
+  // on the SDK's own platform-user session.
+  getStorefrontAuthProviders: 'storefront',
+  signInStorefrontCustomerWithOAuth: 'storefront',
+  setStorefrontAuthProviders: 'storefront',
+  // Storefront schema selection (owner|admin, platform-user session).
+  getStorefrontSchema: 'storefront',
+  setStorefrontSchema: 'storefront',
 
   // External company-registry proxy (bellforge D2-1) — authenticated,
   // NOT workspace-scoped; rides the server's provider chain + 1h cache.

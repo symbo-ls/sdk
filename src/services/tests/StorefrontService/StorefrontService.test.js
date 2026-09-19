@@ -325,3 +325,94 @@ test('BaseService._requiresInit treats all six storefront-customer methods as an
   t.equal(svc._requiresInit('getStorefrontCustomerMe'), false)
   t.end()
 })
+
+// ── storefront customer SOCIAL sign-in (Google / Apple / Facebook) ────────
+
+test('getStorefrontAuthProviders GETs /storefront/:workspaceId/auth/providers', async t => {
+  t.plan(2)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({ providers: {} })
+  await svc.getStorefrontAuthProviders('ws1')
+  t.equal(stub.firstCall.args[0], 'getStorefrontAuthProviders')
+  t.equal(stub.firstCall.args[1], '/storefront/ws1/auth/providers')
+  sandbox.restore()
+  t.end()
+})
+
+test('signInStorefrontCustomerWithOAuth POSTs the provider token to /auth/oauth/:provider', async t => {
+  t.plan(4)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({ token: 't', customer: {} })
+  await svc.signInStorefrontCustomerWithOAuth('ws1', 'apple', {
+    idToken: 'id.jwt',
+    nonce: 'raw-nonce',
+    name: { firstName: 'Ana' }
+  })
+  t.equal(stub.firstCall.args[0], 'signInStorefrontCustomerWithOAuth')
+  t.equal(stub.firstCall.args[1], '/storefront/ws1/auth/oauth/apple')
+  t.equal(stub.firstCall.args[2].method, 'POST')
+  t.deepEqual(stub.firstCall.args[2].body, {
+    idToken: 'id.jwt',
+    accessToken: undefined,
+    nonce: 'raw-nonce',
+    name: { firstName: 'Ana' }
+  })
+  sandbox.restore()
+  t.end()
+})
+
+test('signInStorefrontCustomerWithOAuth refuses an unknown provider before any request', async t => {
+  t.plan(2)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({})
+  try {
+    await svc.signInStorefrontCustomerWithOAuth('ws1', 'github', { accessToken: 'x' })
+    t.fail('should have thrown')
+  } catch (err) {
+    t.ok(/provider/.test(err.message))
+  }
+  t.equal(stub.callCount, 0)
+  sandbox.restore()
+  t.end()
+})
+
+test('setStorefrontAuthProviders PUTs the owner config to /settings/auth-providers', async t => {
+  t.plan(3)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({})
+  const config = { google: { clientIds: ['1-a.apps.googleusercontent.com'] } }
+  await svc.setStorefrontAuthProviders('ws1', config)
+  t.equal(stub.firstCall.args[1], '/storefront/ws1/settings/auth-providers')
+  t.equal(stub.firstCall.args[2].method, 'PUT')
+  t.deepEqual(stub.firstCall.args[2].body, config)
+  sandbox.restore()
+  t.end()
+})
+
+test('BaseService._requiresInit: social sign-in is anonymous; the owner config write is NOT', t => {
+  t.plan(3)
+  const svc = new BaseService()
+  t.equal(svc._requiresInit('getStorefrontAuthProviders'), false)
+  t.equal(svc._requiresInit('signInStorefrontCustomerWithOAuth'), false)
+  t.equal(svc._requiresInit('setStorefrontAuthProviders'), true, 'rides the platform-user session')
+  t.end()
+})
+
+// ── storefront schema selection (owner|admin) ─────────────────────────────
+
+test('getStorefrontSchema / setStorefrontSchema hit /settings/schema on the platform session', async t => {
+  t.plan(6)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({})
+  await svc.getStorefrontSchema('ws1')
+  t.equal(stub.firstCall.args[1], '/storefront/ws1/settings/schema')
+  t.equal(stub.firstCall.args[2].method, 'GET')
+  await svc.setStorefrontSchema('ws1', { preset: 'natali' })
+  t.equal(stub.secondCall.args[2].method, 'PUT')
+  t.deepEqual(stub.secondCall.args[2].body, { preset: 'natali' })
+  const base = new BaseService()
+  t.equal(base._requiresInit('getStorefrontSchema'), true)
+  t.equal(base._requiresInit('setStorefrontSchema'), true)
+  sandbox.restore()
+  t.end()
+})

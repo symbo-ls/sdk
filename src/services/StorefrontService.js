@@ -199,6 +199,94 @@ export class StorefrontService extends BaseService {
     )
   }
 
+  // GET /core/storefront/:workspaceId/auth/providers
+  // PUBLIC — which social sign-in providers this storefront offers, plus the
+  // PUBLIC client ids a page needs to render its buttons:
+  // `{ providers: { google: { enabled, clientId, clientIds },
+  //                 apple: { enabled, clientId, servicesIds },
+  //                 facebook: { enabled, appId } } }`. Never a secret.
+  getStorefrontAuthProviders (workspaceId) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    return this._call(
+      'getStorefrontAuthProviders',
+      `/storefront/${encodeURIComponent(workspaceId)}/auth/providers`,
+      { method: 'GET' }
+    )
+  }
+
+  // POST /core/storefront/:workspaceId/auth/oauth/:provider
+  // PUBLIC — social sign-in. The page obtains the provider token in the
+  // browser and passes it here; the server verifies it against the
+  // workspace's own configured client ids and signs the customer in (or
+  // links / creates the account). Payload per provider:
+  //   google   { idToken }                  — Google Identity Services credential
+  //   apple    { idToken, nonce?, name? }   — Sign in with Apple JS id_token; the
+  //            RAW nonce (the page passed sha256(nonce) to Apple); `name` only
+  //            on the first authorization (Apple sends it to the client once)
+  //   facebook { accessToken }              — Facebook JS SDK authResponse.accessToken
+  // Resolves `{ token, customer }` — the same shape as
+  // `loginStorefrontCustomer`.
+  signInStorefrontCustomerWithOAuth (workspaceId, provider, { idToken, accessToken, nonce, name } = {}) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!['google', 'apple', 'facebook'].includes(provider)) {
+      throw new Error('provider must be one of: google, apple, facebook')
+    }
+    return this._call(
+      'signInStorefrontCustomerWithOAuth',
+      `/storefront/${encodeURIComponent(workspaceId)}/auth/oauth/${encodeURIComponent(provider)}`,
+      { method: 'POST', body: { idToken, accessToken, nonce, name } }
+    )
+  }
+
+  // PUT /core/storefront/:workspaceId/settings/auth-providers
+  // AUTHENTICATED as the signed-in PLATFORM user (workspace owner|admin) —
+  // unlike every other method on this service it rides the SDK's own
+  // session. Per-provider partial update: an omitted provider is kept, `null`
+  // removes it. `facebook.appSecret` is write-only (stored in the server's
+  // secret manager, never returned); the response reports `appSecretSet`.
+  //   { google: { clientIds: [] },
+  //     apple: { servicesIds: [], bundleIds: [] },
+  //     facebook: { appId, appSecret } }
+  setStorefrontAuthProviders (workspaceId, config = {}) {
+    this._requireReady('setStorefrontAuthProviders')
+    if (!workspaceId) throw new Error('workspaceId is required')
+    return this._call(
+      'setStorefrontAuthProviders',
+      `/storefront/${encodeURIComponent(workspaceId)}/settings/auth-providers`,
+      { method: 'PUT', body: config }
+    )
+  }
+
+  // GET /core/storefront/:workspaceId/settings/schema
+  // AUTHENTICATED platform user (workspace owner|admin). Which record
+  // collections this storefront uses: `{ setting, preset, collections,
+  // presets }` — the stored `settings.storefront.schema`, the preset it
+  // resolves to ('default' when unconfigured), the effective logical→collection
+  // map and the registered preset names.
+  getStorefrontSchema (workspaceId) {
+    this._requireReady('getStorefrontSchema')
+    if (!workspaceId) throw new Error('workspaceId is required')
+    return this._call(
+      'getStorefrontSchema',
+      `/storefront/${encodeURIComponent(workspaceId)}/settings/schema`,
+      { method: 'GET' }
+    )
+  }
+
+  // PUT /core/storefront/:workspaceId/settings/schema — owner|admin.
+  // `{ preset: 'default' | 'natali', collections?: { <logicalKey>: <collectionKey> } }`,
+  // or `{ preset: null }` to clear back to the default preset.
+  setStorefrontSchema (workspaceId, schema) {
+    this._requireReady('setStorefrontSchema')
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!schema || typeof schema !== 'object') throw new Error('schema is required')
+    return this._call(
+      'setStorefrontSchema',
+      `/storefront/${encodeURIComponent(workspaceId)}/settings/schema`,
+      { method: 'PUT', body: schema }
+    )
+  }
+
   // GET /core/storefront/:workspaceId/auth/me
   // Behind `requireCustomer` on the server — pass the storefront-customer
   // token returned by `loginStorefrontCustomer` explicitly. See the class
