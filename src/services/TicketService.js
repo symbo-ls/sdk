@@ -747,26 +747,28 @@ export class TicketService extends BaseService {
     /**
      * List attachments for a ticket.
      *
+     * @param {string} workspaceId - The workspace ID you are currently scoped to
      * @param {string} ticketId - The ticket's ticketId slug
      * @returns {Promise<Array>} Array of attachment documents
      */
-    list: (ticketId) =>
+    list: (workspaceId, ticketId) =>
       this._call(
         'tickets.attachments.list',
-        `/tickets/${encodeURIComponent(ticketId)}/attachments`
+        `/tickets/${encodeURIComponent(ticketId)}/attachments?workspaceId=${encodeURIComponent(workspaceId)}`
       ),
 
     /**
      * Remove an attachment from a ticket.
      *
+     * @param {string} workspaceId - The workspace ID you are currently scoped to
      * @param {string} ticketId - The ticket's ticketId slug
      * @param {string} attachmentId - Attachment MongoDB _id
      * @returns {Promise<{attachments: Array}>} Updated attachments array
      */
-    remove: (ticketId, attachmentId) =>
+    remove: (workspaceId, ticketId, attachmentId) =>
       this._call(
         'tickets.attachments.remove',
-        `/tickets/${encodeURIComponent(ticketId)}/attachments/${encodeURIComponent(attachmentId)}`,
+        `/tickets/${encodeURIComponent(ticketId)}/attachments/${encodeURIComponent(attachmentId)}?workspaceId=${encodeURIComponent(workspaceId)}`,
         { method: 'DELETE' }
       )
   }
