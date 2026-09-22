@@ -729,17 +729,18 @@ export class TicketService extends BaseService {
      * Sends multipart/form-data; the server stores the file and appends the
      * attachment record to the ticket's attachments array.
      *
-     * @param {string} workspaceId - The workspace ID you are currently scoped to
      * @param {string} ticketId - The ticket's ticketId slug (e.g. 'SMBLS-42')
      * @param {File} file - Browser File object to upload
      * @returns {Promise<{attachments: Array}>} Updated attachments array
      */
-    upload: (workspaceId, ticketId, file) => {
+    upload: (ticketId, file) => {
+      const wid = this._workspaceScope()
+      const qs = wid ? `?workspaceId=${encodeURIComponent(wid)}` : ''
       const formData = new FormData()
       formData.append('file', file)
       return this._call(
         'tickets.attachments.upload',
-        `/tickets/${encodeURIComponent(ticketId)}/attachments?workspaceId=${encodeURIComponent(workspaceId)}`,
+        `/tickets/${encodeURIComponent(ticketId)}/attachments${qs}`,
         { method: 'POST', body: formData }
       )
     },
@@ -747,30 +748,34 @@ export class TicketService extends BaseService {
     /**
      * List attachments for a ticket.
      *
-     * @param {string} workspaceId - The workspace ID you are currently scoped to
      * @param {string} ticketId - The ticket's ticketId slug
      * @returns {Promise<Array>} Array of attachment documents
      */
-    list: (workspaceId, ticketId) =>
-      this._call(
+    list: (ticketId) => {
+      const wid = this._workspaceScope()
+      const qs = wid ? `?workspaceId=${encodeURIComponent(wid)}` : ''
+      return this._call(
         'tickets.attachments.list',
-        `/tickets/${encodeURIComponent(ticketId)}/attachments?workspaceId=${encodeURIComponent(workspaceId)}`
-      ),
+        `/tickets/${encodeURIComponent(ticketId)}/attachments${qs}`
+      )
+    },
 
     /**
      * Remove an attachment from a ticket.
      *
-     * @param {string} workspaceId - The workspace ID you are currently scoped to
      * @param {string} ticketId - The ticket's ticketId slug
      * @param {string} attachmentId - Attachment MongoDB _id
      * @returns {Promise<{attachments: Array}>} Updated attachments array
      */
-    remove: (workspaceId, ticketId, attachmentId) =>
-      this._call(
+    remove: (ticketId, attachmentId) => {
+      const wid = this._workspaceScope()
+      const qs = wid ? `?workspaceId=${encodeURIComponent(wid)}` : ''
+      return this._call(
         'tickets.attachments.remove',
-        `/tickets/${encodeURIComponent(ticketId)}/attachments/${encodeURIComponent(attachmentId)}?workspaceId=${encodeURIComponent(workspaceId)}`,
+        `/tickets/${encodeURIComponent(ticketId)}/attachments/${encodeURIComponent(attachmentId)}${qs}`,
         { method: 'DELETE' }
       )
+    }
   }
 
   // ==================== REALTIME / SSE SUBSCRIPTION ====================
