@@ -649,6 +649,20 @@ test('mail.getThread / updateThread / batchThreads hit the thread routes with th
   t.end()
 })
 
+test('mail.resolveAddress GETs /mail/resolve with the address encoded', async t => {
+  t.plan(4)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({ email: 'ana@acme.test', member: null, party: null, alias: null })
+  await svc.resolveAddress('Ana+tag@acme.test', { workspaceId: 'ws1' })
+  t.equal(stub.getCall(0).args[0], 'mail.resolveAddress', 'call name')
+  t.equal(stub.getCall(0).args[1], '/mail/resolve?email=Ana%2Btag%40acme.test&workspaceId=ws1', 'the + and @ are encoded, pin appended')
+  t.equal(stub.getCall(0).args[2], undefined, 'GET')
+  await svc.resolveAddress('ana@acme.test', {})
+  t.equal(stub.getCall(1).args[1], '/mail/resolve?email=ana%40acme.test', 'no pin, no dangling &')
+  sandbox.restore()
+  t.end()
+})
+
 test('mail.saveAttachment POSTs the /save tail with both ids encoded', async t => {
   t.plan(5)
   const svc = makeService()

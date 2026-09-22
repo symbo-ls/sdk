@@ -1099,7 +1099,8 @@ const ENTITY_ROUTES = {
     methods: {
       body: 'getBody',
       attachment: 'attachmentUrl',
-      saveAttachment: 'saveAttachment'
+      saveAttachment: 'saveAttachment',
+      resolve: 'resolveAddress'
     },
     // `attachment` answers the signed { url } the browser opens (§7 named the
     // op attachmentUrl; the shipped read UI calls `attachment`). Two ids ride
@@ -1110,10 +1111,13 @@ const ENTITY_ROUTES = {
     // positional ids — it is a POST with an empty body, so there is nothing
     // else to shape.
     //   sdk.execute('mail.messages', 'saveAttachment', { id, aid, workspaceId })
+    // `resolve` is the §3.7 directory read — an address, not a message id.
+    //   sdk.execute('mail.messages', 'resolve', { email, workspaceId })
     argMap: {
       body: wsArgMaps.id,
       attachment: (a) => [a?.id, a?.aid ?? a?.attachmentId, ..._wsOpts(a)],
-      saveAttachment: (a) => [a?.id, a?.aid ?? a?.attachmentId, ..._wsOpts(a)]
+      saveAttachment: (a) => [a?.id, a?.aid ?? a?.attachmentId, ..._wsOpts(a)],
+      resolve: (a) => [a?.email, ..._wsOpts(a)]
     }
   },
   'mail.admin': {

@@ -27,6 +27,7 @@ import { BaseService } from './BaseService.js'
 //   GET    /mail/messages/:id/body            → getBody            ACL read · sanitised { html, text, blockedImages } (cache, fetch-on-miss)
 //   GET    /mail/messages/:id/attachments/:aid → attachmentUrl     ACL read · { url, path, expiresAt, filename, mime, size, inline } — a 10-minute signed URL
 //   POST   /mail/messages/:id/attachments/:aid/save → saveAttachment  ACL read + policy · provider bytes → the PRIVATE mail-attachments bucket + a File row (§3.7)
+//   GET    /mail/resolve?email=               → resolveAddress     member · "who is this address?" → { email, member, party, alias } (§3.7 Directory)
 //
 // NOT a method: GET /mail/messages/:id/attachments/:aid/content?sig=. It is
 // the BROWSER's leg (a download tab, an <img> inside the sandboxed body
@@ -421,6 +422,18 @@ export class MailService extends BaseService {
       return { ...r, url: `${this._apiUrl}${r.path}` }
     }
     return r
+  }
+
+  // GET /core/mail/resolve?email= (§3.7 Directory, MAIL-INTEGRATIONS-SERVER-1)
+  // → { email, member, party, alias }. ONE read answers "who is this
+  // address?": a workspace member (by their own address OR a UserEmailAlias
+  // — which is why the shell cannot answer it client-side), the directory
+  // Party carrying it, and the canonical email an alias collapses to.
+  // RESOLVE ONLY — nothing is created, and a stranger is every field null,
+  // never a 404. That null IS the "Add to directory" gate.
+  resolveAddress (email, { workspaceId } = {}) {
+    const pin = workspaceId ? `&workspaceId=${encodeURIComponent(workspaceId)}` : ''
+    return this._call('mail.resolveAddress', `/mail/resolve?email=${encodeURIComponent(email)}${pin}`)
   }
 
   // POST /core/mail/messages/:id/attachments/:aid/save (§3.7 "Save to
