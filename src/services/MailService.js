@@ -23,6 +23,7 @@ import { BaseService } from './BaseService.js'
 //   GET    /mail/threads/:id                  → getThread          ACL read · { thread, messages[] } — each envelope carries bodyState
 //   PATCH  /mail/threads/:id                  → updateThread       ACL write · read / starred / muted / snoozedUntil / folder / addLabels / removeLabels
 //   POST   /mail/threads/batch                → batchThreads       ACL write on every id · { ids, ...the same flags }, all-or-nothing, ≤100 ids
+//   POST   /mail/threads/:id/rsvp             → rsvpThread         ACL write · { messageId, response: accept|tentative|decline } → the provider answers the organizer, THEN invite.status lands (§3.7)
 //   GET    /mail/messages/:id/body            → getBody            ACL read · sanitised { html, text, blockedImages } (cache, fetch-on-miss)
 //   GET    /mail/messages/:id/attachments/:aid → attachmentUrl     ACL read · { url, path, expiresAt, filename, mime, size, inline } — a 10-minute signed URL
 //
@@ -366,6 +367,25 @@ export class MailService extends BaseService {
   // batch and nothing changes. Answers { count, threads, jobs }.
   batchThreads (payload = {}, { workspaceId } = {}) {
     return this._call('mail.batchThreads', `/mail/threads/batch${qs(workspaceId)}`, {
+      method: 'POST',
+      body: payload
+    })
+  }
+
+  // POST /core/mail/threads/:id/rsvp (ACL write; §3.7 invite RSVP,
+  // MAIL-INTEGRATIONS-SERVER-1). Body { messageId, response: 'accept' |
+  // 'tentative' | 'decline' }. The server asks the provider FIRST (Gmail
+  // patches the attendee on the calendar event found by iCalUID; Graph POSTs
+  // accept | tentativelyAccept | decline), and only a provider 2xx writes
+  // `invite.status` (accepted | tentative | declined) on the message row —
+  // so this is NEVER an optimistic local write. Answers { messageId,
+  // threadId, response, invite, event }. 409 `no_invite` (the message
+  // carries no calendar part) · 409 `event_not_found` (no calendar event
+  // matches the invite uid yet) · 409 `account_disabled` · 404 for every ACL
+  // and cross-thread miss. The workspace CalendarEvent mirrors through the
+  // ordinary calendar sync pull — nothing to write there.
+  rsvpThread (id, payload = {}, { workspaceId } = {}) {
+    return this._call('mail.rsvpThread', `/mail/threads/${encodeURIComponent(id)}/rsvp${qs(workspaceId)}`, {
       method: 'POST',
       body: payload
     })

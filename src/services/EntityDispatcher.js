@@ -1069,7 +1069,8 @@ const ENTITY_ROUTES = {
       list: 'listThreads',
       get: 'getThread',
       update: 'updateThread',
-      batch: 'batchThreads'
+      batch: 'batchThreads',
+      rsvp: 'rsvpThread'
     },
     // list: flat keys become the filter (folder, label, unread, starred,
     // attachments, from, q, cursor) and `limit` rides the options bag —
@@ -1079,11 +1080,18 @@ const ENTITY_ROUTES = {
     //   sdk.execute('mail.threads', 'get', { id, workspaceId })
     //   sdk.execute('mail.threads', 'update', { id, workspaceId, folder: 'archive' })
     //   sdk.execute('mail.threads', 'batch', { ids, workspaceId, read: true })
+    // rsvp (§3.7, MAIL-INTEGRATIONS-SERVER-1) shapes like update — the thread
+    // id is the route pin and { messageId, response } is the body, so it
+    // reads the SAME idPayload map. `response` is the wire word
+    // accept | tentative | decline; the server answers the provider first
+    // and only then writes invite.status.
+    //   sdk.execute('mail.threads', 'rsvp', { id, messageId, response: 'accept', workspaceId })
     argMap: {
       list: argMaps.filterOptions,
       get: wsArgMaps.id,
       update: wsArgMaps.idPayload,
-      batch: wsArgMaps.payload
+      batch: wsArgMaps.payload,
+      rsvp: wsArgMaps.idPayload
     }
   },
   'mail.messages': {

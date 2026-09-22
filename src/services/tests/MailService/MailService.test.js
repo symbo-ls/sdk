@@ -649,6 +649,22 @@ test('mail.getThread / updateThread / batchThreads hit the thread routes with th
   t.end()
 })
 
+test('mail.rsvpThread POSTs /mail/threads/:id/rsvp with the { messageId, response } body', async t => {
+  t.plan(6)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({})
+  await svc.rsvpThread('t1', { messageId: 'm1', response: 'accept' }, { workspaceId: 'ws1' })
+  t.equal(stub.getCall(0).args[0], 'mail.rsvpThread', 'call name')
+  t.equal(stub.getCall(0).args[1], '/mail/threads/t1/rsvp?workspaceId=ws1', 'rsvp path + pin')
+  t.deepEqual(stub.getCall(0).args[2], { method: 'POST', body: { messageId: 'm1', response: 'accept' } }, 'POST with the wire word')
+  await svc.rsvpThread('t/1', { messageId: 'm1', response: 'decline' }, {})
+  t.equal(stub.getCall(1).args[1], '/mail/threads/t%2F1/rsvp', 'encoded id, no dangling ?')
+  t.equal(stub.getCall(1).args[2].body.response, 'decline', 'decline rides through')
+  t.equal(stub.callCount, 2, 'no extra round-trips')
+  sandbox.restore()
+  t.end()
+})
+
 test('mail.getBody GETs /mail/messages/:id/body; attachmentUrl re-bases the server path on this client\'s API origin', async t => {
   t.plan(7)
   const svc = makeService()
