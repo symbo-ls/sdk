@@ -36,7 +36,7 @@
   "license": "CC-BY-NC-4.0",
   "repository": "https://github.com/symbo-ls/sdk",
   "publishConfig": {
-    "access": "restricted"
+    "access": "public"
   },
   "module": "./dist/esm/src/index.js"
 }
