@@ -1098,16 +1098,22 @@ const ENTITY_ROUTES = {
     service: 'mail',
     methods: {
       body: 'getBody',
-      attachment: 'attachmentUrl'
+      attachment: 'attachmentUrl',
+      saveAttachment: 'saveAttachment'
     },
     // `attachment` answers the signed { url } the browser opens (§7 named the
     // op attachmentUrl; the shipped read UI calls `attachment`). Two ids ride
     // as positionals: the message id and the provider attachment id.
     //   sdk.execute('mail.messages', 'body', { id, workspaceId })
     //   sdk.execute('mail.messages', 'attachment', { id, aid, workspaceId })
+    // `saveAttachment` (§3.7, MAIL-INTEGRATIONS-SERVER-1) takes the same two
+    // positional ids — it is a POST with an empty body, so there is nothing
+    // else to shape.
+    //   sdk.execute('mail.messages', 'saveAttachment', { id, aid, workspaceId })
     argMap: {
       body: wsArgMaps.id,
-      attachment: (a) => [a?.id, a?.aid ?? a?.attachmentId, ..._wsOpts(a)]
+      attachment: (a) => [a?.id, a?.aid ?? a?.attachmentId, ..._wsOpts(a)],
+      saveAttachment: (a) => [a?.id, a?.aid ?? a?.attachmentId, ..._wsOpts(a)]
     }
   },
   'mail.admin': {

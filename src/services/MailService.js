@@ -26,6 +26,7 @@ import { BaseService } from './BaseService.js'
 //   POST   /mail/threads/:id/rsvp             → rsvpThread         ACL write · { messageId, response: accept|tentative|decline } → the provider answers the organizer, THEN invite.status lands (§3.7)
 //   GET    /mail/messages/:id/body            → getBody            ACL read · sanitised { html, text, blockedImages } (cache, fetch-on-miss)
 //   GET    /mail/messages/:id/attachments/:aid → attachmentUrl     ACL read · { url, path, expiresAt, filename, mime, size, inline } — a 10-minute signed URL
+//   POST   /mail/messages/:id/attachments/:aid/save → saveAttachment  ACL read + policy · provider bytes → the PRIVATE mail-attachments bucket + a File row (§3.7)
 //
 // NOT a method: GET /mail/messages/:id/attachments/:aid/content?sig=. It is
 // the BROWSER's leg (a download tab, an <img> inside the sandboxed body
@@ -420,6 +421,24 @@ export class MailService extends BaseService {
       return { ...r, url: `${this._apiUrl}${r.path}` }
     }
     return r
+  }
+
+  // POST /core/mail/messages/:id/attachments/:aid/save (§3.7 "Save to
+  // Files", MAIL-INTEGRATIONS-SERVER-1). The server streams the provider's
+  // bytes into the PRIVATE `mail-attachments` bucket and answers 201
+  // { file, attachment } — the browser never holds the bytes. IDEMPOTENT: a
+  // second save answers 200 with the same File row and `alreadySaved: true`.
+  // After a save the attachment's own download is served from that copy, so
+  // it outlives the message at the provider. 403
+  // `policy_forbids_attachments_to_files` when the org turned the toggle
+  // off · 413 over the 25 MB cap · 502 `storage_unavailable` (nothing was
+  // recorded — the retry is clean) · 404 for every ACL / unknown-id miss.
+  saveAttachment (id, aid, { workspaceId } = {}) {
+    return this._call(
+      'mail.saveAttachment',
+      `/mail/messages/${encodeURIComponent(id)}/attachments/${encodeURIComponent(aid)}/save${qs(workspaceId)}`,
+      { method: 'POST', body: {} }
+    )
   }
 
   // POST /core/mail/drafts — composer autosave birth. Body allowlist:

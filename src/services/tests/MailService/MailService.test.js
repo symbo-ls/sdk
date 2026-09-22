@@ -649,6 +649,21 @@ test('mail.getThread / updateThread / batchThreads hit the thread routes with th
   t.end()
 })
 
+test('mail.saveAttachment POSTs the /save tail with both ids encoded', async t => {
+  t.plan(5)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({ file: { id: 'F1' } })
+  await svc.saveAttachment('m1', 'A/1', { workspaceId: 'ws1' })
+  t.equal(stub.getCall(0).args[0], 'mail.saveAttachment', 'call name')
+  t.equal(stub.getCall(0).args[1], '/mail/messages/m1/attachments/A%2F1/save?workspaceId=ws1', 'encoded aid + pin')
+  t.equal(stub.getCall(0).args[2].method, 'POST', 'POST')
+  await svc.saveAttachment('m1', 'A1', {})
+  t.equal(stub.getCall(1).args[1], '/mail/messages/m1/attachments/A1/save', 'no dangling ? without a pin')
+  t.equal(stub.callCount, 2, 'no extra round-trips')
+  sandbox.restore()
+  t.end()
+})
+
 test('mail.rsvpThread POSTs /mail/threads/:id/rsvp with the { messageId, response } body', async t => {
   t.plan(6)
   const svc = makeService()
