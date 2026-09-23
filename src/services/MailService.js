@@ -28,6 +28,7 @@ import { BaseService } from './BaseService.js'
 //   GET    /mail/messages/:id/attachments/:aid → attachmentUrl     ACL read · { url, path, expiresAt, filename, mime, size, inline } — a 10-minute signed URL
 //   POST   /mail/messages/:id/attachments/:aid/save → saveAttachment  ACL read + policy · provider bytes → the PRIVATE mail-attachments bucket + a File row (§3.7)
 //   GET    /mail/resolve?email=               → resolveAddress     member · "who is this address?" → { email, member, party, alias } (§3.7 Directory)
+//   GET    /mail/search                       → searchThreads      member · q (required), scope=local|provider|both (default local), accountId|all, limit≤50 → { q, scope, limit, rows:[{ thread, rank, source }], accounts:[] } — a degraded provider leg is reported in `accounts[]`, never a non-200 (§5.8, MAIL-SEARCH-1)
 //
 // NOT a method: GET /mail/messages/:id/attachments/:aid/content?sig=. It is
 // the BROWSER's leg (a download tab, an <img> inside the sandboxed body
@@ -73,11 +74,18 @@ import { BaseService } from './BaseService.js'
 // Shared-inbox service desk (MAIL-SHARED-INBOX-SERVICE-DESK-1, D8 · §3.7):
 //   POST   /mail/service-desk/reply           → serviceDeskReply   member + ACL write on the shared inbox · answer a desk thread from its ticket or its conversation → 202 outbox row
 //
-// NOT here, on purpose: the provider-scope search (GET /search), thread
-// links + rsvp, attachment save-to-Files, the image proxy and the provider
-// webhooks. Those routes are not registered yet; each lands with its own
-// server ticket and gains its SDK method there. A method here for a route
-// that does not exist would answer 404 and read as a server fault.
+// NOT here, and never will be: the three provider webhooks (POST
+// /mail/webhooks/google · POST /mail/webhooks/microsoft[/lifecycle]). The
+// PROVIDER calls those, they are public and signature-verified, and no
+// client ever sends one. GET /mail/proxy/image is not registered yet (§11,
+// its own server ticket) — a method here for a route that does not exist
+// would answer 404 and read as a server fault. GET /mail/threads/:id/link
+// never lands at all: the shell links a thread to a ticket, an event, a
+// conversation or a party through those services' own SDK methods.
+//
+// Reachable, but NOT through `_call`: GET /mail/stream is an SSE leg and
+// rides `_sseSubscribe` (`subscribeStream`, at the end of this file), so the
+// route-drift analyzer cannot see it and reports it as server-only.
 //
 // Workspace-scoped server-side (active-workspace claim fallback); an explicit
 // `workspaceId` is threaded as a query param — a ROUTING param, never a body
@@ -434,6 +442,33 @@ export class MailService extends BaseService {
   resolveAddress (email, { workspaceId } = {}) {
     const pin = workspaceId ? `&workspaceId=${encodeURIComponent(workspaceId)}` : ''
     return this._call('mail.resolveAddress', `/mail/resolve?email=${encodeURIComponent(email)}${pin}`)
+  }
+
+  // GET /core/mail/search (§5.8 search, MAIL-SEARCH-1) — one query over the
+  // threads this viewer may read. `q` is REQUIRED: without it the server
+  // answers 400 `bad_request`. `scope` is local | provider | both and
+  // DEFAULTS TO LOCAL, so an unqualified search spends no provider quota:
+  // local reads the MailThread text index (subject > substring > body);
+  // provider asks each readable account's own full-text in parallel and maps
+  // the ids back to mirrored rows (fetch-on-miss for envelopes outside the
+  // window); both merges the two by rank, then date. `accountId` pins ONE
+  // readable account — absent or 'all' searches the union; an accountId this
+  // viewer cannot read answers 404, never 403 (§5.11). `limit` is 1..50
+  // (default 25); a value outside the range falls back to the default.
+  // Answers { q, scope, limit, rows: [{ thread, rank, source }], accounts }.
+  // `accounts[]` reports the provider leg per mailbox (ok / code / fetched):
+  // a degraded mailbox is reported there and never blanks the others, so a
+  // partial provider failure stays a 200 — read `accounts[]`, do not infer
+  // health from the status.
+  searchThreads (filter = {}, options = {}) {
+    const extra = {}
+    const keys = ['q', 'scope', 'accountId', 'limit']
+    for (const k of keys) {
+      const v = filter[k] ?? options[k]
+      if (v !== undefined && v !== null && v !== '') extra[k] = v
+    }
+    const ws = filter.workspaceId || options.workspaceId
+    return this._call('mail.searchThreads', `/mail/search${qs(ws, extra)}`)
   }
 
   // POST /core/mail/messages/:id/attachments/:aid/save (§3.7 "Save to

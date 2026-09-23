@@ -663,6 +663,62 @@ test('mail.resolveAddress GETs /mail/resolve with the address encoded', async t 
   t.end()
 })
 
+// ─── Search (§5.8, MAIL-SEARCH-1) ───────────────────────────────────────
+
+test('mail.searchThreads GETs /mail/search with q / scope / accountId / limit as query params', async t => {
+  t.plan(6)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({ q: 'invoice paid', scope: 'both', limit: 50, rows: [], accounts: [] })
+  await svc.searchThreads({ workspaceId: 'ws1', q: 'invoice paid', scope: 'both', accountId: 'a1' }, { limit: 50 })
+  t.equal(stub.firstCall.args[0], 'mail.searchThreads', 'name')
+  const url = new URL(`https://x${stub.firstCall.args[1]}`)
+  t.equal(url.pathname, '/mail/search', 'path')
+  t.deepEqual(
+    Object.fromEntries(url.searchParams),
+    { q: 'invoice paid', scope: 'both', accountId: 'a1', limit: '50', workspaceId: 'ws1' },
+    'the search keys + the hoisted limit + the workspace pin'
+  )
+  t.equal(stub.firstCall.args[2], undefined, 'GET — no options')
+  await svc.searchThreads({ q: 'a+b & c' })
+  t.equal(stub.secondCall.args[1], '/mail/search?q=a%2Bb+%26+c', 'the term is encoded, no pin, no dangling &')
+  await svc.searchThreads({}, {})
+  t.equal(stub.thirdCall.args[1], '/mail/search', 'empty filter → bare path (no dangling ?)')
+  sandbox.restore()
+  t.end()
+})
+
+test('a 400 from searchThreads carries the server code and message — the typed error envelope', async t => {
+  t.plan(4)
+  const svc = makeFetchService()
+  sandbox.stub(globalThis, 'fetch').resolves(fakeResponse(400, { error: 'bad_request', message: 'q is required' }))
+  try {
+    await svc.searchThreads({ workspaceId: 'ws1' })
+    t.fail('should throw')
+  } catch (err) {
+    t.ok(err instanceof Error, 'throws')
+    t.equal(err.status, 400, 'the 400 status rides the error')
+    t.equal(err.message, 'q is required', 'the server message is the error message')
+    t.equal(err.cause?.error, 'bad_request', 'the server code rides on the cause body')
+  }
+  sandbox.restore()
+  t.end()
+})
+
+test('a 404 from searchThreads on an accountId the viewer cannot read never leaks a 403', async t => {
+  t.plan(2)
+  const svc = makeFetchService()
+  sandbox.stub(globalThis, 'fetch').resolves(fakeResponse(404, { error: 'not_found', message: 'mail account not found' }))
+  try {
+    await svc.searchThreads({ workspaceId: 'ws1', q: 'invoice', accountId: 'a-not-mine' })
+    t.fail('should throw')
+  } catch (err) {
+    t.equal(err.status, 404, 'the 404 status rides the error')
+    t.equal(err.message, 'mail account not found', 'the server message rides through')
+  }
+  sandbox.restore()
+  t.end()
+})
+
 test('mail.saveAttachment POSTs the /save tail with both ids encoded', async t => {
   t.plan(5)
   const svc = makeService()

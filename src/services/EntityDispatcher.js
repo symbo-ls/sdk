@@ -1070,7 +1070,8 @@ const ENTITY_ROUTES = {
       get: 'getThread',
       update: 'updateThread',
       batch: 'batchThreads',
-      rsvp: 'rsvpThread'
+      rsvp: 'rsvpThread',
+      search: 'searchThreads'
     },
     // list: flat keys become the filter (folder, label, unread, starred,
     // attachments, from, q, cursor) and `limit` rides the options bag —
@@ -1086,12 +1087,18 @@ const ENTITY_ROUTES = {
     // accept | tentative | decline; the server answers the provider first
     // and only then writes invite.status.
     //   sdk.execute('mail.threads', 'rsvp', { id, messageId, response: 'accept', workspaceId })
+    // search (§5.8, MAIL-SEARCH-1) reads the SAME filterOptions map as list:
+    // flat keys (q, scope, accountId) become the filter and `limit` rides the
+    // options bag — searchThreads reads both. `q` is required; `scope`
+    // defaults to local, so an unqualified search spends no provider quota.
+    //   sdk.execute('mail.threads', 'search', { workspaceId, q: 'invoice', scope: 'both', limit: 50 })
     argMap: {
       list: argMaps.filterOptions,
       get: wsArgMaps.id,
       update: wsArgMaps.idPayload,
       batch: wsArgMaps.payload,
-      rsvp: wsArgMaps.idPayload
+      rsvp: wsArgMaps.idPayload,
+      search: argMaps.filterOptions
     }
   },
   'mail.messages': {

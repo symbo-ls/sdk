@@ -146,6 +146,20 @@ test('mail.threads ops unpack their args (list keeps flat filters + hoists limit
   t.end()
 })
 
+test('mail.threads search resolves searchThreads with the search keys as the filter (§5.8, MAIL-SEARCH-1)', async t => {
+  const calls = []
+  const execute = createEntityDispatcher(makeSdk(calls))
+  await execute('mail.threads', 'search', { workspaceId: 'ws1', q: 'invoice', scope: 'both', accountId: 'a1', limit: 50 })
+  t.equal(calls[0].method, 'searchThreads', 'search → searchThreads')
+  t.deepEqual(calls[0].args[0], { workspaceId: 'ws1', q: 'invoice', scope: 'both', accountId: 'a1' }, 'flat keys become the filter')
+  t.equal(calls[0].args[1].limit, 50, 'limit rides the options positional (searchThreads reads both)')
+  t.equal(calls[0].args[1].workspaceId, 'ws1', 'the pin rides the options too')
+  await execute('mail.threads', 'search', { params: { q: 'invoice' }, options: { workspaceId: 'ws2' } })
+  t.deepEqual(calls[1].args[0], { q: 'invoice' }, 'the declarative params pack is the filter')
+  t.equal(calls[1].args[1].workspaceId, 'ws2', 'the pin comes off the options pack')
+  t.end()
+})
+
 test('mail.messages ops: body(id, { workspaceId }); attachment(id, aid, { workspaceId })', async t => {
   const calls = []
   const execute = createEntityDispatcher(makeSdk(calls))
