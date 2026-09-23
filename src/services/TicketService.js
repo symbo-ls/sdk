@@ -25,7 +25,7 @@ export class TicketService extends BaseService {
    *
    * @returns {string|null|undefined} Active workspace id, or a falsy value when unknown
    */
-  _workspaceScope () {
+  _workspaceScope() {
     return this._resolveWorkspaceId(undefined, { fallbackToStorage: true })
   }
 
@@ -53,7 +53,7 @@ export class TicketService extends BaseService {
    * @param {object} options - Paging/sort: limit, skip, sortBy, sortDir, includeCount
    * @returns {Promise<object>} { data, count, complete, limit, skip, hasMore, nextSkip }
    */
-  list (filter = {}, options = {}) {
+  list(filter = {}, options = {}) {
     const wid = (filter.workspaceId || filter.workspace || filter.workspace_id)
       ? null
       : this._workspaceScope()
@@ -83,7 +83,7 @@ export class TicketService extends BaseService {
    * @param {object} [paging] - { pageSize = 500, maxPages = 100 }
    * @returns {Promise<object>} { items, count, complete, pages, incomplete? }
    */
-  async listAll (filter = {}, options = {}, { pageSize = 500, maxPages = 100 } = {}) {
+  async listAll(filter = {}, options = {}, { pageSize = 500, maxPages = 100 } = {}) {
     const limit = Math.max(1, Math.min(Number(pageSize) || 500, 500))
     const items = []
     let count = null
@@ -134,7 +134,7 @@ export class TicketService extends BaseService {
    * @param {object} filter - Filter criteria (cycleId, assigneeEmail, etc.)
    * @returns {Promise<object>} Map of columnKey → count
    */
-  columnCounts (filter = {}) {
+  columnCounts(filter = {}) {
     const wid = (filter.workspaceId || filter.workspace || filter.workspace_id)
       ? null
       : this._workspaceScope()
@@ -151,7 +151,7 @@ export class TicketService extends BaseService {
    * @param {string} ticketId - MongoDB ObjectId or external_id string
    * @returns {Promise<object>} Ticket document
    */
-  get (ticketId) {
+  get(ticketId) {
     // Single-ticket reads are workspace-scoped server-side too (403 without the
     // active workspace — same as list/columnCounts). `get` was the one read
     // that didn't attach it, so opening a ticket from the board
@@ -168,7 +168,7 @@ export class TicketService extends BaseService {
    *
    * @returns {Promise<object>} Map of epic label → count
    */
-  epicCounts () {
+  epicCounts() {
     const wid = this._workspaceScope()
     const qs = wid ? `?workspaceId=${encodeURIComponent(wid)}` : ''
     return this._call('tickets.epicCounts', `/tickets/epic-counts${qs}`)
@@ -183,7 +183,7 @@ export class TicketService extends BaseService {
    * @param {number} [params.limit=50] - Max results
    * @returns {Promise<Array>} Array of queued ticket documents
    */
-  agentQueue ({ assigneeEmail, limit = 50 } = {}) {
+  agentQueue({ assigneeEmail, limit = 50 } = {}) {
     const params = new URLSearchParams()
     if (assigneeEmail) params.set('assignee_email', assigneeEmail)
     if (limit) params.set('limit', String(limit))
@@ -204,7 +204,7 @@ export class TicketService extends BaseService {
    * @param {object|string} payload - Ticket data or raw markdown string
    * @returns {Promise<object>} Created ticket document
    */
-  create (payload) {
+  create(payload) {
     // Writes are workspace-scoped server-side — attach the active workspace as
     // a query param (read by workspaceIdFromRequest) so the new ticket is
     // created WITH a workspace and is therefore visible to the workspace-scoped
@@ -236,7 +236,7 @@ export class TicketService extends BaseService {
    * @param {string} [opts.ifMatch] - ETag for optimistic concurrency check
    * @returns {Promise<object>} Updated ticket document
    */
-  update (ticketId, payload, { ifMatch } = {}) {
+  update(ticketId, payload, { ifMatch } = {}) {
     const headers = {}
     if (ifMatch) headers['If-Match'] = ifMatch
     // Writes are workspace-scoped server-side too — attach the active
@@ -265,7 +265,7 @@ export class TicketService extends BaseService {
    * @param {string} ticketId - Ticket ID to delete
    * @returns {Promise<null>}
    */
-  remove (ticketId) {
+  remove(ticketId) {
     const wid = this._workspaceScope()
     const qs = wid ? `?workspaceId=${encodeURIComponent(wid)}` : ''
     return this._call('tickets.remove', `/tickets/${encodeURIComponent(ticketId)}${qs}`, {
@@ -280,7 +280,7 @@ export class TicketService extends BaseService {
    * @param {string} assigneeEmail - Assignee email address
    * @returns {Promise<object>} Updated ticket document
    */
-  assign (ticketId, assigneeEmail) {
+  assign(ticketId, assigneeEmail) {
     return this._call('tickets.assign', `/tickets/${encodeURIComponent(ticketId)}/assign`, {
       method: 'POST',
       body: { assigneeEmail }
@@ -313,7 +313,7 @@ export class TicketService extends BaseService {
    *   (the fleet uses `todo` — claimed means ASSIGNED, not started).
    * @returns {Promise<object>} Updated ticket document
    */
-  claim (ticketId, agentKey, { expectedUpdatedAt = null, columnKey = null } = {}) {
+  claim(ticketId, agentKey, { expectedUpdatedAt = null, columnKey = null } = {}) {
     const wid = this._workspaceScope()
     const qs = wid ? `?workspaceId=${encodeURIComponent(wid)}` : ''
     return this._call('tickets.claim', `/tickets/${encodeURIComponent(ticketId)}/claim${qs}`, {
@@ -337,7 +337,7 @@ export class TicketService extends BaseService {
    * @param {string} [opts.columnKey] - Move the card in the same write
    * @returns {Promise<object>} Updated ticket document
    */
-  release (ticketId, agentKey, { expectedUpdatedAt = null, force = false, columnKey = null } = {}) {
+  release(ticketId, agentKey, { expectedUpdatedAt = null, force = false, columnKey = null } = {}) {
     const wid = this._workspaceScope()
     const qs = wid ? `?workspaceId=${encodeURIComponent(wid)}` : ''
     return this._call('tickets.release', `/tickets/${encodeURIComponent(ticketId)}/release${qs}`, {
@@ -366,7 +366,7 @@ export class TicketService extends BaseService {
    * @param {object} [opts.approval] - Extra approval fields (category, etc.)
    * @returns {Promise<object>} Updated ticket document
    */
-  approve (ticketId, { note = '', approval = {} } = {}) {
+  approve(ticketId, { note = '', approval = {} } = {}) {
     const wid = this._workspaceScope()
     const qs = wid ? `?workspaceId=${encodeURIComponent(wid)}` : ''
     return this._call('tickets.approve', `/tickets/${encodeURIComponent(ticketId)}/approval${qs}`, {
@@ -385,7 +385,7 @@ export class TicketService extends BaseService {
    * @param {string} [opts.note] - Decision note recorded on the approval record
    * @returns {Promise<object>} Updated ticket document
    */
-  reject (ticketId, { note = '' } = {}) {
+  reject(ticketId, { note = '' } = {}) {
     const wid = this._workspaceScope()
     const qs = wid ? `?workspaceId=${encodeURIComponent(wid)}` : ''
     return this._call('tickets.reject', `/tickets/${encodeURIComponent(ticketId)}/approval${qs}`, {
@@ -647,7 +647,7 @@ export class TicketService extends BaseService {
    * Returns { root, descendants[] } via server-side $graphLookup over
    * refs.parent. Works at any depth: epic → story → task → subtask.
    */
-  tree (ticketId) {
+  tree(ticketId) {
     return this._call('tickets.tree', `/tickets/${encodeURIComponent(ticketId)}/tree`)
   }
 
@@ -711,7 +711,7 @@ export class TicketService extends BaseService {
    * @param {number} [opts.skip=0]
    * @returns {Promise<Array>} Array of resolution row objects
    */
-  resolutions ({ limit = 100, skip = 0, workspaceId } = {}) {
+  resolutions({ limit = 100, skip = 0, workspaceId } = {}) {
     const params = new URLSearchParams()
     if (limit !== 100) params.set('limit', String(limit))
     if (skip) params.set('skip', String(skip))
@@ -729,17 +729,18 @@ export class TicketService extends BaseService {
      * Sends multipart/form-data; the server stores the file and appends the
      * attachment record to the ticket's attachments array.
      *
-     * @param {string} workspaceId - The workspace ID you are currently scoped to
      * @param {string} ticketId - The ticket's ticketId slug (e.g. 'SMBLS-42')
      * @param {File} file - Browser File object to upload
      * @returns {Promise<{attachments: Array}>} Updated attachments array
      */
-    upload: (workspaceId, ticketId, file) => {
+    upload: (ticketId, file) => {
+      const wid = this._workspaceScope()
+      const qs = wid ? `?workspaceId=${encodeURIComponent(wid)}` : ''
       const formData = new FormData()
       formData.append('file', file)
       return this._call(
         'tickets.attachments.upload',
-        `/workspaces/${encodeURIComponent(workspaceId)}/tickets/${encodeURIComponent(ticketId)}/attachments`,
+        `/tickets/${encodeURIComponent(ticketId)}/attachments${qs}`,
         { method: 'POST', body: formData }
       )
     },
@@ -750,11 +751,14 @@ export class TicketService extends BaseService {
      * @param {string} ticketId - The ticket's ticketId slug
      * @returns {Promise<Array>} Array of attachment documents
      */
-    list: (ticketId) =>
-      this._call(
+    list: (ticketId) => {
+      const wid = this._workspaceScope()
+      const qs = wid ? `?workspaceId=${encodeURIComponent(wid)}` : ''
+      return this._call(
         'tickets.attachments.list',
-        `/tickets/${encodeURIComponent(ticketId)}/attachments`
-      ),
+        `/tickets/${encodeURIComponent(ticketId)}/attachments${qs}`
+      )
+    },
 
     /**
      * Remove an attachment from a ticket.
@@ -763,12 +767,15 @@ export class TicketService extends BaseService {
      * @param {string} attachmentId - Attachment MongoDB _id
      * @returns {Promise<{attachments: Array}>} Updated attachments array
      */
-    remove: (ticketId, attachmentId) =>
-      this._call(
+    remove: (ticketId, attachmentId) => {
+      const wid = this._workspaceScope()
+      const qs = wid ? `?workspaceId=${encodeURIComponent(wid)}` : ''
+      return this._call(
         'tickets.attachments.remove',
-        `/tickets/${encodeURIComponent(ticketId)}/attachments/${encodeURIComponent(attachmentId)}`,
+        `/tickets/${encodeURIComponent(ticketId)}/attachments/${encodeURIComponent(attachmentId)}${qs}`,
         { method: 'DELETE' }
       )
+    }
   }
 
   // ==================== REALTIME / SSE SUBSCRIPTION ====================
@@ -792,7 +799,7 @@ export class TicketService extends BaseService {
    * @param {function} onEvent - Callback fired for each event
    * @returns {function} unsubscribe() — call to close the connection
    */
-  subscribe (filter = {}, onEvent) {
+  subscribe(filter = {}, onEvent) {
     // /tickets/stream is workspace-scoped: the controller requires a FLAT
     // `workspaceId` query param and returns 400 without it. Inject the active
     // workspace (same scope resolution list()/counts() use) when the caller
