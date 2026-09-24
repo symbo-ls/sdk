@@ -307,6 +307,9 @@ export const SERVICE_METHODS = {
   suspendUser: 'admin',
   promoteToAdmin: 'admin',
   demoteFromAdmin: 'admin',
+  // /admin/system — GET /core/system/status (public) + /core/system/uptime
+  getSystemStatus: 'admin',
+  getSystemUptime: 'admin',
 
   // Screenshot methods
   createScreenshotProject: 'screenshot',

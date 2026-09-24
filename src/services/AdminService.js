@@ -408,6 +408,50 @@ export class AdminService extends BaseService {
     throw new Error(response.message || 'Failed to get project key stats')
   }
 
+  // ==================== SYSTEM STATUS (/admin/system) ====================
+
+  /**
+   * The cross-repo version / CI / release matrix the /admin/system page
+   * paints. Mirrors: GET /core/system/status (SystemStatusController.get) —
+   * a PUBLIC read the server caches 60 s. Answers the server's object as
+   * sent: { matrix, npm, services, packages, warnings, errors, integration }.
+   * The shell read it with raw fetch() (workspace shared systemStatus.js);
+   * this is the SDK door for it.
+   *
+   * @param {object} [options]
+   * @param {boolean} [options.refresh] - bypass the 60 s server cache (?refresh=1)
+   * @param {AbortSignal} [options.signal] - abort the request (e.g. a page timeout)
+   * @returns {Promise<object>} the status matrix
+   */
+  async getSystemStatus ({ refresh = false, signal } = {}) {
+    this._requireReady('getSystemStatus')
+    // Both paths literal at the _request call site so the drift analyzer
+    // matches /system/status (it cannot see through a variable path).
+    return refresh
+      ? this._request('/system/status?refresh=1', { method: 'GET', methodName: 'getSystemStatus', signal })
+      : this._request('/system/status', { method: 'GET', methodName: 'getSystemStatus', signal })
+  }
+
+  /**
+   * The uptime time series behind the /admin/system day bars. Mirrors:
+   * GET /core/system/uptime (SystemUptimeController) — platform superadmin
+   * only. Answers { [service]: [{ service, checked_at, status, latency_ms,
+   * message }, …] } as sent. The server defaults `limit` to 3000 and caps
+   * it at 10000; a missing or non-positive limit sends none.
+   *
+   * @param {object} [options]
+   * @param {number} [options.limit] - most recent rows to read
+   * @param {AbortSignal} [options.signal] - abort the request
+   * @returns {Promise<object>} rows grouped by service
+   */
+  async getSystemUptime ({ limit, signal } = {}) {
+    this._requireReady('getSystemUptime')
+    const n = Math.floor(Number(limit))
+    return Number.isFinite(n) && n > 0
+      ? this._request(`/system/uptime?limit=${n}`, { method: 'GET', methodName: 'getSystemUptime', signal })
+      : this._request('/system/uptime', { method: 'GET', methodName: 'getSystemUptime', signal })
+  }
+
   /**
    * Private helper to validate email format
    */
