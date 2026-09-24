@@ -74,6 +74,45 @@ test('tickets.epicCounts GETs /tickets/epic-counts', async t => {
   t.end()
 })
 
+// ─── columnCounts ─────────────────────────────────────────────────────────────
+
+test('tickets.columnCounts POSTs { filter } to /tickets/column-counts — no groupBy key without one', async t => {
+  t.plan(4)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({ todo: 2 })
+  await svc.columnCounts({ workspaceId: 'ws-1', cycleId: 'c-1' })
+  const [name, path, opts] = stub.firstCall.args
+  t.equal(name, 'tickets.columnCounts', 'method name tag')
+  t.equal(path, '/tickets/column-counts', 'path')
+  t.equal(opts.method, 'POST', 'POST')
+  t.deepEqual(opts.body, { filter: { workspaceId: 'ws-1', cycleId: 'c-1' } }, 'the body every older server reads')
+  sandbox.restore()
+  t.end()
+})
+
+test('tickets.columnCounts sends groupBy beside the filter — the sidebar type buckets in ONE request', async t => {
+  t.plan(2)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({ groupBy: 'type', counts: { bug: 1 } })
+  const res = await svc.columnCounts({ workspaceId: 'ws-1' }, { groupBy: 'type' })
+  t.deepEqual(stub.firstCall.args[2].body, { filter: { workspaceId: 'ws-1' }, groupBy: 'type' }, 'body')
+  t.deepEqual(res, { groupBy: 'type', counts: { bug: 1 } }, 'the envelope comes back as the server sent it')
+  sandbox.restore()
+  t.end()
+})
+
+test('tickets.columnCounts treats a null or absent groupBy as none', async t => {
+  t.plan(2)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({})
+  await svc.columnCounts({ workspaceId: 'ws-1' }, { groupBy: null })
+  await svc.columnCounts({ workspaceId: 'ws-1' }, {})
+  t.deepEqual(stub.firstCall.args[2].body, { filter: { workspaceId: 'ws-1' } }, 'null groupBy')
+  t.deepEqual(stub.secondCall.args[2].body, { filter: { workspaceId: 'ws-1' } }, 'absent groupBy')
+  sandbox.restore()
+  t.end()
+})
+
 // ─── agentQueue ───────────────────────────────────────────────────────────────
 
 test('tickets.agentQueue builds assignee_email + limit query params', async t => {

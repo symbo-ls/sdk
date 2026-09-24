@@ -127,21 +127,33 @@ export class TicketService extends BaseService {
   }
 
   /**
-   * Per-column ticket counts in ONE server aggregation. Same filter
-   * semantics as list() (workspace auto-scope included) — replaces the
-   * per-column list({limit:0, includeCount}) fan-out.
+   * Grouped ticket counts in ONE server aggregation. Same filter semantics
+   * as list() (workspace auto-scope included) — replaces the per-column
+   * list({limit:0, includeCount}) fan-out.
+   *
+   * Without `groupBy` the answer is the `{ [columnKey]: count }` map, as
+   * before. `{ groupBy: 'type' }` answers `{ groupBy: 'type', counts:
+   * { [type]: count } }` — every type bucket in one request; an untyped
+   * ticket counts under '__none__'. `{ groupBy: 'columnKey' }` answers the
+   * column map inside the same envelope. A filter on the grouped key is
+   * ignored (the answer groups by it). Any other value is a 400
+   * `unsupported_group_by`.
+   *
+   * A server older than groupBy ignores the key and answers the flat column
+   * map, so read `counts` only when the answer echoes your `groupBy`.
    *
    * @param {object} filter - Filter criteria (cycleId, assigneeEmail, etc.)
-   * @returns {Promise<object>} Map of columnKey → count
+   * @param {object} [options] - { groupBy: 'columnKey' | 'type' }
+   * @returns {Promise<object>} Map of columnKey → count, or { groupBy, counts }
    */
-  columnCounts(filter = {}) {
+  columnCounts(filter = {}, { groupBy } = {}) {
     const wid = (filter.workspaceId || filter.workspace || filter.workspace_id)
       ? null
       : this._workspaceScope()
     const scoped = wid ? { ...filter, workspaceId: wid } : filter
     return this._call('tickets.columnCounts', '/tickets/column-counts', {
       method: 'POST',
-      body: { filter: scoped }
+      body: groupBy == null ? { filter: scoped } : { filter: scoped, groupBy }
     })
   }
 

@@ -459,7 +459,9 @@ const ENTITY_ROUTES = {
       ...CRUD_ARG_MAP,
       assign: (a) => [a?.id ?? a?.number, a?.assignee ?? a?.email],
       epicCounts: () => [],
-      columnCounts: (a) => [a?.filter ?? a ?? {}]
+      // `{ filter, groupBy }` → columnCounts(filter, { groupBy }); a bare
+      // filter object stays the one-argument call it always was.
+      columnCounts: (a) => (a?.filter ? [a.filter, { groupBy: a.groupBy }] : [a ?? {}])
     }
   },
   'tickets.columns': {
