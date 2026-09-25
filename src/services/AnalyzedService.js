@@ -41,7 +41,8 @@ const _setSince = (params, filter) => {
 }
 
 // First-touch UTM filters (CORE-ANALYZED-UTM-ATTRIBUTION-1) on listSessions
-// / totals: `filter.utmSource` / `utmMedium` / `utmCampaign` → the same-
+// / totals / campaigns / listUsers: `filter.utmSource` / `utmMedium` /
+// `utmCampaign` → the same-
 // named query params. The server matches EXACTLY after its own write-side
 // normalisation (trim, source / medium lower-cased), so a row value echoed
 // back always matches; the `__none__` sentinel selects sessions with no
@@ -143,7 +144,17 @@ export class AnalyzedService extends BaseService {
   }
 
   // GET /core/analyzed/users?projectId=&family=&since=&limit=&offset=
+  //                          &utmSource=&utmMedium=&utmCampaign=
   // Server-side aggregation (legacy analyzed_user_summaries shape).
+  //
+  // The utm filters narrow the feed to the people with a session that
+  // arrived through the campaign, and EVERY counter on the row is scoped
+  // with them: sessionCount, pageViews, bugCount, networkCount, logCount,
+  // verboseCount, errorCount, firstSeen and lastSeen cover ONLY that
+  // person's matching sessions. They were omitted here until
+  // ANALYTICS-UTM-UTC-FOLLOW-UPS-1: the server has read them since
+  // CORE-ANALYZED-UTM-ATTRIBUTION-1, but no SDK caller could reach the
+  // filter, so a campaign drill on /users silently answered unfiltered.
   listUsers (filter = {}, options = {}) {
     const params = new URLSearchParams()
     _setWorkspace(params, filter, options)
@@ -151,6 +162,7 @@ export class AnalyzedService extends BaseService {
     if (filter.projectId) params.set('projectId', filter.projectId)
     if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
     if (filter.since) params.set('since', filter.since)
+    _setUtm(params, filter)
     if (options.limit != null) params.set('limit', String(options.limit))
     if (options.offset != null) params.set('offset', String(options.offset))
     const qs = params.toString()

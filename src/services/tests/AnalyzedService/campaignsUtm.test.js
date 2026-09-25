@@ -23,7 +23,7 @@ const paramsOf = (stub) => new URLSearchParams(urlOf(stub).split('?')[1] || '')
 
 test('listSessions / totals forward utmSource / utmMedium / utmCampaign verbatim (the server normalises)', async (t) => {
   t.deepEqual(UTM_FILTER_KEYS, ['utmSource', 'utmMedium', 'utmCampaign'])
-  for (const m of ['listSessions', 'totals']) {
+  for (const m of ['listSessions', 'totals', 'listUsers']) {
     const { svc, stub } = stubbed()
     await svc[m]({ family: 'projects', utmSource: ' Google ', utmMedium: 'CPC', utmCampaign: 'Spring Sale' })
     const p = paramsOf(stub)
@@ -149,6 +149,44 @@ test('daily builds GET /analyzed/daily with family / tz / days / project params 
 })
 
 test('teardown', (t) => {
+  sandbox.restore()
+  t.end()
+})
+
+// ANALYTICS-UTM-UTC-FOLLOW-UPS-1 item 2 — listUsers built its query string
+// without _setUtm, so the utm filters never left the client. The server has
+// read them since CORE-ANALYZED-UTM-ATTRIBUTION-1 and scopes every per-person
+// counter with them, but no SDK caller could reach that: a campaign drill on
+// /users answered UNFILTERED and looked correct. Measured live on the dev
+// workspace before the fix — `listUsers({ utmCampaign: 'zzz-no-such-campaign' })`
+// returned the same four rows, with the same sessionCount / pageViews /
+// bugCount, as the unfiltered read, while the identical filter on `totals`
+// correctly answered 0.
+test('listUsers forwards the utm filters — the server scopes every per-person counter with them', async (t) => {
+  const { svc, stub } = stubbed()
+  await svc.listUsers(
+    { family: 'projects', since: '2026-09-01T00:00:00Z', utmCampaign: 'Launch', utmSource: 'google' },
+    { limit: 20 }
+  )
+  t.equal(pathOf(stub), '/analyzed/users', 'still the users route')
+  const p = paramsOf(stub)
+  t.equal(p.get('utmCampaign'), 'Launch', 'utmCampaign reaches the wire')
+  t.equal(p.get('utmSource'), 'google', 'utmSource reaches the wire')
+  t.equal(p.get('since'), '2026-09-01T00:00:00Z', 'window kept')
+  t.equal(p.get('family'), 'projects', 'family kept')
+  t.equal(p.get('limit'), '20', 'paging kept')
+  sandbox.restore()
+
+  // the direct bucket travels as the sentinel, not as a dropped param
+  const r = stubbed()
+  await r.svc.listUsers({ utmSource: UTM_NONE })
+  t.equal(paramsOf(r.stub).get('utmSource'), '__none__', 'the __none__ sentinel reaches /users')
+  sandbox.restore()
+
+  // and an absent filter still emits nothing
+  const r2 = stubbed()
+  await r2.svc.listUsers({})
+  t.equal(urlOf(r2.stub), '/analyzed/users', 'no stray utm param when unfiltered')
   sandbox.restore()
   t.end()
 })
