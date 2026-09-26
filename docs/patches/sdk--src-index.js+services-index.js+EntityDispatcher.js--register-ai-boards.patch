@@ -1,0 +1,93 @@
+diff --git a/src/index.js b/src/index.js
+index 7792e07..0511837 100644
+--- a/src/index.js
++++ b/src/index.js
+@@ -29,6 +29,7 @@ import {
+   createShareLinkService,
+   createTicketService,
+   createFleetService,
++  createAiBoardsService,
+   createAnalyzedService,
+   createProposedActionService,
+   createWorkflowService,
+@@ -354,6 +355,16 @@ export class SDK {
+           options: this._options
+         })
+       ),
++      // /core/ai-boards/* — `ai.boards`: vocabulary, streamed generate/refine,
++      // saved boards. Reached via sdk.execute('ai.boards', op, args). See
++      // AiBoardsService.js.
++      this._initService(
++        'aiBoards',
++        createAiBoardsService({
++          context: this._context,
++          options: this._options
++        })
++      ),
+       this._initService(
+         'analyzed',
+         createAnalyzedService({
+@@ -1072,6 +1083,7 @@ export {
+   createShareLinkService,
+   createTicketService,
+   createFleetService,
++  createAiBoardsService,
+   createAnalyzedService,
+   createProposedActionService,
+   createWorkflowService,
+diff --git a/src/services/EntityDispatcher.js b/src/services/EntityDispatcher.js
+index 3b87735..29c41d3 100644
+--- a/src/services/EntityDispatcher.js
++++ b/src/services/EntityDispatcher.js
+@@ -53,6 +53,8 @@ const LIST_OPTION_KEYS = [
+   'order'
+ ]
+ 
++import { AI_BOARDS_ENTITY_ROUTE } from './AiBoardsService.js'
++
+ const argMaps = {
+   // (filter, options) for list — splits the adapter's params/options bag.
+   //
+@@ -1887,6 +1889,10 @@ const ENTITY_ROUTES = {
+   // declarative fetch descriptor; the server validates both on write and
+   // re-checks the CALLING user's capability on every read (each row carries
+   // `viewerCapability`). This entity is transport — it interprets neither.
++  // `ai.boards` — the assistant's Page mode (generated boards). The route
++  // object lives with its service (AiBoardsService.js) so the op → method map
++  // and the service it names cannot drift apart.
++  'ai.boards': AI_BOARDS_ENTITY_ROUTE,
+   'workspaceProject.widgetDefs': {
+     service: 'workspaceProject',
+     methods: {
+diff --git a/src/services/index.js b/src/services/index.js
+index 2d1ec49..7a55f68 100644
+--- a/src/services/index.js
++++ b/src/services/index.js
+@@ -6,6 +6,9 @@ import { TicketService } from './TicketService.js'
+ // /core/fleet/* — the fleet's first-class collections (runs/metrics/events +
+ // per-node config), workspace-scoped (CORE-FLEET-COLLECTIONS-API-1). See FleetService.js.
+ import { FleetService } from './FleetService.js'
++// /core/ai-boards/* — `ai.boards`, the assistant's Page mode (generated
++// boards from the installed apps). See AiBoardsService.js.
++import { AiBoardsService } from './AiBoardsService.js'
+ import { AnalyzedService } from './AnalyzedService.js'
+ import { ResourceLinkService } from './ResourceLinkService.js'
+ import { ShareLinkService } from './ShareLinkService.js'
+@@ -211,6 +214,9 @@ export const createTicketService = (config) =>
+ export const createFleetService = (config) =>
+   createService(FleetService, config)
+ 
++export const createAiBoardsService = (config) =>
++  createService(AiBoardsService, config)
++
+ export const createAnalyzedService = (config) =>
+   createService(AnalyzedService, config)
+ 
+@@ -384,6 +390,7 @@ export {
+   DocService,
+   TicketService,
+   FleetService,
++  AiBoardsService,
+   AnalyzedService,
+   ResourceLinkService,
+   ShareLinkService,
