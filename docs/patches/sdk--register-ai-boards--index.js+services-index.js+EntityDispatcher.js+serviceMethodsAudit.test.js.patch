@@ -91,3 +91,38 @@ index 2d1ec49..7a55f68 100644
    AnalyzedService,
    ResourceLinkService,
    ShareLinkService,
+diff --git a/src/services/tests/registry/serviceMethodsAudit.test.js b/src/services/tests/registry/serviceMethodsAudit.test.js
+index ab2cd07..a1fec6b 100644
+--- a/src/services/tests/registry/serviceMethodsAudit.test.js
++++ b/src/services/tests/registry/serviceMethodsAudit.test.js
+@@ -36,7 +36,8 @@ import {
+   VoiceService,
+   PersonaService,
+   RegistryService,
+-  ShareLinkService
++  ShareLinkService,
++  AiBoardsService
+ } from '../../index.js'
+ 
+ // service-name → ServiceClass — the same wiring `_initService` does in
+@@ -78,7 +79,8 @@ const SERVICES = {
+   voice: VoiceService,
+   persona: PersonaService,
+   registry: RegistryService,
+-  shareLinks: ShareLinkService
++  shareLinks: ShareLinkService,
++  aiBoards: AiBoardsService
+ }
+ 
+ // Methods that intentionally exist on a service but are NOT flat-exposed via
+@@ -116,6 +118,10 @@ const INTENTIONALLY_NOT_FLAT_EXPOSED = new Set([
+   // collisions with same-name methods on other services (e.g. `list`, `get`,
+   // `create`, `update`, `remove`, `subscribe`, `tree`, `folders`).
+   'DocService:*',
++  // AiBoardsService (`ai.boards`) is reached via sdk.execute('ai.boards', op)
++  // or sdk.getService('aiBoards').x(); its op names (list/get/save/update/
++  // remove) would collide at the flat surface exactly like Ticket/Doc.
++  'AiBoardsService:*',
+   // Internal boot-hydration hook: SDK.boot() calls it via
+   // getService('auth') to replay the boot payload's `me` section into the
+   // auth session. Never a user-facing flat method.
