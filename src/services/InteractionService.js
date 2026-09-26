@@ -38,8 +38,13 @@ export class InteractionService extends BaseService {
   }
 
   // POST /core/interactions (member — logging a touch is a member action).
-  // payload: { partyId, kind, regardingType?, regardingId?, occurredAt?,
-  //            summary?, body?, direction?, ... }
+  // payload — the server's writable fields (interactions store
+  // `_writableInteraction`); any other key is silently DROPPED:
+  //   { kind, parties: [partyId, …], direction?: 'in' | 'out' | null,
+  //     subject?, body?, outcome?, occurredAt?, followUpAt?, durationMin?,
+  //     regarding?: { type, id }, recording?, transcript?, source?, custom? }
+  // `kind` is required. There is no `partyId` / `summary` field: a create
+  // that sends them stores an interaction with no party and no text.
   create (payload = {}, { workspaceId } = {}) {
     return this._call('interactions.create', `/interactions${_qs(workspaceId)}`, {
       method: 'POST',
