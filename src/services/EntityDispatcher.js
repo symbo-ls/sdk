@@ -38,6 +38,9 @@
 // Routes are intentionally explicit: the dispatcher does NOT auto-resolve method
 // names by convention. Every entity+op combination must be registered here.
 
+// `ai.boards` — the route object lives with its service (AiBoardsService.js).
+import { AI_BOARDS_ENTITY_ROUTE } from './AiBoardsService.js'
+
 // Common arg adapters reused across routes. Pulling args out of well-known
 // shapes keeps individual routes terse — most CRUD entities follow the same
 // (filter, options) / (id) / (id, payload) pattern.
@@ -1878,6 +1881,10 @@ const ENTITY_ROUTES = {
     },
     argMap: { get: () => [], update: argMaps.payload }
   },
+  // `ai.boards` — the assistant's Page mode (generated boards). The route
+  // object lives with its service (AiBoardsService.js) so the op → method map
+  // and the service it names cannot drift apart.
+  'ai.boards': AI_BOARDS_ENTITY_ROUTE,
   // AI-created home widgets (tickets/opus.md "Per-workspace AI-CREATED
   // widgets"). Same explicit-workspace pin as homeDashboardPrefs above — the
   // home board is workspace-scoped and its reads must not follow a claim that

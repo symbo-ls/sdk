@@ -29,6 +29,7 @@ import {
   createShareLinkService,
   createTicketService,
   createFleetService,
+  createAiBoardsService,
   createAnalyzedService,
   createProposedActionService,
   createWorkflowService,
@@ -350,6 +351,16 @@ export class SDK {
       this._initService(
         'fleet',
         createFleetService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      // /core/ai-boards/* — `ai.boards`: vocabulary, streamed generate/refine,
+      // saved boards. Reached via sdk.execute('ai.boards', op, args). See
+      // AiBoardsService.js.
+      this._initService(
+        'aiBoards',
+        createAiBoardsService({
           context: this._context,
           options: this._options
         })
@@ -1072,6 +1083,7 @@ export {
   createShareLinkService,
   createTicketService,
   createFleetService,
+  createAiBoardsService,
   createAnalyzedService,
   createProposedActionService,
   createWorkflowService,
