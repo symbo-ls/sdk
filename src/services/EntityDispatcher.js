@@ -789,6 +789,74 @@ const ENTITY_ROUTES = {
     }
   },
 
+  // ─── CRM lead sources (roadmap 2.1 / 2.3 / 2.5 / 5.2) ───────────────────────
+  // A workspace's intake channels, the ingestion-issues inbox, its settings and
+  // import runs. Declarative `fetch: [{ from: 'leadSources' }]` lists sources;
+  // `fetch: [{ from: 'leadSources.issues', params: { reason } }]` the inbox;
+  // `sdk.execute('leadSources.issues', 'retry', { id })` retries one event.
+  // workspaceId is a ROUTING param (the trailing options), never body.
+  leadSources: {
+    service: 'leadSources',
+    methods: {
+      list: 'list',
+      get: 'get',
+      create: 'create',
+      update: 'update',
+      remove: 'archive',
+      archive: 'archive',
+      rotateSecret: 'rotateSecret',
+      sendTestLead: 'sendTestLead'
+    },
+    argMap: {
+      ...WS_CRUD_ARG_MAP,
+      archive: wsArgMaps.id,
+      rotateSecret: (a) => [a?.id, { workspaceId: a?.workspaceId }],
+      sendTestLead: (a) => [a?.id, a?.payload ?? {}, { workspaceId: a?.workspaceId }]
+    }
+  },
+  'leadSources.issues': {
+    service: 'leadSources',
+    methods: {
+      list: 'listIssues',
+      get: 'getEvent',
+      summary: 'issuesSummary',
+      retry: 'retryIssue',
+      retryMany: 'retryIssues'
+    },
+    argMap: {
+      list: argMaps.filterOptions,
+      get: (a) => [a?.id, { workspaceId: a?.workspaceId }],
+      summary: argMaps.filterOptions,
+      retry: (a) => [a?.id, { workspaceId: a?.workspaceId }],
+      retryMany: (a) => [a?.payload ?? _stripWs(a), { workspaceId: a?.workspaceId }]
+    }
+  },
+  'leadSources.settings': {
+    service: 'leadSources',
+    methods: { get: 'getSettings', update: 'updateSettings' },
+    argMap: {
+      get: (a) => [{ workspaceId: a?.workspaceId }],
+      update: (a) => [a?.payload ?? _stripWs(a), { workspaceId: a?.workspaceId }]
+    }
+  },
+  'leadSources.imports': {
+    service: 'leadSources',
+    methods: {
+      list: 'listImports',
+      get: 'getImport',
+      undo: 'undoImport',
+      csv: 'importCsv',
+      bitrix24: 'importBitrix24'
+    },
+    argMap: {
+      list: argMaps.filterOptions,
+      get: (a) => [a?.id, { workspaceId: a?.workspaceId }],
+      undo: (a) => [a?.id, { workspaceId: a?.workspaceId }],
+      csv: (a) => [a?.payload ?? _stripWs(a), { workspaceId: a?.workspaceId }],
+      bitrix24: (a) => [a?.payload ?? _stripWs(a), { workspaceId: a?.workspaceId }]
+    }
+  },
+
   // ─── Phase-3 commerce (WORKSPACE_DATA_MODEL §6.2/§6.3/§6.4) ──────────────────
   // The tenant-finance spine: catalog (products + prices), the workspace's own
   // company profile (singleton), agreements, invoices, transactions. Mongo-
