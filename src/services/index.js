@@ -70,6 +70,9 @@ import { SegmentService } from './SegmentService.js'
 // visibility, moves, re-open, lead → deal conversion.
 import { LeadService } from './LeadService.js'
 import { DealService } from './DealService.js'
+// CRM lead sources (roadmap 2.1/2.3/2.5/5.2) — /core/lead-sources: intake
+// channels, ingestion issues, CSV + Bitrix24 imports, the public web form.
+import { LeadSourceService } from './LeadSourceService.js'
 import { CrmService } from './CrmService.js'
 // Phase-3 commerce services (WORKSPACE_DATA_MODEL §6.2/§6.3/§6.4) — the
 // tenant-finance spine: catalog (products + prices), the workspace's own
@@ -303,6 +306,9 @@ export const createLeadService = (config) =>
 export const createDealService = (config) =>
   createService(DealService, config)
 
+export const createLeadSourceService = (config) =>
+  createService(LeadSourceService, config)
+
 export const createCrmService = (config) =>
   createService(CrmService, config)
 
@@ -429,6 +435,7 @@ export {
   SegmentService,
   LeadService,
   DealService,
+  LeadSourceService,
   CrmService,
   ProductService,
   PriceService,

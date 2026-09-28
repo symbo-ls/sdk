@@ -589,7 +589,10 @@ export class BaseService {
       // owner-side `setStorefrontAuthProviders` is deliberately NOT here: it
       // is a platform-user write and needs the session's bearer token.)
       'getStorefrontAuthProviders',
-      'signInStorefrontCustomerWithOAuth'
+      'signInStorefrontCustomerWithOAuth',
+      // CRM lead-source web form (LeadSourceService.submitForm) — a visitor
+      // on a published site submits a lead; the form key is the credential.
+      'leadSources.submitForm'
     ])
     return !noInitMethods.has(methodName)
   }

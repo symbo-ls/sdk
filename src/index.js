@@ -38,6 +38,7 @@ import {
   createPartyService,
   createLeadService,
   createDealService,
+  createLeadSourceService,
   createCrmService,
   createInteractionService,
   createSegmentService,
@@ -433,6 +434,15 @@ export class SDK {
       this._initService(
         'deals',
         createDealService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      // CRM lead sources (roadmap 2.1–2.5, 5.2) — intake channels, issues,
+      // imports; submitForm is the public web-form submit.
+      this._initService(
+        'leadSources',
+        createLeadSourceService({
           context: this._context,
           options: this._options
         })
@@ -1118,6 +1128,7 @@ export {
   createPartyService,
   createLeadService,
   createDealService,
+  createLeadSourceService,
   createCrmService,
   createInteractionService,
   createSegmentService,
