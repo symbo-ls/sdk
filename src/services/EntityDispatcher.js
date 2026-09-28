@@ -699,9 +699,20 @@ const ENTITY_ROUTES = {
       get: 'get',
       create: 'create',
       update: 'update',
-      remove: 'remove'
+      remove: 'remove',
+      // CRM 1.4 — activities.
+      myDay: 'myDay',
+      markDone: 'markDone'
     },
-    argMap: WS_CRUD_ARG_MAP
+    argMap: {
+      ...WS_CRUD_ARG_MAP,
+      myDay: (a) => [{ date: a?.date, tz: a?.tz, workspaceId: a?.workspaceId }],
+      markDone: (a) => [
+        a?.id,
+        _stripWs(a, ['id']),
+        { workspaceId: a?.workspaceId }
+      ]
+    }
   },
 
   // ─── CRM core (roadmap 1.1) ─────────────────────────────────────────────────
