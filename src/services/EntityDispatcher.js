@@ -157,6 +157,25 @@ const WS_CRUD_ARG_MAP = {
   remove: wsArgMaps.id
 }
 
+// CRM ENTITY ARG MAP (leads, deals) — the workspace-scoped CRUD maps plus
+// the lifecycle ops: summary/pipelines read like list, move/markLost/reopen/
+// convert take (id, body, { workspaceId }), markWon takes (id, opts).
+const _crmOpts = (a) => ({ workspaceId: a?.workspaceId })
+const CRM_ENTITY_ARG_MAP = {
+  ...WS_CRUD_ARG_MAP,
+  summary: argMaps.filterOptions,
+  pipelines: (a) => [_crmOpts(a)],
+  move: (a) => [
+    a?.id,
+    { stage: a?.stage, pipeline: a?.pipeline, stageOrder: a?.stageOrder },
+    _crmOpts(a)
+  ],
+  markWon: (a) => [a?.id, _crmOpts(a)],
+  markLost: (a) => [a?.id, a?.lossReason ?? null, _crmOpts(a)],
+  reopen: (a) => [a?.id, { stage: a?.stage }, _crmOpts(a)],
+  convert: (a) => [a?.id, _stripWs(a, ['id']), _crmOpts(a)]
+}
+
 // RECORDS ARG MAP — the generic maps above cannot serve this entity.
 //
 // `wsArgMaps.payload` resolves the request body as
@@ -683,6 +702,47 @@ const ENTITY_ROUTES = {
       remove: 'remove'
     },
     argMap: WS_CRUD_ARG_MAP
+  },
+
+  // ─── CRM core (roadmap 1.1) ─────────────────────────────────────────────────
+  // Lead and Deal as server entities. Declarative
+  // `fetch: [{ from: 'deals', params: { status: 'open', pipeline } }]` lists
+  // with server-side filters/paging (the rows carry `.pagination`);
+  // `sdk.execute('deals', 'move', { id, stage })` moves a card;
+  // `sdk.execute('leads', 'convert', { id })` turns a lead into a deal.
+  leads: {
+    service: 'leads',
+    methods: {
+      list: 'list',
+      get: 'get',
+      create: 'create',
+      update: 'update',
+      remove: 'remove',
+      summary: 'summary',
+      pipelines: 'pipelines',
+      move: 'move',
+      markLost: 'markLost',
+      reopen: 'reopen',
+      convert: 'convert'
+    },
+    argMap: CRM_ENTITY_ARG_MAP
+  },
+  deals: {
+    service: 'deals',
+    methods: {
+      list: 'list',
+      get: 'get',
+      create: 'create',
+      update: 'update',
+      remove: 'remove',
+      summary: 'summary',
+      pipelines: 'pipelines',
+      move: 'move',
+      markWon: 'markWon',
+      markLost: 'markLost',
+      reopen: 'reopen'
+    },
+    argMap: CRM_ENTITY_ARG_MAP
   },
   segments: {
     service: 'segments',

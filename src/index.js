@@ -36,6 +36,8 @@ import {
   createFieldDefService,
   createRecordCollectionService,
   createPartyService,
+  createLeadService,
+  createDealService,
   createInteractionService,
   createSegmentService,
   createProductService,
@@ -415,6 +417,21 @@ export class SDK {
       this._initService(
         'interactions',
         createInteractionService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      // CRM core (roadmap 1.1) — leads + deals as server entities.
+      this._initService(
+        'leads',
+        createLeadService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      this._initService(
+        'deals',
+        createDealService({
           context: this._context,
           options: this._options
         })
@@ -1090,6 +1107,8 @@ export {
   createFieldDefService,
   createRecordCollectionService,
   createPartyService,
+  createLeadService,
+  createDealService,
   createInteractionService,
   createSegmentService,
   createProductService,

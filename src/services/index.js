@@ -65,6 +65,11 @@ import { RecordCollectionService } from './RecordCollectionService.js'
 import { PartyService } from './PartyService.js'
 import { InteractionService } from './InteractionService.js'
 import { SegmentService } from './SegmentService.js'
+// CRM core (roadmap 1.1) — Lead and Deal as registered server entities over
+// /core/leads + /core/deals: pipelines, server-side filters/sort/paging, row
+// visibility, moves, re-open, lead → deal conversion.
+import { LeadService } from './LeadService.js'
+import { DealService } from './DealService.js'
 // Phase-3 commerce services (WORKSPACE_DATA_MODEL §6.2/§6.3/§6.4) — the
 // tenant-finance spine: catalog (products + prices), the workspace's own
 // company profile, agreements, invoices, transactions. Mongo-native, peers
@@ -290,6 +295,13 @@ export const createPartyService = (config) =>
 export const createInteractionService = (config) =>
   createService(InteractionService, config)
 
+// CRM core factories (roadmap 1.1) — leads + deals.
+export const createLeadService = (config) =>
+  createService(LeadService, config)
+
+export const createDealService = (config) =>
+  createService(DealService, config)
+
 export const createSegmentService = (config) =>
   createService(SegmentService, config)
 
@@ -411,6 +423,8 @@ export {
   PartyService,
   InteractionService,
   SegmentService,
+  LeadService,
+  DealService,
   ProductService,
   PriceService,
   CompanyProfileService,
