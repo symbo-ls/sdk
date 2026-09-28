@@ -38,6 +38,7 @@ import {
   createPartyService,
   createLeadService,
   createDealService,
+  createCrmService,
   createInteractionService,
   createSegmentService,
   createProductService,
@@ -432,6 +433,14 @@ export class SDK {
       this._initService(
         'deals',
         createDealService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      // Workspace CRM settings (visibility per kind) — /core/crm/*.
+      this._initService(
+        'crm',
+        createCrmService({
           context: this._context,
           options: this._options
         })
@@ -1109,6 +1118,7 @@ export {
   createPartyService,
   createLeadService,
   createDealService,
+  createCrmService,
   createInteractionService,
   createSegmentService,
   createProductService,

@@ -70,6 +70,7 @@ import { SegmentService } from './SegmentService.js'
 // visibility, moves, re-open, lead → deal conversion.
 import { LeadService } from './LeadService.js'
 import { DealService } from './DealService.js'
+import { CrmService } from './CrmService.js'
 // Phase-3 commerce services (WORKSPACE_DATA_MODEL §6.2/§6.3/§6.4) — the
 // tenant-finance spine: catalog (products + prices), the workspace's own
 // company profile, agreements, invoices, transactions. Mongo-native, peers
@@ -302,6 +303,9 @@ export const createLeadService = (config) =>
 export const createDealService = (config) =>
   createService(DealService, config)
 
+export const createCrmService = (config) =>
+  createService(CrmService, config)
+
 export const createSegmentService = (config) =>
   createService(SegmentService, config)
 
@@ -425,6 +429,7 @@ export {
   SegmentService,
   LeadService,
   DealService,
+  CrmService,
   ProductService,
   PriceService,
   CompanyProfileService,

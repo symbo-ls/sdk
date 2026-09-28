@@ -727,6 +727,18 @@ const ENTITY_ROUTES = {
     },
     argMap: CRM_ENTITY_ARG_MAP
   },
+  // Workspace CRM settings — sdk.execute('crm.settings', 'get' | 'update').
+  'crm.settings': {
+    service: 'crm',
+    methods: { get: 'getSettings', update: 'updateSettings' },
+    argMap: {
+      get: (a) => [{ workspaceId: a?.workspaceId }],
+      update: (a) => [
+        a?.payload ?? _stripWs(a),
+        { workspaceId: a?.workspaceId }
+      ]
+    }
+  },
   deals: {
     service: 'deals',
     methods: {
