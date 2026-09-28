@@ -321,3 +321,106 @@ test('the declarative fetch shape ({ params }) is unwrapped for reads', async (t
   sandbox.restore()
   t.end()
 })
+
+// ─── records (RECORDS BLOCK v1) ──────────────────────────────────────────────
+
+const CASE1 = {
+  kind: 'records',
+  app: 'workspace',
+  collection: 'booking',
+  view: 'stat',
+  title: { text: 'Viewings in Q3' },
+  filters: [{ field: 'kind', op: 'eq', value: 'viewing' }],
+  period: { field: 'startAt', preset: 'thisQuarter' }
+}
+
+test('records POSTs the block to the workspace-scoped path with the runtime UTC offset', async (t) => {
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({ total: 26, aggregate: { op: 'count', value: 26 } })
+  const out = await svc.records({ block: CASE1 })
+  t.equal(out.total, 26, 'the envelope data is returned as is')
+  t.deepEqual(stub.firstCall.args, [
+    'aiBoards.records',
+    '/ai-boards/workspaces/ws-active/records',
+    { method: 'POST', body: { block: CASE1, tzOffsetMinutes: -new Date().getTimezoneOffset() } }
+  ])
+  await svc.records({ workspaceId: 'ws-twin', block: CASE1, tzOffsetMinutes: 240 })
+  t.equal(stub.secondCall.args[1], '/ai-boards/workspaces/ws-twin/records')
+  t.equal(stub.secondCall.args[2].body.tzOffsetMinutes, 240, 'an explicit offset wins')
+  sandbox.restore()
+  t.end()
+})
+
+test("sdk.execute('ai.boards', 'records', { workspaceId, block }) — the UI lane's call", async (t) => {
+  registerEntity('ai.boards', AI_BOARDS_ENTITY_ROUTE)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({ total: 3 })
+  const execute = createEntityDispatcher({ getService: (name) => (name === 'aiBoards' ? svc : null) })
+  const out = await execute('ai.boards', 'records', { workspaceId: 'ws-1', block: CASE1 })
+  t.equal(out.total, 3)
+  t.equal(stub.firstCall.args[0], 'aiBoards.records')
+  t.equal(stub.firstCall.args[1], '/ai-boards/workspaces/ws-1/records')
+  t.deepEqual(stub.firstCall.args[2].body.block, CASE1, 'the block travels untouched (filters is not the fetch `filter`)')
+  // the declarative fetch shape
+  await execute('ai.boards', 'records', { params: { workspaceId: 'ws-2', block: CASE1 } })
+  t.equal(stub.secondCall.args[1], '/ai-boards/workspaces/ws-2/records')
+  sandbox.restore()
+  t.end()
+})
+
+test('a records refusal keeps its code and details (unknown collection → 422 invalid_block)', async (t) => {
+  const svc = makeService()
+  const httpErr = Object.assign(new Error('the records block cannot be answered'), {
+    status: 422,
+    cause: { success: false, error: 'invalid_block', message: 'x', details: { reason: 'unknown_collection', collection: 'viewings' } }
+  })
+  sandbox.stub(svc, '_call').rejects(httpErr)
+  try {
+    await svc.records({ block: { ...CASE1, collection: 'viewings' } })
+    t.fail('should throw')
+  } catch (e) {
+    t.equal(e.code, 'invalid_block')
+    t.equal(e.details.reason, 'unknown_collection')
+  }
+  sandbox.restore()
+  t.end()
+})
+
+// ─── summary (the home's AI line) ────────────────────────────────────────────
+
+const SIGNALS = [
+  { id: 'crm.followups.overdue', app: 'crm', kind: 'overdue', count: 47, severity: 'urgent', label: { key: 'crm.signals.followupsOverdue', params: { count: 47 }, text: '47 follow-ups overdue' }, href: '/crm/followups?due=overdue' }
+]
+
+test('summary POSTs the signals with the locale, the local hour and the UTC offset', async (t) => {
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({ text: '47 follow-ups are overdue.', chips: [], cached: false })
+  const out = await svc.summary({ signals: SIGNALS, locale: 'ka', hour: 9, tzOffsetMinutes: 240 })
+  t.equal(out.text, '47 follow-ups are overdue.')
+  t.deepEqual(stub.firstCall.args, [
+    'aiBoards.summary',
+    '/ai-boards/workspaces/ws-active/summary',
+    { method: 'POST', body: { signals: SIGNALS, hour: 9, tzOffsetMinutes: 240, locale: 'ka' } }
+  ])
+  await svc.summary({ workspaceId: 'ws-2' })
+  const body = stub.secondCall.args[2].body
+  t.deepEqual(body.signals, [], 'no signals → an empty list, never undefined')
+  t.equal(body.hour, new Date().getHours(), 'the runtime hour by default')
+  t.equal(body.tzOffsetMinutes, -new Date().getTimezoneOffset())
+  t.equal('locale' in body, false, 'no locale → the server default')
+  sandbox.restore()
+  t.end()
+})
+
+test("sdk.execute('ai.boards', 'summary', …) reaches the service", async (t) => {
+  registerEntity('ai.boards', AI_BOARDS_ENTITY_ROUTE)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({ text: '' })
+  const execute = createEntityDispatcher({ getService: (name) => (name === 'aiBoards' ? svc : null) })
+  await execute('ai.boards', 'summary', { workspaceId: 'ws-1', signals: SIGNALS, locale: 'en', hour: 20 })
+  t.equal(stub.firstCall.args[0], 'aiBoards.summary')
+  t.equal(stub.firstCall.args[1], '/ai-boards/workspaces/ws-1/summary')
+  t.equal(stub.firstCall.args[2].body.hour, 20)
+  sandbox.restore()
+  t.end()
+})

@@ -58,6 +58,29 @@ import { BaseService } from './BaseService.js'
  *   threadId: (string|null), model: (string|null), generatedAt: (string|null), workspaceId: string,
  *   createdAt: string, updatedAt: string, viewerCanEdit: boolean, viewerCanDelete: boolean,
  *   viewerCanShare: boolean, spec?: BoardSpec, existing?: boolean }} SavedBoard
+ * @typedef {'stat'|'list'|'table'|'chart'} RecordsView
+ * @typedef {{ field: string, op: ('eq'|'ne'|'in'|'gte'|'lte'|'between'|'contains'), value: any }} RecordsFilter
+ * @typedef {{ kind: 'records', app: string, collection: string, view: RecordsView,
+ *   title: { key?: string, text?: string }, filters?: RecordsFilter[],
+ *   period?: { field: string, preset: ('today'|'thisWeek'|'thisMonth'|'thisQuarter'|'lastQuarter'|'thisYear') },
+ *   aggregate?: { op: ('count'|'sum'|'avg'|'min'|'max'), field?: string }, groupBy?: string,
+ *   sort?: { field: string, dir: ('asc'|'desc') }, limit?: number, fields?: string[] }} RecordsBlock
+ * @typedef {{ id: string, title: (string|null), values: Object<string, any>, refs?: Object<string, string> }} RecordsRow
+ * @typedef {{ key: string, label: string, count: number, value?: number }} RecordsGroup
+ * @typedef {{ block: RecordsBlock, adjusted: Array<{ path: string, reason: string }>, rows: RecordsRow[],
+ *   total: number, aggregate: { op: string, field?: string, value: (number|null), currency?: string,
+ *   byCurrency?: Array<{ currency: string, value: (number|null), count: number }> },
+ *   groups: RecordsGroup[], fields: Array<{ key: string, type: string, label?: string, ref?: string }>,
+ *   period: ({ field: string, preset: string, from: string, to: string }|null), groupUnit: (string|null),
+ *   warnings: string[], scanned: number, truncated: boolean, generatedAt: string }} RecordsResult
+ * @typedef {{ id: string, app?: string, kind?: string, count: number,
+ *   severity?: ('urgent'|'attention'|'info'), label?: (string|{ key?: string, params?: Object, text?: string }),
+ *   href?: string, at?: string }} HomeSignal
+ * @typedef {{ signalId: string, app: string, severity: string, count: number, label: (string|null),
+ *   labelKey?: string, labelParams?: Object, href?: string }} HomeSummaryChip
+ * @typedef {{ text: string, chips: HomeSummaryChip[], generatedAt: string, cached: boolean,
+ *   fallback: boolean, reason?: string, model: (string|null), day: string, band: (string|null),
+ *   locale: string, signals: { used: number, dropped: number } }} HomeSummary
  * @typedef {{ event: string, data: Object }} BoardStreamEvent
  * @typedef {{ workspaceId?: string, signal?: AbortSignal, stream?: boolean,
  *   onEvent?: function(BoardStreamEvent): void, onStart?: function(Object): void,
@@ -237,6 +260,53 @@ export class AiBoardsService extends BaseService {
     )
   }
 
+  // ── records (RECORDS BLOCK v1) ─────────────────────────────────────────
+
+  /**
+   * Resolve ONE records block under the caller's grants — the live numbers
+   * of a board's `records` item: `{ rows (≤ 50), total, aggregate, groups,
+   * fields, period, … }`. Aggregates cover the WHOLE filtered set. Period
+   * presets ("thisQuarter") resolve in the viewer's local time: the SDK sends
+   * the runtime's UTC offset unless `tzOffsetMinutes` is given.
+   * @param {{ workspaceId?: string, block: RecordsBlock, tzOffsetMinutes?: number }} args
+   * @returns {Promise<RecordsResult>}
+   */
+  async records (args = {}) {
+    const ws = this._boardsWorkspace(args)
+    const tz = Number.isFinite(args.tzOffsetMinutes)
+      ? args.tzOffsetMinutes
+      : -new Date().getTimezoneOffset()
+    return this._call('aiBoards.records', `/ai-boards/workspaces/${ws}/records`, {
+      method: 'POST',
+      body: { block: args.block, tzOffsetMinutes: tz }
+    }).catch((e) => this._boardsError(e))
+  }
+
+  // ── summary (the home's AI line) ───────────────────────────────────────
+
+  /**
+   * The home's AI summary from the shell's HOME SIGNALS: 2–3 sentences whose
+   * numbers come only from the signals, plus deterministic chips. One model
+   * call per user / local day / time band / signals; repeats come from the
+   * server cache. `hour` and `tzOffsetMinutes` default to the runtime clock.
+   * @param {{ workspaceId?: string, signals: HomeSignal[], locale?: string,
+   *   hour?: number, tzOffsetMinutes?: number }} args
+   * @returns {Promise<HomeSummary>}
+   */
+  async summary (args = {}) {
+    const ws = this._boardsWorkspace(args)
+    const tz = Number.isFinite(args.tzOffsetMinutes)
+      ? args.tzOffsetMinutes
+      : -new Date().getTimezoneOffset()
+    const hour = Number.isInteger(args.hour) ? args.hour : new Date().getHours()
+    const body = { signals: Array.isArray(args.signals) ? args.signals : [], hour, tzOffsetMinutes: tz }
+    if (typeof args.locale === 'string') body.locale = args.locale
+    return this._call('aiBoards.summary', `/ai-boards/workspaces/${ws}/summary`, {
+      method: 'POST',
+      body
+    }).catch((e) => this._boardsError(e))
+  }
+
   // ── generate / refine ───────────────────────────────────────────────────
 
   /**
@@ -373,6 +443,8 @@ export const AI_BOARDS_ENTITY_ROUTE = Object.freeze({
   service: 'aiBoards',
   methods: Object.freeze({
     vocabulary: 'vocabulary',
+    records: 'records',
+    summary: 'summary',
     generate: 'generate',
     refine: 'refine',
     list: 'list',
@@ -385,6 +457,8 @@ export const AI_BOARDS_ENTITY_ROUTE = Object.freeze({
   }),
   argMap: Object.freeze({
     vocabulary: (a) => [flatArgs(a)],
+    records: (a) => [flatArgs(a)],
+    summary: (a) => [flatArgs(a)],
     generate: (a) => [flatArgs(a)],
     refine: (a) => [flatArgs(a)],
     list: (a) => [flatArgs(a)],
