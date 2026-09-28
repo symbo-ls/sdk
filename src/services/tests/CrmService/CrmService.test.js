@@ -45,3 +45,19 @@ test("sdk.execute('crm.settings', 'update', { visibility, workspaceId })", async
   t.deepEqual(calls[1][1][1], { workspaceId: 'ws1' })
   t.end()
 })
+
+test('crm.permissions GETs /crm/permissions; dispatcher crm.permissions list', async t => {
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves([])
+  await svc.permissions({ workspaceId: 'ws1' })
+  t.equal(stub.firstCall.args[0], 'crm.permissions')
+  t.equal(stub.firstCall.args[1], '/crm/permissions?workspaceId=ws1')
+  sandbox.restore()
+  const calls = []
+  const dispatch = createEntityDispatcher({
+    getService: (n) => (n === 'crm' ? { permissions: (...a) => { calls.push(a); return [] } } : null)
+  })
+  await dispatch('crm.permissions', 'list', { workspaceId: 'ws1' })
+  t.deepEqual(calls[0], [{ workspaceId: 'ws1' }])
+  t.end()
+})

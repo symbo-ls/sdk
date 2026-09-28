@@ -739,6 +739,12 @@ const ENTITY_ROUTES = {
     argMap: CRM_ENTITY_ARG_MAP
   },
   // Workspace CRM settings — sdk.execute('crm.settings', 'get' | 'update').
+  // The org permission catalog — sdk.execute('crm.permissions', 'list').
+  'crm.permissions': {
+    service: 'crm',
+    methods: { list: 'permissions' },
+    argMap: { list: (a) => [{ workspaceId: a?.workspaceId }] }
+  },
   'crm.settings': {
     service: 'crm',
     methods: { get: 'getSettings', update: 'updateSettings' },
