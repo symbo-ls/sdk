@@ -18,7 +18,9 @@ import { BaseService } from './BaseService.js'
 // shapes: `?entityType=&entityId=` for ONE entity's timeline (newest first),
 // or `?since=&limit=` for the workspace-wide feed (server caps limit).
 
-const _qs = (workspaceId, extra) => {
+// `qs` (a whole word) — the server route-drift analyzer drops `${qs(...)}`
+// template holes, so every path below stays readable to it.
+const qs = (workspaceId, extra) => {
   const params = new URLSearchParams(extra || undefined)
   if (workspaceId) params.set('workspaceId', String(workspaceId))
   const s = params.toString()
@@ -39,7 +41,7 @@ export class ActivityEntryService extends BaseService {
     if (since != null) extra.since = since
     if (limit != null) extra.limit = limit
     const ws = filter.workspaceId || options.workspaceId
-    return this._call('activityEntries.list', `/activity-entries${_qs(ws, extra)}`)
+    return this._call('activityEntries.list', `/activity-entries${qs(ws, extra)}`)
   }
 }
 

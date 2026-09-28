@@ -10,7 +10,9 @@ import { BaseService } from './BaseService.js'
 // threaded as a query param). Reads member-gated; writes owner/admin.
 // `key` and `entityType` are immutable after create.
 
-const _qs = (workspaceId, extra) => {
+// `qs` (a whole word) — the server route-drift analyzer drops `${qs(...)}`
+// template holes, so every path below stays readable to it.
+const qs = (workspaceId, extra) => {
   const params = new URLSearchParams(extra || undefined)
   if (workspaceId) params.set('workspaceId', String(workspaceId))
   const s = params.toString()
@@ -24,19 +26,19 @@ export class FieldDefService extends BaseService {
     if (filter.entityType) extra.entityType = filter.entityType
     if (filter.includeArchived || options.includeArchived) extra.includeArchived = 'true'
     const ws = filter.workspaceId || options.workspaceId
-    return this._call('fieldDefs.list', `/field-defs${_qs(ws, extra)}`)
+    return this._call('fieldDefs.list', `/field-defs${qs(ws, extra)}`)
   }
 
   // GET /core/field-defs/:id
   get (id, { workspaceId } = {}) {
-    return this._call('fieldDefs.get', `/field-defs/${encodeURIComponent(id)}${_qs(workspaceId)}`)
+    return this._call('fieldDefs.get', `/field-defs/${encodeURIComponent(id)}${qs(workspaceId)}`)
   }
 
   // POST /core/field-defs (owner/admin).
   // payload: { entityType, key, label?, type, options?, required?,
   //            defaultValue?, position?, group?, aiHint? }
   create (payload = {}, { workspaceId } = {}) {
-    return this._call('fieldDefs.create', `/field-defs${_qs(workspaceId)}`, {
+    return this._call('fieldDefs.create', `/field-defs${qs(workspaceId)}`, {
       method: 'POST',
       body: payload
     })
@@ -44,7 +46,7 @@ export class FieldDefService extends BaseService {
 
   // PATCH /core/field-defs/:id (owner/admin; key/entityType immutable).
   update (id, payload = {}, { workspaceId } = {}) {
-    return this._call('fieldDefs.update', `/field-defs/${encodeURIComponent(id)}${_qs(workspaceId)}`, {
+    return this._call('fieldDefs.update', `/field-defs/${encodeURIComponent(id)}${qs(workspaceId)}`, {
       method: 'PATCH',
       body: payload
     })
@@ -52,7 +54,7 @@ export class FieldDefService extends BaseService {
 
   // DELETE /core/field-defs/:id (owner/admin).
   remove (id, { workspaceId } = {}) {
-    return this._call('fieldDefs.remove', `/field-defs/${encodeURIComponent(id)}${_qs(workspaceId)}`, {
+    return this._call('fieldDefs.remove', `/field-defs/${encodeURIComponent(id)}${qs(workspaceId)}`, {
       method: 'DELETE'
     })
   }

@@ -12,7 +12,9 @@ import { BaseService } from './BaseService.js'
 // (create) is a member action, but update/remove require workspace editor.
 // DELETE is a tombstone, never a hard delete.
 
-const _qs = (workspaceId, extra) => {
+// `qs` (a whole word) — the server route-drift analyzer drops `${qs(...)}`
+// template holes, so every path below stays readable to it.
+const qs = (workspaceId, extra) => {
   const params = new URLSearchParams(extra || undefined)
   if (workspaceId) params.set('workspaceId', String(workspaceId))
   const s = params.toString()
@@ -61,9 +63,9 @@ export class InteractionService extends BaseService {
       }
     }
     const ws = filter.workspaceId || options.workspaceId
-    if (!paged) return this._call('interactions.list', `/interactions${_qs(ws, extra)}`)
+    if (!paged) return this._call('interactions.list', `/interactions${qs(ws, extra)}`)
     this._requireReady('interactions.list')
-    const response = await this._request(`/interactions${_qs(ws, extra)}`, {
+    const response = await this._request(`/interactions${qs(ws, extra)}`, {
       method: 'GET',
       methodName: 'interactions.list'
     })
@@ -83,7 +85,7 @@ export class InteractionService extends BaseService {
     const extra = {}
     if (date) extra.date = String(date)
     if (tz) extra.tz = String(tz)
-    return this._call('interactions.myDay', `/interactions/my-day${_qs(workspaceId, extra)}`)
+    return this._call('interactions.myDay', `/interactions/my-day${qs(workspaceId, extra)}`)
   }
 
   // Complete an activity — PATCH { status: 'done', ...extra } (editor). The
@@ -91,14 +93,14 @@ export class InteractionService extends BaseService {
   markDone (id, extra = {}, { workspaceId } = {}) {
     return this._call(
       'interactions.markDone',
-      `/interactions/${encodeURIComponent(id)}${_qs(workspaceId)}`,
+      `/interactions/${encodeURIComponent(id)}${qs(workspaceId)}`,
       { method: 'PATCH', body: { ...extra, status: 'done' } }
     )
   }
 
   // GET /core/interactions/:id
   get (id, { workspaceId } = {}) {
-    return this._call('interactions.get', `/interactions/${encodeURIComponent(id)}${_qs(workspaceId)}`)
+    return this._call('interactions.get', `/interactions/${encodeURIComponent(id)}${qs(workspaceId)}`)
   }
 
   // POST /core/interactions (member — logging a touch is a member action).
@@ -114,7 +116,7 @@ export class InteractionService extends BaseService {
   // `kind` is required. There is no `partyId` / `summary` field: a create
   // that sends them stores an interaction with no party and no text.
   create (payload = {}, { workspaceId } = {}) {
-    return this._call('interactions.create', `/interactions${_qs(workspaceId)}`, {
+    return this._call('interactions.create', `/interactions${qs(workspaceId)}`, {
       method: 'POST',
       body: payload
     })
@@ -122,7 +124,7 @@ export class InteractionService extends BaseService {
 
   // PATCH /core/interactions/:id (editor).
   update (id, payload = {}, { workspaceId } = {}) {
-    return this._call('interactions.update', `/interactions/${encodeURIComponent(id)}${_qs(workspaceId)}`, {
+    return this._call('interactions.update', `/interactions/${encodeURIComponent(id)}${qs(workspaceId)}`, {
       method: 'PATCH',
       body: payload
     })
@@ -130,7 +132,7 @@ export class InteractionService extends BaseService {
 
   // DELETE /core/interactions/:id (editor; tombstone, never hard).
   remove (id, { workspaceId } = {}) {
-    return this._call('interactions.remove', `/interactions/${encodeURIComponent(id)}${_qs(workspaceId)}`, {
+    return this._call('interactions.remove', `/interactions/${encodeURIComponent(id)}${qs(workspaceId)}`, {
       method: 'DELETE'
     })
   }

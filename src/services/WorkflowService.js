@@ -9,7 +9,9 @@ import { BaseService } from './BaseService.js'
 // threaded as a query param — see ProposedActionService for the contract).
 // Reads are member-gated; writes require workspace owner/admin.
 
-const _qs = (workspaceId, extra) => {
+// `qs` (a whole word) — the server route-drift analyzer drops `${qs(...)}`
+// template holes, so every path below stays readable to it.
+const qs = (workspaceId, extra) => {
   const params = new URLSearchParams(extra || undefined)
   if (workspaceId) params.set('workspaceId', String(workspaceId))
   const s = params.toString()
@@ -22,18 +24,18 @@ export class WorkflowService extends BaseService {
     const extra = {}
     if (filter.appliesTo) extra.appliesTo = filter.appliesTo
     const ws = filter.workspaceId || options.workspaceId
-    return this._call('workflows.list', `/workflows${_qs(ws, extra)}`)
+    return this._call('workflows.list', `/workflows${qs(ws, extra)}`)
   }
 
   // GET /core/workflows/:id
   get (id, { workspaceId } = {}) {
-    return this._call('workflows.get', `/workflows/${encodeURIComponent(id)}${_qs(workspaceId)}`)
+    return this._call('workflows.get', `/workflows/${encodeURIComponent(id)}${qs(workspaceId)}`)
   }
 
   // POST /core/workflows (owner/admin).
   // payload: { name, kind: 'status'|'pipeline', appliesTo, stages[], isDefault? }
   create (payload = {}, { workspaceId } = {}) {
-    return this._call('workflows.create', `/workflows${_qs(workspaceId)}`, {
+    return this._call('workflows.create', `/workflows${qs(workspaceId)}`, {
       method: 'POST',
       body: payload
     })
@@ -41,7 +43,7 @@ export class WorkflowService extends BaseService {
 
   // PATCH /core/workflows/:id (owner/admin).
   update (id, payload = {}, { workspaceId } = {}) {
-    return this._call('workflows.update', `/workflows/${encodeURIComponent(id)}${_qs(workspaceId)}`, {
+    return this._call('workflows.update', `/workflows/${encodeURIComponent(id)}${qs(workspaceId)}`, {
       method: 'PATCH',
       body: payload
     })
@@ -49,7 +51,7 @@ export class WorkflowService extends BaseService {
 
   // DELETE /core/workflows/:id (owner/admin).
   remove (id, { workspaceId } = {}) {
-    return this._call('workflows.remove', `/workflows/${encodeURIComponent(id)}${_qs(workspaceId)}`, {
+    return this._call('workflows.remove', `/workflows/${encodeURIComponent(id)}${qs(workspaceId)}`, {
       method: 'DELETE'
     })
   }
