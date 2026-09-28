@@ -45,6 +45,19 @@ export class CrmService extends BaseService {
   permissions ({ workspaceId } = {}) {
     return this._call('crm.permissions', `/crm/permissions${qs({ workspaceId })}`)
   }
+
+  // POST /core/crm/migrations/crm-deals (workspace admin) — move this
+  // workspace's crm_deals records onto Deal entities (CRM 1.2). DRY RUN unless
+  // { apply: true }; idempotent (a second apply creates nothing); the records
+  // are never touched. → { dryRun, scanned, created, skipped, failed,
+  // warnings, plan }
+  migrateCrmDeals ({ apply = false } = {}, { workspaceId } = {}) {
+    return this._call(
+      'crm.migrateCrmDeals',
+      `/crm/migrations/crm-deals${qs({ workspaceId })}`,
+      { method: 'POST', body: { apply: apply === true } }
+    )
+  }
 }
 
 export const createCrmService = config => new CrmService(config)

@@ -61,3 +61,18 @@ test('crm.permissions GETs /crm/permissions; dispatcher crm.permissions list', a
   t.deepEqual(calls[0], [{ workspaceId: 'ws1' }])
   t.end()
 })
+
+test('crm.migrateCrmDeals POSTs /crm/migrations/crm-deals — dry run unless apply is exactly true', async t => {
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({})
+  await svc.migrateCrmDeals()
+  t.equal(stub.getCall(0).args[1], '/crm/migrations/crm-deals')
+  t.deepEqual(stub.getCall(0).args[2], { method: 'POST', body: { apply: false } })
+  await svc.migrateCrmDeals({ apply: true }, { workspaceId: 'ws1' })
+  t.equal(stub.getCall(1).args[1], '/crm/migrations/crm-deals?workspaceId=ws1')
+  t.deepEqual(stub.getCall(1).args[2].body, { apply: true })
+  await svc.migrateCrmDeals({ apply: 'yes' })
+  t.deepEqual(stub.getCall(2).args[2].body, { apply: false }, 'only a literal true applies')
+  sandbox.restore()
+  t.end()
+})

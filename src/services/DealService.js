@@ -51,7 +51,8 @@ export class DealService extends BaseService {
   // POST /core/deals (editor).
   // payload: { title, party?, company?, pipeline?, stage?, owner?, value?,
   //   probability?, expectedCloseAt?, sourceChannel?, attribution?,
-  //   dimensions?, custom?, stageOrder? }
+  //   dimensions?, custom?, stageOrder?, description?, contactName? }
+  //   contactName defaults to the linked party's name.
   create (payload = {}, { workspaceId } = {}) {
     return this._call('deals.create', `/deals${qs({ workspaceId })}`, {
       method: 'POST',
