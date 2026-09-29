@@ -87,10 +87,12 @@ import { BaseService } from './BaseService.js'
  *   onHead?: function({ id: string, title: string, summary: string }): void,
  *   onItem?: function({ id: string, index: number, item: BoardItem }): void,
  *   onDrop?: function(Object): void, shellWidgets?: Object[], modelMode?: string,
- *   capabilities?: { records?: number } }} BoardStreamOptions
+ *   capabilities?: { records?: number },
+ *   mode?: ('dashboard'|'presentation'),
+ *   onSlide?: function({ id: string, index: number, slide: Object }): void }} BoardStreamOptions
  */
 
-const STREAM_CALLBACKS = ['onEvent', 'onStart', 'onHead', 'onItem', 'onDrop']
+const STREAM_CALLBACKS = ['onEvent', 'onStart', 'onHead', 'onItem', 'onDrop', 'onSlide']
 
 // The body a generate/refine POST carries — everything but the callbacks,
 // the signal and the transport switches.
@@ -197,7 +199,9 @@ export class AiBoardsService extends BaseService {
       'board.start': args.onStart,
       'board.head': args.onHead,
       'board.item': args.onItem,
-      'board.drop': args.onDrop
+      'board.drop': args.onDrop,
+      // A deck (mode 'presentation') streams one validated slide per frame.
+      'board.slide': args.onSlide
     }
     let done = null
     let failure = null
@@ -310,6 +314,10 @@ export class AiBoardsService extends BaseService {
 
   // ── generate / refine ───────────────────────────────────────────────────
   //
+  // `mode: 'presentation'` asks for a DECK (a title slide + content slides of
+  // widget / records items; server deck contract v1) instead of a board; the
+  // stream then carries `board.slide` frames (onSlide). Absent = a board.
+  //
   // `capabilities` declares what THIS client renders: `{ records: 1 }` = it
   // renders RECORDS BLOCK v1 items (resolved with `records`). Without it the
   // server offers no collections and emits no records item — an older shell
@@ -324,7 +332,7 @@ export class AiBoardsService extends BaseService {
    */
   async generate (args = {}) {
     const ws = this._boardsWorkspace(args)
-    const body = generationBody(args, ['prompt', 'threadId', 'shellWidgets', 'modelMode', 'capabilities'])
+    const body = generationBody(args, ['prompt', 'threadId', 'shellWidgets', 'modelMode', 'capabilities', 'mode'])
     if (wantsStream(args)) {
       return this._postBoardStream(`/ai-boards/workspaces/${ws}/generate`, body, args, 'aiBoards.generate')
     }
@@ -343,7 +351,7 @@ export class AiBoardsService extends BaseService {
    */
   async refine (args = {}) {
     const ws = this._boardsWorkspace(args)
-    const body = generationBody(args, ['prompt', 'boardId', 'spec', 'shellWidgets', 'modelMode', 'capabilities'])
+    const body = generationBody(args, ['prompt', 'boardId', 'spec', 'shellWidgets', 'modelMode', 'capabilities', 'mode'])
     if (wantsStream(args)) {
       return this._postBoardStream(`/ai-boards/workspaces/${ws}/refine`, body, args, 'aiBoards.refine')
     }

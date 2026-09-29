@@ -439,3 +439,43 @@ test('generate / refine carry `capabilities` (what this client renders); absent 
   sandbox.restore()
   t.end()
 })
+
+// ─── Presentation mode: a DECK (server deck contract v1) ─────────────────────
+
+test('generate / refine carry `mode` (presentation = a deck); absent = not sent', async (t) => {
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves(DONE)
+  await svc.generate({ prompt: 'Present our Q3 sales', mode: 'presentation', capabilities: { records: 1 } })
+  await svc.refine({ prompt: 'shorter', mode: 'presentation', boardId: 'brd_1' })
+  await svc.generate({ prompt: 'p' })
+  t.deepEqual(stub.getCall(0).args[2].body, {
+    prompt: 'Present our Q3 sales',
+    capabilities: { records: 1 },
+    mode: 'presentation'
+  })
+  t.equal(stub.getCall(1).args[2].body.mode, 'presentation', 'refine carries it too')
+  t.equal('mode' in stub.getCall(2).args[2].body, false, 'a board request sends no mode')
+  sandbox.restore()
+  t.end()
+})
+
+test('a deck streams slide by slide: onSlide gets each board.slide frame; done resolves the deck', async (t) => {
+  const svc = makeService()
+  sandbox.stub(svc, '_authHeader').resolves(null)
+  const DECK = { v: 1, kind: 'deck', id: 'brd_d1', title: 'Q3', slides: [{ id: 's1', kind: 'title', title: 'Q3' }] }
+  const DECK_DONE = { spec: DECK, dropped: [], counts: { slides: 2, items: 1, dropped: 0 } }
+  const deckStream =
+    frame('board.start', { id: 'brd_d1', v: 1, kind: 'deck', prompt: 'p' }) +
+    frame('board.head', { id: 'brd_d1', title: 'Q3', summary: '' }) +
+    frame('board.slide', { id: 'brd_d1', index: 0, slide: { id: 's1', kind: 'title', title: 'Q3' } }) +
+    frame('board.slide', { id: 'brd_d1', index: 1, slide: { id: 's2', kind: 'content', title: 'Pipeline', items: [] } }) +
+    frame('board.done', DECK_DONE)
+  const fetchStub = sandbox.stub(globalThis, 'fetch').resolves(sseResponse(deckStream, { chunk: 11 }))
+  const slides = []
+  const result = await svc.generate({ prompt: 'p', mode: 'presentation', onSlide: (d) => slides.push([d.index, d.slide.id]) })
+  t.deepEqual(JSON.parse(fetchStub.firstCall.args[1].body), { prompt: 'p', mode: 'presentation' }, 'onSlide alone opens the stream; the mode rides the body')
+  t.deepEqual(slides, [[0, 's1'], [1, 's2']])
+  t.deepEqual(result, DECK_DONE)
+  sandbox.restore()
+  t.end()
+})
