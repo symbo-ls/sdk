@@ -803,3 +803,83 @@ test('a 404 from getThread reads as "not visible to you" — a thrown Error, nev
   sandbox.restore()
   t.end()
 })
+
+// ─── Mail in the CRM (server docs/MAIL.md "Mail in the CRM") ────────────────
+
+test('mail.crmTimeline GETs /mail/crm/timeline with type / id / party / before / limit as query params', async t => {
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({ data: [], pagination: { hasMore: false, nextBefore: null } })
+  await svc.crmTimeline({ type: 'deal', id: 'd1', before: '2026-09-01T00:00:00.000Z', workspaceId: 'ws1' }, { limit: 30 })
+  t.equal(stub.firstCall.args[0], 'mail.crmTimeline', 'name')
+  const url = new URL(`https://x${stub.firstCall.args[1]}`)
+  t.equal(url.pathname, '/mail/crm/timeline', 'path')
+  t.equal(url.searchParams.get('type'), 'deal')
+  t.equal(url.searchParams.get('id'), 'd1')
+  t.equal(url.searchParams.get('before'), '2026-09-01T00:00:00.000Z')
+  t.equal(url.searchParams.get('limit'), '30', 'limit read from the options bag')
+  t.equal(url.searchParams.get('workspaceId'), 'ws1', 'the routing pin rides the query')
+  t.equal(stub.firstCall.args[2], undefined, 'GET — no options')
+  await svc.crmTimeline({ type: 'record:crm_deals', id: 'r1', party: ['p1', 'p2'] })
+  const url2 = new URL(`https://x${stub.secondCall.args[1]}`)
+  t.equal(url2.searchParams.get('type'), 'record:crm_deals')
+  t.equal(url2.searchParams.get('party'), 'p1,p2', 'a party list is comma-joined')
+  sandbox.restore()
+  t.end()
+})
+
+test('mail.crmSend POSTs the body to /mail/crm/send — the workspace pin never rides the body', async t => {
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({ outbox: { id: 'o1', status: 'queued' }, item: null })
+  await svc.crmSend({ type: 'party', id: 'p1', subject: 'Hi', text: 'Hello', workspaceId: 'ws1' })
+  t.equal(stub.firstCall.args[0], 'mail.crmSend', 'name')
+  t.equal(stub.firstCall.args[1], '/mail/crm/send?workspaceId=ws1', 'path + pin')
+  t.equal(stub.firstCall.args[2].method, 'POST')
+  t.deepEqual(stub.firstCall.args[2].body, { type: 'party', id: 'p1', subject: 'Hi', text: 'Hello' }, 'no workspaceId in the body')
+  await svc.crmSend({ type: 'deal', id: 'd1' }, { workspaceId: 'ws2' })
+  t.equal(stub.secondCall.args[1], '/mail/crm/send?workspaceId=ws2', 'the options pin works too')
+  sandbox.restore()
+  t.end()
+})
+
+test('mail.simulateInbound POSTs /mail/accounts/:id/simulate with the id encoded', async t => {
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({ thread: { id: 't1' }, message: { id: 'm1' } })
+  await svc.simulateInbound('a/1', { from: { address: 'a@x.example' }, text: 'hi', workspaceId: 'ws1' })
+  t.equal(stub.firstCall.args[0], 'mail.simulateInbound')
+  t.equal(stub.firstCall.args[1], '/mail/accounts/a%2F1/simulate?workspaceId=ws1')
+  t.equal(stub.firstCall.args[2].method, 'POST')
+  t.deepEqual(stub.firstCall.args[2].body, { from: { address: 'a@x.example' }, text: 'hi' })
+  sandbox.restore()
+  t.end()
+})
+
+test('a 404 from crmTimeline (a record the caller cannot read) is a thrown typed error', async t => {
+  const svc = makeFetchService()
+  sandbox.stub(globalThis, 'fetch').resolves(fakeResponse(404, { error: 'not_found', message: 'deal not found' }))
+  try {
+    await svc.crmTimeline({ type: 'deal', id: 'hidden' })
+    t.fail('should throw')
+  } catch (err) {
+    t.match(String(err.message), /deal not found|not_found/, 'the server message reaches the caller')
+  }
+  sandbox.restore()
+  t.end()
+})
+
+test('sdk.execute routes: mail.crm timeline / send and mail.accounts simulate', async t => {
+  const calls = []
+  const svc = new Proxy({}, { get: (_o, m) => (...a) => { calls.push([m, ...a]); return {} } })
+  const { createEntityDispatcher } = await import('../../EntityDispatcher.js')
+  const dispatch = createEntityDispatcher({ getService: (name) => (name === 'mail' ? svc : null) })
+  await dispatch('mail.crm', 'timeline', { type: 'deal', id: 'd1', limit: 20, workspaceId: 'ws1' })
+  t.equal(calls[0][0], 'crmTimeline')
+  t.equal(calls[0][1].type, 'deal')
+  t.equal(calls[0][1].id, 'd1')
+  t.equal(calls[0][2].limit, 20, 'limit rides the options bag')
+  t.equal(calls[0][2].workspaceId, 'ws1')
+  await dispatch('mail.crm', 'send', { type: 'party', id: 'p1', text: 'hi', workspaceId: 'ws1' })
+  t.deepEqual(calls[1], ['crmSend', { type: 'party', id: 'p1', text: 'hi' }, { workspaceId: 'ws1' }], 'workspaceId never rides the body')
+  await dispatch('mail.accounts', 'simulate', { id: 'a1', from: { address: 'a@x.example' }, text: 'hi', workspaceId: 'ws1' })
+  t.deepEqual(calls[2], ['simulateInbound', 'a1', { from: { address: 'a@x.example' }, text: 'hi' }, { workspaceId: 'ws1' }])
+  t.end()
+})

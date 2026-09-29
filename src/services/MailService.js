@@ -571,6 +571,67 @@ export class MailService extends BaseService {
     })
   }
 
+  // ── Mail in the CRM (server docs/MAIL.md "Mail in the CRM") ────────────
+
+  // GET /core/mail/crm/timeline — the CALLER's mail with one CRM record, one
+  // item per message, newest first. `type` is 'party' | 'lead' | 'deal' |
+  // 'record:<collectionKey>' (a records-plane row — the crm-app deal is
+  // 'record:crm_deals', and then `party` = the row's contact Party id, or a
+  // list of them) and `id` the record id. Paging: `before` (ISO, exclusive —
+  // the previous answer's `pagination.nextBefore`) + `limit` (default 30,
+  // max 100). Answers { data: [item], pagination: { hasMore, nextBefore },
+  // truncated, record: { type, id, parties }, compose: { accounts,
+  // defaultAccountId, to } } — the item carries the outer fields the
+  // channels timeline carries (id, kind, channel 'email', direction, status
+  // received|sent|queued|failed, at, from, to, body, party) plus an `email`
+  // block (subject, threadId, messageId, outboxId, undoUntil, mailbox,
+  // unread, …). ONLY mailboxes the caller may read; a lead/deal the caller
+  // cannot read is a 404.
+  crmTimeline (filter = {}, options = {}) {
+    const f = filter || {}
+    const extra = {}
+    for (const k of ['type', 'id', 'party', 'before', 'limit']) {
+      const v = f[k] ?? options[k]
+      if (v !== undefined && v !== null && v !== '') extra[k] = Array.isArray(v) ? v.join(',') : v
+    }
+    const ws = f.workspaceId || options.workspaceId
+    return this._call('mail.crmTimeline', `/mail/crm/timeline${qs(ws, extra)}`)
+  }
+
+  // POST /core/mail/crm/send — "Email" / "Reply" from a CRM record through
+  // the caller's own mailbox (the ordinary send path: undo window, rate
+  // limit, signature, size cap; a simulated mailbox delivers locally). Body
+  // { type, id, party?, accountId?, to?: [{ name?, address }], cc?, bcc?,
+  // subject?, html?, text?, inReplyToMessage?, sendAs?, undoSeconds?,
+  // scheduleAt? }. Defaults: the caller's own mailbox; a reply goes to the
+  // message's sender with "Re: <subject>"; a new mail to the record's
+  // primary contact address. Answers 202 { outbox, item } — `item` is the
+  // queued timeline item; undo is `cancelSend(outbox.id)`. The delivered
+  // thread is LINKED to the record, so the customer's answer lands on it.
+  // 400 bad_request|no_recipients|… · 404 not_found · 409 no_mailbox|
+  // account_not_ready · 413 · 429 send_rate_limited.
+  crmSend (payload = {}, { workspaceId } = {}) {
+    const { workspaceId: pin, ...body } = payload || {}
+    return this._call('mail.crmSend', `/mail/crm/send${qs(workspaceId || pin)}`, {
+      method: 'POST',
+      body
+    })
+  }
+
+  // POST /core/mail/accounts/:id/simulate — DEMO: mail ARRIVING in a
+  // SIMULATED mailbox (a simulated tenant has no provider, so nothing else
+  // can bring a customer's answer in). Body { from: { name?, address }, to?,
+  // cc?, subject?, text | html, inReplyToMessage?, at?, read? } → 201
+  // { thread, message }, through the same apply path a provider delta runs.
+  // Needs `manage` on the mailbox; 409 not_simulated for a real one.
+  simulateInbound (id, payload = {}, { workspaceId } = {}) {
+    const { workspaceId: pin, ...body } = payload || {}
+    return this._call('mail.simulateInbound', `/mail/accounts/${encodeURIComponent(id)}/simulate${qs(workspaceId || pin)}`, {
+      method: 'POST',
+      body
+    })
+  }
+
   // POST /core/mail/service-desk/reply — the service-desk answer (D8, §3.7
   // "ticket comment 'Reply by email'"). Name the thread by its ticket
   // (`ticketId`, what the ticket UI holds) or by its conversation

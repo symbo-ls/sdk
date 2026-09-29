@@ -1256,7 +1256,8 @@ const ENTITY_ROUTES = {
       remove: 'disconnectAccount',
       connect: 'startConnect',
       reconnect: 'reconnect',
-      sync: 'syncNow'
+      sync: 'syncNow',
+      simulate: 'simulateInbound'
     },
     // Explicit, not WS_CRUD_ARG_MAP: there is no `create` op — an account is
     // born from the OAuth round trip (`connect` answers the authorize URL,
@@ -1272,7 +1273,28 @@ const ENTITY_ROUTES = {
       remove: wsArgMaps.id,
       connect: (a) => [a?.provider ?? (typeof a === 'string' ? a : undefined), ..._wsOpts(a)],
       reconnect: wsArgMaps.id,
-      sync: wsArgMaps.id
+      sync: wsArgMaps.id,
+      // DEMO — mail arriving in a SIMULATED mailbox (409 not_simulated else).
+      //   sdk.execute('mail.accounts', 'simulate', { id, from: { address }, text, inReplyToMessage, workspaceId })
+      simulate: wsArgMaps.idPayload
+    }
+  },
+  // Mail on a CRM record (server docs/MAIL.md "Mail in the CRM"): the
+  // caller's mail with one contact / lead / deal, and "Email" from it.
+  //   sdk.execute('mail.crm', 'timeline', { type: 'deal', id, before, limit: 30, workspaceId })
+  //   sdk.execute('mail.crm', 'timeline', { type: 'record:crm_deals', id, party: partyId, workspaceId })
+  //   sdk.execute('mail.crm', 'send', { type: 'party', id, subject, text, workspaceId })
+  // timeline reads the flat keys as its filter (`limit` rides the options
+  // bag); send strips the routing pin off the body.
+  'mail.crm': {
+    service: 'mail',
+    methods: {
+      timeline: 'crmTimeline',
+      send: 'crmSend'
+    },
+    argMap: {
+      timeline: argMaps.filterOptions,
+      send: wsArgMaps.payload
     }
   },
   'mail.drafts': {
