@@ -94,6 +94,16 @@ import { BaseService } from './BaseService.js'
 
 const STREAM_CALLBACKS = ['onEvent', 'onStart', 'onHead', 'onItem', 'onDrop', 'onSlide']
 
+// The fields generate / refine FORWARD to the server — the ONE list both the
+// requests and the support marker read, so the marker cannot drift from the
+// behavior. A client feature-detects Presentation mode by `supportsMode` (or
+// `forwardedFields.generate.includes('mode')`): an older SDK has neither, and
+// it drops `mode`, so the client shows Presentation as unavailable.
+export const AI_BOARDS_FORWARDED_FIELDS = Object.freeze({
+  generate: Object.freeze(['prompt', 'threadId', 'shellWidgets', 'modelMode', 'capabilities', 'mode']),
+  refine: Object.freeze(['prompt', 'boardId', 'spec', 'shellWidgets', 'modelMode', 'capabilities', 'mode'])
+})
+
 // The body a generate/refine POST carries — everything but the callbacks,
 // the signal and the transport switches.
 const generationBody = (args, keys) => {
@@ -323,6 +333,16 @@ export class AiBoardsService extends BaseService {
   // server offers no collections and emits no records item — an older shell
   // never shows a block it cannot render.
 
+  /** The fields generate / refine forward (the support marker; read-only). */
+  get forwardedFields () {
+    return AI_BOARDS_FORWARDED_FIELDS
+  }
+
+  /** Does this SDK forward `mode` — can the client ask for a Presentation DECK? */
+  get supportsMode () {
+    return AI_BOARDS_FORWARDED_FIELDS.generate.includes('mode')
+  }
+
   /**
    * Generate a board from a prompt — ONE model round trip. Streams when a
    * callback is given (title + summary first, then items), resolves with the
@@ -332,7 +352,7 @@ export class AiBoardsService extends BaseService {
    */
   async generate (args = {}) {
     const ws = this._boardsWorkspace(args)
-    const body = generationBody(args, ['prompt', 'threadId', 'shellWidgets', 'modelMode', 'capabilities', 'mode'])
+    const body = generationBody(args, AI_BOARDS_FORWARDED_FIELDS.generate)
     if (wantsStream(args)) {
       return this._postBoardStream(`/ai-boards/workspaces/${ws}/generate`, body, args, 'aiBoards.generate')
     }
@@ -351,7 +371,7 @@ export class AiBoardsService extends BaseService {
    */
   async refine (args = {}) {
     const ws = this._boardsWorkspace(args)
-    const body = generationBody(args, ['prompt', 'boardId', 'spec', 'shellWidgets', 'modelMode', 'capabilities', 'mode'])
+    const body = generationBody(args, AI_BOARDS_FORWARDED_FIELDS.refine)
     if (wantsStream(args)) {
       return this._postBoardStream(`/ai-boards/workspaces/${ws}/refine`, body, args, 'aiBoards.refine')
     }

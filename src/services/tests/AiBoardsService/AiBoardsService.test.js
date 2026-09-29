@@ -479,3 +479,21 @@ test('a deck streams slide by slide: onSlide gets each board.slide frame; done r
   sandbox.restore()
   t.end()
 })
+
+// ─── the support marker a client feature-detects (current-23-modes) ─────────
+
+test('the service says which fields it forwards: Presentation needs `mode` (supportsMode)', async (t) => {
+  const svc = makeService()
+  t.equal(svc.supportsMode, true, 'this SDK forwards mode')
+  const fields = svc.forwardedFields
+  t.ok(Array.isArray(fields?.generate) && fields.generate.includes('mode'), 'generate forwards mode')
+  t.ok(Array.isArray(fields?.refine) && fields.refine.includes('mode'), 'refine forwards mode')
+  t.ok(Object.isFrozen(fields) && Object.isFrozen(fields.generate), 'a read-only list')
+  // The marker IS the behavior: every listed generate field reaches the body.
+  const stub = sandbox.stub(svc, '_call').resolves(DONE)
+  const args = Object.fromEntries(fields.generate.map((k) => [k, k === 'shellWidgets' ? [] : `v-${k}`]))
+  await svc.generate(args)
+  t.deepEqual(Object.keys(stub.firstCall.args[2].body).sort(), [...fields.generate].sort())
+  sandbox.restore()
+  t.end()
+})
