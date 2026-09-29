@@ -76,3 +76,57 @@ test('crm.migrateCrmDeals POSTs /crm/migrations/crm-deals — dry run unless app
   sandbox.restore()
   t.end()
 })
+
+test('crm.homeCounts GETs /crm/home-counts with the workspace, the zone and the options', async t => {
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({ followups: { overdue: 1 } })
+  const r = await svc.homeCounts({
+    workspaceId: 'ws1',
+    tz: 'Asia/Tbilisi',
+    horizonDays: 7,
+    bookingKind: 'viewing'
+  })
+  t.equal(stub.firstCall.args[0], 'crm.homeCounts')
+  t.equal(
+    stub.firstCall.args[1],
+    '/crm/home-counts?workspaceId=ws1&tz=Asia%2FTbilisi&horizonDays=7&bookingKind=viewing'
+  )
+  t.deepEqual(r, { followups: { overdue: 1 } })
+  sandbox.restore()
+  t.end()
+})
+
+test('crm.homeCounts sends the local time zone when none is given', async t => {
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({})
+  await svc.homeCounts({ workspaceId: 'ws1' })
+  const local = Intl.DateTimeFormat().resolvedOptions().timeZone
+  t.equal(
+    stub.firstCall.args[1],
+    `/crm/home-counts?workspaceId=ws1&tz=${encodeURIComponent(local)}`
+  )
+  sandbox.restore()
+  t.end()
+})
+
+test('crm.homeCounts refuses a call without a workspace (never the active one)', async t => {
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({})
+  await svc.homeCounts({ tz: 'UTC' }).then(
+    () => t.fail('should reject'),
+    (e) => t.match(e.message, /workspaceId is required/)
+  )
+  t.equal(stub.called, false, 'nothing sent')
+  sandbox.restore()
+  t.end()
+})
+
+test("sdk.execute('crm.homeCounts', 'get', { workspaceId, tz, horizonDays, bookingKind })", async t => {
+  const calls = []
+  const dispatch = createEntityDispatcher({
+    getService: (n) => (n === 'crm' ? { homeCounts: (...a) => { calls.push(a); return {} } } : null)
+  })
+  await dispatch('crm.homeCounts', 'get', { workspaceId: 'ws1', tz: 'Asia/Tbilisi', horizonDays: 5 })
+  t.deepEqual(calls[0], [{ workspaceId: 'ws1', tz: 'Asia/Tbilisi', horizonDays: 5, bookingKind: undefined }])
+  t.end()
+})

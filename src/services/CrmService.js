@@ -25,6 +25,16 @@ import { crmQuery as qs } from './_crmQuery.js'
 // catalog — the platform keys (crm.*, admin.*, …) plus the keys declared by
 // installed apps (e.g. re.price.change) — [{ key, label, description, group,
 // source: 'platform' | 'app:<owner>/<key>' }].
+//
+// Home counts (`GET /core/crm/home-counts`): the CRM home signals' counts in
+// ONE read, for an EXPLICIT workspace (required — never the active one), in
+// the member's time zone (default: this runtime's), with the member's CRM
+// permissions:
+//   { now, tz, day: { date, from, to },
+//     followups: { overdue, dueToday, dueTodayNextAt },
+//     viewings: { kind, horizonDays, today, todayNextAt, upcoming, upcomingNextAt },
+//     deals: { idle, idleDays, uniform, visibility },
+//     unavailable?: { <plane>: reason } }   // a plane that could not be read is null
 
 export class CrmService extends BaseService {
   // GET /core/crm/settings → { visibility: { lead, deal } }
@@ -57,6 +67,34 @@ export class CrmService extends BaseService {
       `/crm/migrations/crm-deals${qs({ workspaceId })}`,
       { method: 'POST', body: { apply: apply === true } }
     )
+  }
+
+  // GET /core/crm/home-counts (member) — see the header. `workspaceId` is
+  // REQUIRED; `tz` defaults to this runtime's zone; `horizonDays` (1–31,
+  // server default 7) and `bookingKind` (server default 'viewing') are the
+  // viewings window and kind.
+  homeCounts ({ workspaceId, tz, horizonDays, bookingKind } = {}) {
+    if (!workspaceId) {
+      return Promise.reject(
+        new Error(
+          'crm.homeCounts: workspaceId is required — the home counts never fall back to the active workspace'
+        )
+      )
+    }
+    const params = { workspaceId: String(workspaceId), tz: tz || _localTimeZone() }
+    if (horizonDays != null && horizonDays !== '') params.horizonDays = String(horizonDays)
+    if (bookingKind) params.bookingKind = String(bookingKind)
+    return this._call('crm.homeCounts', `/crm/home-counts?${new URLSearchParams(params)}`)
+  }
+}
+
+// This runtime's IANA zone — the member's local day (the crm-app buckets
+// follow-ups and viewings by it), 'UTC' when Intl cannot tell.
+const _localTimeZone = () => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+  } catch (_) {
+    return 'UTC'
   }
 }
 

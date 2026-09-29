@@ -740,6 +740,21 @@ const ENTITY_ROUTES = {
   },
   // Workspace CRM settings — sdk.execute('crm.settings', 'get' | 'update').
   // The org permission catalog — sdk.execute('crm.permissions', 'list').
+  // The home signals' counts — sdk.execute('crm.homeCounts', 'get', { workspaceId, tz }).
+  'crm.homeCounts': {
+    service: 'crm',
+    methods: { get: 'homeCounts' },
+    argMap: {
+      get: (a) => [
+        {
+          workspaceId: a?.workspaceId,
+          tz: a?.tz,
+          horizonDays: a?.horizonDays,
+          bookingKind: a?.bookingKind
+        }
+      ]
+    }
+  },
   'crm.permissions': {
     service: 'crm',
     methods: { list: 'permissions' },
