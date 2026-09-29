@@ -137,6 +137,20 @@ export const INTENT_ACTION = 'action'
 // All three are absent on older messages and on non-workspace turns, so every
 // reader returns a safe empty value rather than throwing.
 
+/**
+ * True for an assistant TOOL-CALL message — a `tool_call` content part, or
+ * `metadata.kind === 'tool_call'`. Such a message is never the turn's answer:
+ * since the server keeps what a model said beside its calls (callText) it can
+ * carry text, and ending the turn on it stopped a live multi-step turn at its
+ * first call. Every answer-picking path below skips it.
+ */
+export const isToolCallMessage = (msg) =>
+  !!msg &&
+  typeof msg === 'object' &&
+  ((Array.isArray(msg.content) &&
+    msg.content.some((p) => p && p.type === 'tool_call')) ||
+    (msg.metadata && msg.metadata.kind === 'tool_call'))
+
 /** Follow-up suggestion buttons, or []. */
 export const messageSuggestions = (msg) => {
   const list = msg && msg.metadata && msg.metadata.suggestions
@@ -779,7 +793,9 @@ export class AiService extends BaseService {
             if (resume.fn && resume.callId) runClientTool(resume)
             return
           }
-          const txt = blocksToText(resume.assistantMessage?.content)
+          const txt = isToolCallMessage(resume.assistantMessage)
+            ? ''
+            : blocksToText(resume.assistantMessage?.content)
           if (txt) {
             finishAnswer(
               txt,
@@ -928,6 +944,7 @@ export class AiService extends BaseService {
               .find(
                 (m) =>
                   m?.role === 'assistant' &&
+                  !isToolCallMessage(m) &&
                   blocksToText(m.content) &&
                   freshEnough(m)
               )
@@ -943,10 +960,12 @@ export class AiService extends BaseService {
           }
           if (event === 'message.created' && data?.role === 'assistant') {
             // A multi-step agentic turn persists intermediate assistant
-            // `tool_call` messages (tool_call part only, NO text) before the
-            // final answer — finishing on the first assistant frame would end
-            // the turn on an empty message. Only the final, text-bearing
-            // assistant message ends the turn.
+            // `tool_call` messages before the final answer. They can carry
+            // TEXT (callText — what the model said beside its call), so text
+            // alone does not make an answer: a tool-call message never ends
+            // the turn (isToolCallMessage). Only the final, text-bearing
+            // assistant message does.
+            if (isToolCallMessage(data)) return
             const txt = blocksToText(data.content)
             if (txt) {
               finishAnswer(
@@ -1024,7 +1043,9 @@ export class AiService extends BaseService {
             runClientTool(outcome)
             return
           }
-          const finalTxt = blocksToText(outcome?.assistantMessage?.content)
+          const finalTxt = isToolCallMessage(outcome?.assistantMessage)
+            ? ''
+            : blocksToText(outcome?.assistantMessage?.content)
           if (finalTxt) {
             finishAnswer(
               finalTxt,
@@ -1137,9 +1158,9 @@ export class AiService extends BaseService {
       const data =
         res && typeof res === 'object' && 'data' in res ? res.data : res
       const messages = data?.messages || []
-      // Find the latest assistant message that actually carries text — skip
-      // intermediate `tool_call` assistant messages (no text part) from a
-      // multi-step agentic turn.
+      // Find the latest assistant message that is an ANSWER — skip the
+      // intermediate `tool_call` assistant messages of a multi-step agentic
+      // turn, with or without text (callText; isToolCallMessage).
       const textOf = (m) =>
         (m?.content || [])
           .filter((p) => p && p.type === 'text')
@@ -1154,7 +1175,13 @@ export class AiService extends BaseService {
       }
       const assistant = [...messages]
         .reverse()
-        .find((m) => m?.role === 'assistant' && textOf(m) && freshEnough(m))
+        .find(
+          (m) =>
+            m?.role === 'assistant' &&
+            !isToolCallMessage(m) &&
+            textOf(m) &&
+            freshEnough(m)
+        )
       const txt = assistant ? textOf(assistant) : ''
       const sg =
         assistant &&
