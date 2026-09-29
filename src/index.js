@@ -39,6 +39,7 @@ import {
   createLeadService,
   createDealService,
   createLeadSourceService,
+  createChannelService,
   createCrmService,
   createInteractionService,
   createSegmentService,
@@ -443,6 +444,15 @@ export class SDK {
       this._initService(
         'leadSources',
         createLeadSourceService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      // CRM communications (/core/channels) — WhatsApp + SMS / voice numbers,
+      // the inbox, the one timeline, send, click-to-call; simulated mode.
+      this._initService(
+        'channels',
+        createChannelService({
           context: this._context,
           options: this._options
         })
@@ -1129,6 +1139,7 @@ export {
   createLeadService,
   createDealService,
   createLeadSourceService,
+  createChannelService,
   createCrmService,
   createInteractionService,
   createSegmentService,

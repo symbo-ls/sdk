@@ -73,6 +73,9 @@ import { DealService } from './DealService.js'
 // CRM lead sources (roadmap 2.1/2.3/2.5/5.2) — /core/lead-sources: intake
 // channels, ingestion issues, CSV + Bitrix24 imports, the public web form.
 import { LeadSourceService } from './LeadSourceService.js'
+// CRM communications — /core/channels: WhatsApp (Meta Cloud API) + SMS / voice
+// (a Georgian operator) numbers, the inbox, the one timeline, send, click-to-call.
+import { ChannelService } from './ChannelService.js'
 import { CrmService } from './CrmService.js'
 // Phase-3 commerce services (WORKSPACE_DATA_MODEL §6.2/§6.3/§6.4) — the
 // tenant-finance spine: catalog (products + prices), the workspace's own
@@ -309,6 +312,9 @@ export const createDealService = (config) =>
 export const createLeadSourceService = (config) =>
   createService(LeadSourceService, config)
 
+export const createChannelService = (config) =>
+  createService(ChannelService, config)
+
 export const createCrmService = (config) =>
   createService(CrmService, config)
 
@@ -436,6 +442,7 @@ export {
   LeadService,
   DealService,
   LeadSourceService,
+  ChannelService,
   CrmService,
   ProductService,
   PriceService,
