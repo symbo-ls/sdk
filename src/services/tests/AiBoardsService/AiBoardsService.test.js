@@ -424,3 +424,18 @@ test("sdk.execute('ai.boards', 'summary', …) reaches the service", async (t) =
   sandbox.restore()
   t.end()
 })
+
+// ─── the client capability gate ──────────────────────────────────────────────
+
+test('generate / refine carry `capabilities` (what this client renders); absent = not sent', async (t) => {
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves(DONE)
+  await svc.generate({ prompt: 'p', capabilities: { records: 1 } })
+  await svc.refine({ prompt: 'p', spec: SPEC, capabilities: { records: 1 } })
+  await svc.generate({ prompt: 'p' })
+  t.deepEqual(stub.getCall(0).args[2].body, { prompt: 'p', capabilities: { records: 1 } })
+  t.deepEqual(stub.getCall(1).args[2].body.capabilities, { records: 1 })
+  t.equal('capabilities' in stub.getCall(2).args[2].body, false, 'an old caller sends nothing')
+  sandbox.restore()
+  t.end()
+})

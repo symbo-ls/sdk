@@ -86,7 +86,8 @@ import { BaseService } from './BaseService.js'
  *   onEvent?: function(BoardStreamEvent): void, onStart?: function(Object): void,
  *   onHead?: function({ id: string, title: string, summary: string }): void,
  *   onItem?: function({ id: string, index: number, item: BoardItem }): void,
- *   onDrop?: function(Object): void, shellWidgets?: Object[], modelMode?: string }} BoardStreamOptions
+ *   onDrop?: function(Object): void, shellWidgets?: Object[], modelMode?: string,
+ *   capabilities?: { records?: number } }} BoardStreamOptions
  */
 
 const STREAM_CALLBACKS = ['onEvent', 'onStart', 'onHead', 'onItem', 'onDrop']
@@ -308,6 +309,11 @@ export class AiBoardsService extends BaseService {
   }
 
   // ── generate / refine ───────────────────────────────────────────────────
+  //
+  // `capabilities` declares what THIS client renders: `{ records: 1 }` = it
+  // renders RECORDS BLOCK v1 items (resolved with `records`). Without it the
+  // server offers no collections and emits no records item — an older shell
+  // never shows a block it cannot render.
 
   /**
    * Generate a board from a prompt — ONE model round trip. Streams when a
@@ -318,7 +324,7 @@ export class AiBoardsService extends BaseService {
    */
   async generate (args = {}) {
     const ws = this._boardsWorkspace(args)
-    const body = generationBody(args, ['prompt', 'threadId', 'shellWidgets', 'modelMode'])
+    const body = generationBody(args, ['prompt', 'threadId', 'shellWidgets', 'modelMode', 'capabilities'])
     if (wantsStream(args)) {
       return this._postBoardStream(`/ai-boards/workspaces/${ws}/generate`, body, args, 'aiBoards.generate')
     }
@@ -337,7 +343,7 @@ export class AiBoardsService extends BaseService {
    */
   async refine (args = {}) {
     const ws = this._boardsWorkspace(args)
-    const body = generationBody(args, ['prompt', 'boardId', 'spec', 'shellWidgets', 'modelMode'])
+    const body = generationBody(args, ['prompt', 'boardId', 'spec', 'shellWidgets', 'modelMode', 'capabilities'])
     if (wantsStream(args)) {
       return this._postBoardStream(`/ai-boards/workspaces/${ws}/refine`, body, args, 'aiBoards.refine')
     }
