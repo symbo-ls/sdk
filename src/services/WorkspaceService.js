@@ -12,6 +12,35 @@ const canonicalWorkspaceEnvironmentInput = (input = {}) => {
   return { ...canonical, environment: workspaceEnvironment(input) }
 }
 
+/**
+ * An installed app's entry in `workspace.settings.workspaceApps[]`, as the
+ * workspace read (`getWorkspace`) returns it.
+ *
+ * `nav` — the navbar fields the SERVER stores on the entry so a shell can
+ * paint the app's navbar tab and launcher tile before the app's payload
+ * arrives. Server-owned: derived from the app's own data (its manifest
+ * `configDefaults.navbar` / `.apps` and the slice of its `designSystem.lang`
+ * those rows' keys resolve through) at install time, kept in step when the
+ * app's data changes; a `nav` sent in a settings write is ignored. Absent on
+ * an entry that was never derived. A project app carries
+ * `{ v, navbar, apps, lang, source, hash, syncedAt }`; an AI-built extension
+ * carries `{ v, name, key, hash, syncedAt }` (the shell owns its route).
+ *
+ * @typedef {{ label: string, path: string, icon?: string, order?: number }} WorkspaceAppNavRow
+ * @typedef {{ title: string, caption?: string, icon?: string, iconBg?: string,
+ *   route: string, order?: number }} WorkspaceAppNavTile
+ * @typedef {{ v: 1, navbar: WorkspaceAppNavRow[], apps: WorkspaceAppNavTile[],
+ *   lang: Object<string, Object<string, string>>,
+ *   source: { branch: string, version: (string|null) }, hash: string,
+ *   syncedAt: string }} WorkspaceAppNav
+ * @typedef {{ v: 1, name: (string|null), key: (string|null), hash: string,
+ *   syncedAt: string }} WorkspaceExtensionNav
+ * @typedef {{ type?: ('project'|'extension'), owner?: string, key?: string,
+ *   projectId?: string, channel?: string, version?: (string|null), tier?: string,
+ *   installMode?: string, capabilities?: Object,
+ *   nav?: (WorkspaceAppNav|WorkspaceExtensionNav) }} WorkspaceAppRef
+ */
+
 export class WorkspaceService extends BaseService {
   // ==================== WORKSPACE CRUD ====================
 
@@ -33,6 +62,12 @@ export class WorkspaceService extends BaseService {
     return this._call('listWorkspaces', `/workspaces${qs}`)
   }
 
+  /**
+   * @param {string} workspaceId
+   * @returns {Promise<{ settings?: { workspaceApps?: WorkspaceAppRef[] } & Object<string, any> } & Object<string, any>>}
+   *   the workspace; each installed app's entry may carry server-owned `nav`
+   *   fields (see WorkspaceAppRef).
+   */
   async getWorkspace (workspaceId) {
     if (!workspaceId) throw new Error('workspaceId is required')
     return this._call('getWorkspace', `/workspaces/${workspaceId}`)
@@ -571,7 +606,9 @@ export class WorkspaceService extends BaseService {
    *
    * @param {string} workspaceId
    * @param {{ appId: string, alsoInstall?: string[] }} args
-   * @returns {Promise<{ installed: string[], alreadyInstalled: string[], workspaceApps: object[] }>}
+   * @returns {Promise<{ installed: string[], alreadyInstalled: string[], workspaceApps: WorkspaceAppRef[] }>}
+   *   `workspaceApps` — the stored list after the write; each new entry
+   *   carries its server-derived `nav` fields.
    */
   async installWorkspaceApps (workspaceId, { appId, alsoInstall } = {}) {
     if (!workspaceId) throw new Error('workspaceId is required')
