@@ -176,3 +176,44 @@ test('sdk.execute routes: channels.settings get / update', async t => {
   t.deepEqual(calls[1], ['updateSettings', { callBridgeNumber: '+995322000303' }, { workspaceId: 'ws1' }], 'workspaceId never rides the body')
   t.end()
 })
+
+test('channels.listAudit GETs /channels/audit (admin) and returns rows with pagination; before + limit page it', async t => {
+  const svc = makeService()
+  const call = sandbox.stub(svc, '_call')
+  call.onCall(0).resolves({
+    success: true,
+    data: [{ id: 'r2', action: 'general-number-set', number: '••••0303' }, { id: 'r1', action: 'connect', number: '••••0101' }],
+    pagination: { limit: 2, nextBefore: '1790000000000.6abc00000000000000000001' }
+  })
+  call.onCall(1).resolves({ success: true, data: [], pagination: { limit: 2, nextBefore: null } })
+  const page = await svc.listAudit({}, { limit: 2, workspaceId: 'ws1' })
+  t.equal(call.getCall(0).args[0], 'channels.listAudit')
+  t.equal(call.getCall(0).args[1], '/channels/audit?limit=2&workspaceId=ws1')
+  t.deepEqual(call.getCall(0).args[2], { raw: true })
+  t.deepEqual(page.map((r) => r.action), ['general-number-set', 'connect'])
+  t.equal(page.pagination.nextBefore, '1790000000000.6abc00000000000000000001')
+  const next = await svc.listAudit({ before: page.pagination.nextBefore, bogus: 'x' }, { limit: 2 })
+  const u = call.getCall(1).args[1]
+  const q = new URLSearchParams(u.slice(u.indexOf('?') + 1))
+  t.ok(u.startsWith('/channels/audit?'))
+  t.equal(q.get('before'), '1790000000000.6abc00000000000000000001')
+  t.equal(q.get('limit'), '2')
+  t.equal(q.get('bogus'), null, 'unknown filters are not sent')
+  t.equal(next.length, 0)
+  t.equal(next.pagination.nextBefore, null)
+  sandbox.restore()
+  t.end()
+})
+
+test('sdk.execute route: channels.audit list → listAudit (workspaceId + limit are options, before is the filter)', async t => {
+  const calls = []
+  const svc = new Proxy({}, { get: (_o, m) => (...a) => { calls.push([m, ...a]); return {} } })
+  const { createEntityDispatcher } = await import('../../EntityDispatcher.js')
+  const dispatch = createEntityDispatcher({ getService: (name) => (name === 'channels' ? svc : null) })
+  await dispatch('channels.audit', 'list', { before: 'c1', limit: 20, workspaceId: 'ws1' })
+  t.equal(calls[0][0], 'listAudit')
+  t.equal(calls[0][1].before, 'c1')
+  t.equal(calls[0][2].limit, 20)
+  t.equal(calls[0][2].workspaceId, 'ws1')
+  t.end()
+})

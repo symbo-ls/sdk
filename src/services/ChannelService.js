@@ -31,6 +31,10 @@ import { BaseService } from './BaseService.js'
 //   settings     the workspace channels settings — today the general call
 //                number (`callBridge`: configured, masked, number for an
 //                editor+); `updateSettings({ callBridgeNumber })` (editor+).
+//   listAudit    the channel-number audit trail (admin): who connected /
+//                edited / disconnected a number and who set / cleared the
+//                general number — the number masked to its last 4 digits,
+//                never a credential (rows + `pagination.nextBefore`).
 //
 // Errors: a refused call throws an Error with `status` (the HTTP status) and
 // `cause` = the server body `{ error: <code>, message, … }` — e.g. 409
@@ -55,6 +59,7 @@ const qs = (params = {}) => {
 
 const INBOX_FILTERS = ['channel', 'status', 'assignee', 'unread', 'accountId']
 const TIMELINE_FILTERS = ['partyId', 'regardingType', 'regardingId', 'channel', 'before']
+const AUDIT_FILTERS = ['before']
 
 const _rows = (response) => {
   const rows = Array.isArray(response?.data) ? response.data : []
@@ -161,6 +166,27 @@ export class ChannelService extends BaseService {
       method: 'PATCH',
       body: payload
     })
+  }
+
+  // ── audit ────────────────────────────────────────────────────────────
+
+  // GET /core/channels/audit (admin; below admin → 403) → the channel-number
+  // audit trail, newest first, with `pagination: { limit, nextBefore }`. A row:
+  // { id, action: 'connect'|'edit'|'disconnect'|'general-number-set'|
+  // 'general-number-clear', at, actor (user id), workspace, target
+  // { kind: 'channelAccount'|'workspace', id }, channels, provider, number
+  // (masked — the last 4 digits), mode, changed (an edit's field names) }.
+  // filter: { before } (a page's pagination.nextBefore); options:
+  // { limit (1–200, default 50), workspaceId }.
+  async listAudit (filter = {}, options = {}) {
+    const params = {}
+    for (const k of AUDIT_FILTERS) params[k] = filter?.[k]
+    const response = await this._call(
+      'channels.listAudit',
+      `/channels/audit${qs({ ...params, limit: options.limit, workspaceId: options.workspaceId || filter?.workspaceId })}`,
+      { raw: true }
+    )
+    return _rows(response)
   }
 
   // ── inbox + timeline ─────────────────────────────────────────────────

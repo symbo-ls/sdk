@@ -954,6 +954,13 @@ const ENTITY_ROUTES = {
     methods: { read: 'markRead' },
     argMap: { read: (a) => [a?.id, { workspaceId: a?.workspaceId }] }
   },
+  // The channel-number audit trail (admin): `fetch: [{ from: 'channels.audit',
+  // params: { limit: 50 } }]`; `before` = a page's pagination.nextBefore.
+  'channels.audit': {
+    service: 'channels',
+    methods: { list: 'listAudit' },
+    argMap: { list: argMaps.filterOptions }
+  },
 
   // ─── Phase-3 commerce (WORKSPACE_DATA_MODEL §6.2/§6.3/§6.4) ──────────────────
   // The tenant-finance spine: catalog (products + prices), the workspace's own
