@@ -521,6 +521,10 @@ export const SERVICE_METHODS = {
   // contract-vs-live-route status.
   getWorkspaceUsageByActor: 'workspace',
   createCreditTopupCheckout: 'workspace',
+  getAutoTopup: 'workspace',
+  setupAutoTopup: 'workspace',
+  pauseAutoTopup: 'workspace',
+  refreshAutoTopup: 'workspace',
   getSpendControls: 'workspace',
   updateSpendControls: 'workspace',
 

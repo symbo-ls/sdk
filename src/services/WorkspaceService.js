@@ -428,6 +428,29 @@ export class WorkspaceService extends BaseService {
 
   // ==================== SPEND CONTROLS ====================
 
+  /** Auto-top-up is workspace-scoped. Setup requires explicit recurring-charge consent. */
+  async getAutoTopup (workspaceId) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    return this._call('getAutoTopup', `/workspaces/${workspaceId}/billing/auto-topup`)
+  }
+
+  async setupAutoTopup (workspaceId, { thresholdCredits, amountCents, monthlyLimitCents, consent, returnUrl } = {}) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    return this._call('setupAutoTopup', `/workspaces/${workspaceId}/billing/auto-topup/setup`, {
+      method: 'POST', body: { thresholdCredits, amountCents, monthlyLimitCents, consent, returnUrl }
+    })
+  }
+
+  async pauseAutoTopup (workspaceId) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    return this._call('pauseAutoTopup', `/workspaces/${workspaceId}/billing/auto-topup/pause`, { method: 'POST' })
+  }
+
+  async refreshAutoTopup (workspaceId) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    return this._call('refreshAutoTopup', `/workspaces/${workspaceId}/billing/auto-topup/refresh`, { method: 'POST' })
+  }
+
   async getSpendControls (workspaceId) {
     if (!workspaceId) throw new Error('workspaceId is required')
     return this._call('getSpendControls', `/workspaces/${workspaceId}/spend-controls`)
