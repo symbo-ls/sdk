@@ -217,3 +217,36 @@ test('sdk.execute route: channels.audit list → listAudit (workspaceId + limit 
   t.equal(calls[0][2].workspaceId, 'ws1')
   t.end()
 })
+
+test('channels: browser calls — voiceToken, getCall, the stream (subscribe) and the execute routes', async t => {
+  const svc = makeService()
+  const call = sandbox.stub(svc, '_call').resolves({})
+  await svc.voiceToken({ accountId: 'a1' }, { workspaceId: 'ws1' })
+  t.deepEqual(call.getCall(0).args, ['channels.voiceToken', '/channels/voice/token?workspaceId=ws1', { method: 'POST', body: { accountId: 'a1' } }])
+  await svc.getCall('c1', { workspaceId: 'ws1' })
+  t.deepEqual(call.getCall(1).args, ['channels.getCall', '/channels/calls/c1?workspaceId=ws1'])
+
+  const sse = sandbox.stub(svc, '_sseSubscribe').returns(() => {})
+  const seen = []
+  const unsub = svc.subscribe({ workspaceId: 'ws1' }, (e) => seen.push(e))
+  t.equal(typeof unsub, 'function')
+  const [path, params, deliver, opts] = sse.getCall(0).args
+  t.equal(path, '/channels/stream')
+  t.deepEqual(params, { workspaceId: 'ws1' })
+  t.equal(opts.flatParams, true)
+  t.deepEqual(opts.events.map((e) => e.name), ['channels.open', 'channels.call'])
+  deliver(opts.events[1].frame({ id: 'c1', call: { id: 'c1' }, ring: false }))
+  t.deepEqual(seen[0], { type: 'channels.call', id: 'c1', call: { id: 'c1' }, ring: false })
+  t.throws(() => svc.subscribe({}, null), /onEvent/)
+
+  const calls = []
+  const proxy = new Proxy({}, { get: (_o, m) => (...a) => { calls.push([m, ...a]); return {} } })
+  const { createEntityDispatcher } = await import('../../EntityDispatcher.js')
+  const dispatch = createEntityDispatcher({ getService: (name) => (name === 'channels' ? proxy : null) })
+  await dispatch('channels.voice', 'token', { accountId: 'a1', workspaceId: 'ws1' })
+  t.deepEqual(calls[0], ['voiceToken', { accountId: 'a1' }, { workspaceId: 'ws1' }])
+  await dispatch('channels.calls', 'get', { id: 'c1', workspaceId: 'ws1' })
+  t.deepEqual(calls[1], ['getCall', 'c1', { workspaceId: 'ws1' }])
+  sandbox.restore()
+  t.end()
+})

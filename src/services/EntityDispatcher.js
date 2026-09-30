@@ -937,11 +937,13 @@ const ENTITY_ROUTES = {
     methods: {
       start: 'startCall',
       create: 'startCall',
+      get: 'getCall',
       outcome: 'logCallOutcome',
       update: 'logCallOutcome',
       simulate: 'simulateCall'
     },
     argMap: {
+      get: (a) => [a?.id, { workspaceId: a?.workspaceId }],
       start: (a) => [a?.payload ?? _stripWs(a), { workspaceId: a?.workspaceId }],
       create: (a) => [a?.payload ?? _stripWs(a), { workspaceId: a?.workspaceId }],
       outcome: (a) => [a?.id, a?.payload ?? _stripWs(a, ['id']), { workspaceId: a?.workspaceId }],
@@ -953,6 +955,13 @@ const ENTITY_ROUTES = {
     service: 'channels',
     methods: { read: 'markRead' },
     argMap: { read: (a) => [a?.id, { workspaceId: a?.workspaceId }] }
+  },
+  // A member's browser voice session (Twilio voice number): `sdk.execute(
+  // 'channels.voice', 'token', { accountId, workspaceId })`.
+  'channels.voice': {
+    service: 'channels',
+    methods: { token: 'voiceToken' },
+    argMap: { token: (a) => [a?.payload ?? _stripWs(a), { workspaceId: a?.workspaceId }] }
   },
   // The channel-number audit trail (admin): `fetch: [{ from: 'channels.audit',
   // params: { limit: 50 } }]`; `before` = a page's pagination.nextBefore.

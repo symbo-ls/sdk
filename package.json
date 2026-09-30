@@ -84,6 +84,7 @@
     "@symbo.ls/channels": "^3.14.675",
     "@symbo.ls/utils": "^3.14.743",
     "@symbo.ls/analyzing": "^3.14.780",
+    "@twilio/voice-sdk": "^2.18.5",
     "acorn": "^8.14.0",
     "acorn-walk": "^8.3.4",
     "chalk": "^5.4.1",

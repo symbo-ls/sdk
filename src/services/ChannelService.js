@@ -1,4 +1,5 @@
 import { BaseService } from './BaseService.js'
+import { createVoiceClient } from './voice/voiceClient.js'
 
 // ChannelService wraps the main server's /core/channels/* routes — CRM
 // communications: WhatsApp (Meta WhatsApp Cloud API) and SMS + voice (a
@@ -31,6 +32,12 @@ import { BaseService } from './BaseService.js'
 //   settings     the workspace channels settings — today the general call
 //                number (`callBridge`: configured, masked, number for an
 //                editor+); `updateSettings({ callBridgeNumber })` (editor+).
+//   browser      calls INSIDE the workspace on a Twilio Voice number:
+//                `voiceClient({ workspaceId, accountId })` — the call panel's
+//                one object (it loads the Twilio Voice JS SDK lazily for a
+//                live number; a simulated number plays the same contract);
+//                `voiceToken` (the member's browser session), `getCall`,
+//                `subscribe` (the live call stream).
 //   listAudit    the channel-number audit trail (admin): who connected /
 //                edited / disconnected a number and who set / cleared the
 //                general number — the number masked to its last 4 digits,
@@ -168,6 +175,73 @@ export class ChannelService extends BaseService {
     })
   }
 
+  // ── browser calls ────────────────────────────────────────────────────
+
+  // POST /core/channels/voice/token (editor) → this member's browser voice
+  // session on one Twilio voice number: { mode: 'simulated', accountId,
+  // identity, ttl } | { mode: 'live', accountId, identity, ttl, edge, token }
+  // (a Twilio Voice SDK token, ≤ 1 h). payload: { accountId? } — required when
+  // several browser numbers are connected (400 account_required); 409
+  // browser_calling_not_available for a number that cannot call from the browser.
+  voiceToken (payload = {}, { workspaceId } = {}) {
+    return this._call('channels.voiceToken', `/channels/voice/token${qs({ workspaceId })}`, {
+      method: 'POST',
+      body: payload
+    })
+  }
+
+  // GET /core/channels/calls/:id (member) → { call, conversation } — the re-read
+  // after a stream (re)open.
+  getCall (messageId, { workspaceId } = {}) {
+    return this._call('channels.getCall', `/channels/calls/${encodeURIComponent(messageId)}${qs({ workspaceId })}`)
+  }
+
+  // Live call stream — GET /core/channels/stream (SSE). Events (`onEvent(evt)`):
+  //   { type: 'channels.open', at } — once per connection, a reconnect
+  //       included: re-read the calls you show (getCall) — no backlog.
+  //   { type: 'channels.call', id, action, at, call, conversation, ring } —
+  //       every state of a call THIS member may read; `call` is what getCall
+  //       answers; `ring` is true only for the member an inbound call rings.
+  // filter: { workspaceId } (defaults to the SDK's active workspace).
+  // Returns unsubscribe().
+  subscribe (filter = {}, onEvent) {
+    if (typeof onEvent !== 'function') {
+      throw new Error('channels.subscribe: onEvent must be a function')
+    }
+    const f = filter && typeof filter === 'object' ? filter : {}
+    const workspaceId = f.workspaceId || this._context?.activeWorkspaceId
+    let destroyed = false
+    const deliver = (evt) => {
+      if (destroyed) return
+      try {
+        onEvent(evt)
+      } catch (_) {
+        /* listener errors don't propagate into the stream */
+      }
+    }
+    const unsub = this._sseSubscribe('/channels/stream', { workspaceId }, deliver, {
+      flatParams: true,
+      events: [
+        { name: 'channels.open', frame: (data) => ({ type: 'channels.open', ...data }) },
+        { name: 'channels.call', frame: (data) => ({ type: 'channels.call', ...data }) }
+      ]
+    })
+    return () => {
+      destroyed = true
+      unsub()
+    }
+  }
+
+  // The browser call panel's one object — see services/voice/voiceClient.js.
+  // options: { workspaceId, accountId?, deviceOptions? }.
+  voiceClient (options = {}) {
+    return createVoiceClient({
+      ...options,
+      workspaceId: options.workspaceId || this._context?.activeWorkspaceId,
+      channels: this
+    })
+  }
+
   // ── audit ────────────────────────────────────────────────────────────
 
   // GET /core/channels/audit (admin; below admin → 403) → the channel-number
@@ -242,8 +316,10 @@ export class ChannelService extends BaseService {
     })
   }
 
-  // POST /core/channels/calls (editor) → { call, conversation, dial? } — click-to-call.
-  // payload: { channel?: 'phone' | 'whatsapp', via?: 'provider' | 'device', accountId?,
+  // POST /core/channels/calls (editor) → { call, conversation, dial?, connect? } — click-to-call.
+  // `via: 'browser'` (a Twilio voice number, phone only) answers `connect: { params:
+  // { callId } }` for the Voice SDK Device — use voiceClient(), which does all of it.
+  // payload: { channel?: 'phone' | 'whatsapp', via?: 'provider' | 'device' | 'browser', accountId?,
   // conversationId? | partyId? (+ to), regarding?, memberPhone? }. `dial` ({ kind:
   // 'tel' | 'whatsapp', href }) answers a device call. Errors: 400 member_phone_required
   // (no request / own / general number), 409 whatsapp_calling_not_available (a live

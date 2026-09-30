@@ -50,6 +50,11 @@ const result = await build({
   target: 'es2022',
   minify: true,
   define: { global: 'globalThis' },
+  // The Twilio Voice JS SDK stays OUT of the IIFE: voiceClient loads it with a
+  // dynamic import only when a live browser voice session starts (an ESM
+  // consumer's bundler code-splits it; an IIFE host that never starts one
+  // never needs it).
+  external: ['@twilio/voice-sdk'],
   legalComments: 'none',
   logLevel: 'warning',
   metafile: true,
