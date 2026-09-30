@@ -226,16 +226,25 @@ test('no mail entity is registered for a route the server does not serve yet', a
   // registered the §5.7 routes; mail.threads + mail.messages when
   // MAIL-SERVER-THREAD-READ-ROUTES-1 registered the §5.2/§5.6 reads;
   // mail.tenant + mail.shared when MAIL-SERVER-TENANT-SHARED-ROUTES-1
-  // registered the §3.5 admin tenant/shared surface.
-  const present = ['mail.setup', 'mail.accounts', 'mail.admin', 'mail.drafts', 'mail.outbox', 'mail.threads', 'mail.messages', 'mail.tenant', 'mail.shared']
+  // registered the §3.5 admin tenant/shared surface; mail.crm when the server
+  // registered GET /crm/timeline + POST /crm/send (server 4c3cf498, docs/MAIL.md
+  // "Mail in the CRM").
+  const present = ['mail.setup', 'mail.accounts', 'mail.admin', 'mail.drafts', 'mail.outbox', 'mail.threads', 'mail.messages', 'mail.tenant', 'mail.shared', 'mail.crm']
   for (const entity of present) {
     t.equal(execute.getRoute(entity)?.service, 'mail', `${entity} routes to the mail service`)
   }
   const accountOps = Object.keys(execute.getRoute('mail.accounts').methods)
+  // `simulate` joined when the server registered POST /accounts/:id/simulate
+  // (server 4c3cf498 — mail arriving in a SIMULATED mailbox, demo only).
   t.deepEqual(
     accountOps,
-    ['list', 'get', 'update', 'remove', 'connect', 'reconnect', 'sync'],
-    'mail.accounts: the CRUD reads/writes plus the personal OAuth connect / reconnect / sync-now'
+    ['list', 'get', 'update', 'remove', 'connect', 'reconnect', 'sync', 'simulate'],
+    'mail.accounts: the CRUD reads/writes, the personal OAuth connect / reconnect / sync-now, and the simulated-mailbox inbound leg'
+  )
+  t.deepEqual(
+    Object.keys(execute.getRoute('mail.crm').methods),
+    ['timeline', 'send'],
+    'mail.crm: the CRM record timeline + send-from-record — the two routes the server registers'
   )
   t.notOk(accountOps.includes('create'), 'mail.accounts has no create op — an account is born from the OAuth connect flow (connect answers the authorize URL, the public callback creates the row)')
   t.end()
