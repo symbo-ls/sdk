@@ -37,6 +37,22 @@ test('parties.list threads kind/role/owner/q + includeArchived flag', async t =>
   t.end()
 })
 
+// The CRM contacts list sends member=exclude: staff (member-linked parties)
+// never show as contacts. The server refuses any other non-blank value.
+test('parties.list threads member (exclude | only); none sends no term', async t => {
+  t.plan(3)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves([])
+  await svc.list({ member: 'exclude', kind: 'person' })
+  t.ok(stub.firstCall.args[1].includes('member=exclude'), 'member=exclude threaded')
+  await svc.list({ member: 'only' })
+  t.equal(stub.secondCall.args[1], '/parties?member=only', 'member=only threaded')
+  await svc.list({ kind: 'person' })
+  t.notOk(stub.thirdCall.args[1].includes('member'), 'no member term when not asked')
+  sandbox.restore()
+  t.end()
+})
+
 test('parties.get GETs /parties/:id encoded', async t => {
   t.plan(2)
   const svc = makeService()

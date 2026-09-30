@@ -25,13 +25,17 @@ const _qs = (workspaceId, extra) => {
 }
 
 export class PartyService extends BaseService {
-  // GET /core/parties?kind=&role=&owner=&q=&includeArchived=
+  // GET /core/parties?kind=&role=&owner=&q=&includeArchived=&member=
+  // `member`: 'exclude' leaves staff (member-linked parties) out — the CRM
+  // contacts list; 'only' lists staff alone. The server refuses any other
+  // value (400), it never ignores one.
   list (filter = {}, options = {}) {
     const extra = {}
     if (filter.kind) extra.kind = filter.kind
     if (filter.role) extra.role = filter.role
     if (filter.owner) extra.owner = filter.owner
     if (filter.q) extra.q = filter.q
+    if (filter.member) extra.member = filter.member
     if (filter.includeArchived || options.includeArchived) extra.includeArchived = 'true'
     const ws = filter.workspaceId || options.workspaceId
     return this._call('parties.list', `/parties${_qs(ws, extra)}`)
