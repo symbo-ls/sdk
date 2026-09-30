@@ -144,3 +144,35 @@ test('sdk.execute routes: channels.accounts / .inbox / .timeline / .messages / .
   t.deepEqual(calls[13], ['markRead', 'c1', { workspaceId: 'ws1' }])
   t.end()
 })
+
+test('channels: workspace settings (the general call number) + the call options', async t => {
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({})
+  await svc.getSettings({ workspaceId: 'ws1' })
+  t.equal(stub.getCall(0).args[0], 'channels.getSettings')
+  t.equal(stub.getCall(0).args[1], '/channels/settings?workspaceId=ws1')
+  await svc.updateSettings({ callBridgeNumber: '+995322000303' }, { workspaceId: 'ws1' })
+  t.equal(stub.getCall(1).args[0], 'channels.updateSettings')
+  t.deepEqual(stub.getCall(1).args.slice(1), [
+    '/channels/settings?workspaceId=ws1',
+    { method: 'PATCH', body: { callBridgeNumber: '+995322000303' } }
+  ])
+  await svc.startCall({ channel: 'whatsapp', via: 'device', partyId: 'p1' }, { workspaceId: 'ws1' })
+  t.deepEqual(stub.getCall(2).args[2], { method: 'POST', body: { channel: 'whatsapp', via: 'device', partyId: 'p1' } })
+  await svc.logCallOutcome('m1', { status: 'completed', durationSec: 95, outcome: 'interested' })
+  t.deepEqual(stub.getCall(3).args[2], { method: 'PATCH', body: { status: 'completed', durationSec: 95, outcome: 'interested' } })
+  sandbox.restore()
+  t.end()
+})
+
+test('sdk.execute routes: channels.settings get / update', async t => {
+  const calls = []
+  const svc = new Proxy({}, { get: (_o, m) => (...a) => { calls.push([m, ...a]); return {} } })
+  const { createEntityDispatcher } = await import('../../EntityDispatcher.js')
+  const dispatch = createEntityDispatcher({ getService: (name) => (name === 'channels' ? svc : null) })
+  await dispatch('channels.settings', 'get', { workspaceId: 'ws1' })
+  t.deepEqual(calls[0], ['getSettings', { workspaceId: 'ws1' }])
+  await dispatch('channels.settings', 'update', { callBridgeNumber: '+995322000303', workspaceId: 'ws1' })
+  t.deepEqual(calls[1], ['updateSettings', { callBridgeNumber: '+995322000303' }, { workspaceId: 'ws1' }], 'workspaceId never rides the body')
+  t.end()
+})

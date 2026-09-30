@@ -18,9 +18,19 @@ import { BaseService } from './BaseService.js'
 //                calls (rows + `pagination.nextBefore`).
 //   send         WhatsApp (session text inside the 24 h window, a template
 //                outside it) or SMS, from a record or a thread (editor).
-//   startCall    click-to-call: the member's phone rings first, then the
-//                client is bridged; `logCallOutcome` writes the member's
-//                outcome + note onto the call's CRM interaction.
+//   startCall    click-to-call — `channel`: 'phone' | 'whatsapp' (the
+//                WhatsApp chat's own thread); `via`: 'provider' (the
+//                provider rings a member leg first — the request's
+//                memberPhone, else the member's own phone, else the
+//                workspace GENERAL call number — then bridges the client) |
+//                'device' (the member dials from their own device: the answer
+//                carries `dial.href`, tel: or https://wa.me/…).
+//                `logCallOutcome` writes the member's outcome + note onto the
+//                call's CRM interaction; a DEVICE call's result (status +
+//                durationSec) goes the same way.
+//   settings     the workspace channels settings — today the general call
+//                number (`callBridge`: configured, masked, number for an
+//                editor+); `updateSettings({ callBridgeNumber })` (editor+).
 //
 // Errors: a refused call throws an Error with `status` (the HTTP status) and
 // `cause` = the server body `{ error: <code>, message, … }` — e.g. 409
@@ -136,6 +146,23 @@ export class ChannelService extends BaseService {
     )
   }
 
+  // ── workspace channels settings ──────────────────────────────────────
+
+  // GET /core/channels/settings (member) → { callBridge: { configured,
+  // masked, number (editor+ only, else null), updatedAt } }.
+  getSettings ({ workspaceId } = {}) {
+    return this._call('channels.getSettings', `/channels/settings${qs({ workspaceId })}`)
+  }
+
+  // PATCH /core/channels/settings (editor) — { callBridgeNumber: '+995…' | null }.
+  // 400 invalid_phone for a number that is not a phone number.
+  updateSettings (payload = {}, { workspaceId } = {}) {
+    return this._call('channels.updateSettings', `/channels/settings${qs({ workspaceId })}`, {
+      method: 'PATCH',
+      body: payload
+    })
+  }
+
   // ── inbox + timeline ─────────────────────────────────────────────────
 
   // GET /core/channels/inbox → threads (unread first) with `pagination`.
@@ -189,8 +216,12 @@ export class ChannelService extends BaseService {
     })
   }
 
-  // POST /core/channels/calls (editor) → { call, conversation } — click-to-call.
-  // payload: { accountId?, conversationId? | partyId? (+ to), regarding?, memberPhone? }.
+  // POST /core/channels/calls (editor) → { call, conversation, dial? } — click-to-call.
+  // payload: { channel?: 'phone' | 'whatsapp', via?: 'provider' | 'device', accountId?,
+  // conversationId? | partyId? (+ to), regarding?, memberPhone? }. `dial` ({ kind:
+  // 'tel' | 'whatsapp', href }) answers a device call. Errors: 400 member_phone_required
+  // (no request / own / general number), 409 whatsapp_calling_not_available (a live
+  // WhatsApp number — call from the device).
   startCall (payload = {}, { workspaceId } = {}) {
     return this._call('channels.startCall', `/channels/calls${qs({ workspaceId })}`, {
       method: 'POST',
@@ -198,7 +229,10 @@ export class ChannelService extends BaseService {
     })
   }
 
-  // PATCH /core/channels/calls/:messageId → the call row; { outcome?, note? }.
+  // PATCH /core/channels/calls/:messageId → the call row; { outcome?, note? } — and
+  // for a DEVICE call its result: { status: 'completed' | 'no_answer' | 'busy' |
+  // 'canceled' | 'failed', durationSec? }. 400 call_status_from_provider on a provider
+  // call; 409 call_finished when the call already ended with another result.
   logCallOutcome (messageId, payload = {}, { workspaceId } = {}) {
     return this._call('channels.logCallOutcome', `/channels/calls/${encodeURIComponent(messageId)}${qs({ workspaceId })}`, {
       method: 'PATCH',

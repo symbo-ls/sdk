@@ -902,6 +902,14 @@ const ENTITY_ROUTES = {
       simulate: (a) => [a?.id ?? a?.accountId, a?.payload ?? _stripWs(a, ['id', 'accountId']), { workspaceId: a?.workspaceId }]
     }
   },
+  'channels.settings': {
+    service: 'channels',
+    methods: { get: 'getSettings', update: 'updateSettings' },
+    argMap: {
+      get: (a) => [{ workspaceId: a?.workspaceId }],
+      update: (a) => [a?.payload ?? _stripWs(a), { workspaceId: a?.workspaceId }]
+    }
+  },
   'channels.inbox': {
     service: 'channels',
     methods: { list: 'inbox' },
