@@ -872,6 +872,77 @@ const ENTITY_ROUTES = {
     }
   },
 
+  // ─── CRM communications (/core/channels) ────────────────────────────────────
+  // WhatsApp (Meta Cloud API) + SMS / voice (a Georgian operator) numbers, the
+  // inbox, the one timeline, send, click-to-call — each number may be
+  // SIMULATED. Declarative `fetch: [{ from: 'channels.inbox', params:
+  // { assignee: 'me' } }]`; imperative `sdk.execute('channels.messages',
+  // 'send', { channel, partyId, text, workspaceId })`. workspaceId is a
+  // ROUTING param (the trailing options), never body.
+  'channels.accounts': {
+    service: 'channels',
+    methods: {
+      list: 'listAccounts',
+      get: 'getAccount',
+      create: 'createAccount',
+      update: 'updateAccount',
+      remove: 'disconnectAccount',
+      disconnect: 'disconnectAccount',
+      rotateVerifyToken: 'rotateVerifyToken',
+      templates: 'listTemplates',
+      syncTemplates: 'syncTemplates',
+      simulate: 'simulate'
+    },
+    argMap: {
+      ...WS_CRUD_ARG_MAP,
+      disconnect: wsArgMaps.id,
+      rotateVerifyToken: (a) => [a?.id, { workspaceId: a?.workspaceId }],
+      templates: (a) => [a?.id, { workspaceId: a?.workspaceId }],
+      syncTemplates: (a) => [a?.id, { workspaceId: a?.workspaceId }],
+      simulate: (a) => [a?.id ?? a?.accountId, a?.payload ?? _stripWs(a, ['id', 'accountId']), { workspaceId: a?.workspaceId }]
+    }
+  },
+  'channels.inbox': {
+    service: 'channels',
+    methods: { list: 'inbox' },
+    argMap: { list: argMaps.filterOptions }
+  },
+  'channels.timeline': {
+    service: 'channels',
+    methods: { list: 'timeline' },
+    argMap: { list: argMaps.filterOptions }
+  },
+  'channels.messages': {
+    service: 'channels',
+    methods: { send: 'send', create: 'send' },
+    argMap: {
+      send: (a) => [a?.payload ?? _stripWs(a), { workspaceId: a?.workspaceId }],
+      create: (a) => [a?.payload ?? _stripWs(a), { workspaceId: a?.workspaceId }]
+    }
+  },
+  'channels.calls': {
+    service: 'channels',
+    methods: {
+      start: 'startCall',
+      create: 'startCall',
+      outcome: 'logCallOutcome',
+      update: 'logCallOutcome',
+      simulate: 'simulateCall'
+    },
+    argMap: {
+      start: (a) => [a?.payload ?? _stripWs(a), { workspaceId: a?.workspaceId }],
+      create: (a) => [a?.payload ?? _stripWs(a), { workspaceId: a?.workspaceId }],
+      outcome: (a) => [a?.id, a?.payload ?? _stripWs(a, ['id']), { workspaceId: a?.workspaceId }],
+      update: (a) => [a?.id, a?.payload ?? _stripWs(a, ['id']), { workspaceId: a?.workspaceId }],
+      simulate: (a) => [a?.id, a?.payload ?? _stripWs(a, ['id']), { workspaceId: a?.workspaceId }]
+    }
+  },
+  'channels.conversations': {
+    service: 'channels',
+    methods: { read: 'markRead' },
+    argMap: { read: (a) => [a?.id, { workspaceId: a?.workspaceId }] }
+  },
+
   // ─── Phase-3 commerce (WORKSPACE_DATA_MODEL §6.2/§6.3/§6.4) ──────────────────
   // The tenant-finance spine: catalog (products + prices), the workspace's own
   // company profile (singleton), agreements, invoices, transactions. Mongo-
