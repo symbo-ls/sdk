@@ -351,6 +351,19 @@ test('records POSTs the block to the workspace-scoped path with the runtime UTC 
   t.end()
 })
 
+test('records sends the UI language — the answer\'s labels come back in it (RECORDS RESULT v1.1)', async (t) => {
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({ total: 1 })
+  await svc.records({ block: CASE1, lang: 'ka' })
+  t.equal(stub.firstCall.args[2].body.lang, 'ka', 'the shell\'s language travels')
+  await svc.records({ block: CASE1, lang: '  ' })
+  t.notOk('lang' in stub.secondCall.args[2].body, 'an empty language is not sent')
+  await svc.records({ block: CASE1, lang: 42 })
+  t.notOk('lang' in stub.thirdCall.args[2].body, 'a non-string language is not sent')
+  sandbox.restore()
+  t.end()
+})
+
 test("sdk.execute('ai.boards', 'records', { workspaceId, block }) — the UI lane's call", async (t) => {
   registerEntity('ai.boards', AI_BOARDS_ENTITY_ROUTE)
   const svc = makeService()

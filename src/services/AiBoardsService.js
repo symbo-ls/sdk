@@ -282,8 +282,11 @@ export class AiBoardsService extends BaseService {
    * of a board's `records` item: `{ rows (≤ 50), total, aggregate, groups,
    * fields, period, … }`. Aggregates cover the WHOLE filtered set. Period
    * presets ("thisQuarter") resolve in the viewer's local time: the SDK sends
-   * the runtime's UTC offset unless `tzOffsetMinutes` is given.
-   * @param {{ workspaceId?: string, block: RecordsBlock, tzOffsetMinutes?: number }} args
+   * the runtime's UTC offset unless `tzOffsetMinutes` is given. `lang` — the
+   * UI language (e.g. 'ka'): the answer's labels (groups, fields, enum
+   * values) come back in it (RECORDS RESULT v1.1); without it the server
+   * reads the member's own language order.
+   * @param {{ workspaceId?: string, block: RecordsBlock, tzOffsetMinutes?: number, lang?: string }} args
    * @returns {Promise<RecordsResult>}
    */
   async records (args = {}) {
@@ -291,9 +294,10 @@ export class AiBoardsService extends BaseService {
     const tz = Number.isFinite(args.tzOffsetMinutes)
       ? args.tzOffsetMinutes
       : -new Date().getTimezoneOffset()
+    const lang = typeof args.lang === 'string' ? args.lang.trim() : ''
     return this._call('aiBoards.records', `/ai-boards/workspaces/${ws}/records`, {
       method: 'POST',
-      body: { block: args.block, tzOffsetMinutes: tz }
+      body: { block: args.block, tzOffsetMinutes: tz, ...(lang ? { lang } : {}) }
     }).catch((e) => this._boardsError(e))
   }
 
