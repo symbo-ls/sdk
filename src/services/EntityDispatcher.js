@@ -734,9 +734,13 @@ const ENTITY_ROUTES = {
       move: 'move',
       markLost: 'markLost',
       reopen: 'reopen',
-      convert: 'convert'
+      convert: 'convert',
+      // Live change stream (GET /core/leads/stream) —
+      // sdk.execute('leads', 'subscribe', { workspaceId }, cb) → unsubscribe.
+      subscribe: 'subscribe'
     },
-    argMap: CRM_ENTITY_ARG_MAP
+    // (filter, cb) — the dispatcher appends the callback for subscribe ops.
+    argMap: { ...CRM_ENTITY_ARG_MAP, subscribe: (a) => [a || {}] }
   },
   // Workspace CRM settings — sdk.execute('crm.settings', 'get' | 'update').
   // The org permission catalog — sdk.execute('crm.permissions', 'list').

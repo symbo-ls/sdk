@@ -100,6 +100,57 @@ export class LeadService extends BaseService {
       method: 'DELETE'
     })
   }
+
+  // Live change stream — GET /core/leads/stream (SSE). A lead is a server
+  // entity, not a records collection, so `records.subscribe` never covered
+  // it: without this a new lead (website form, WhatsApp, SMS, manual) reached
+  // a board only after a reload.
+  //
+  // Events (`onEvent(evt)`):
+  //   { type: 'leads.open', at }                — once per connection, a
+  //       reconnect included. RE-READ YOUR LIST on it: the stream keeps no
+  //       backlog, so a change that happened while the connection was down
+  //       arrives only through that re-read.
+  //   { type: 'leads.change', id, action, at }  — action 'create' | 'update'
+  //       (any field, a stage move, a repeat submission) | 'delete'. A
+  //       REFERENCE, never row data: re-read through `get(id)` / `list()`,
+  //       where visibility and field rules live.
+  //
+  // The server gates the stream exactly like `list`: workspace membership,
+  // and per event the lead's row visibility for THIS member — no event ever
+  // arrives for a lead `list` would hide. A member who loses sight of a lead
+  // (it is reassigned away) gets no event for that change; the next
+  // `leads.open` / list read converges.
+  //
+  // filter: { workspaceId } (defaults to the SDK's active workspace).
+  // Returns unsubscribe().
+  subscribe (filter = {}, onEvent) {
+    if (typeof onEvent !== 'function') {
+      throw new Error('leads.subscribe: onEvent must be a function')
+    }
+    const f = filter && typeof filter === 'object' ? filter : {}
+    const workspaceId = f.workspaceId || this._context?.activeWorkspaceId
+    let destroyed = false
+    const deliver = (evt) => {
+      if (destroyed) return
+      try {
+        onEvent(evt)
+      } catch (_) {
+        /* listener errors don't propagate into the stream */
+      }
+    }
+    const unsub = this._sseSubscribe('/leads/stream', { workspaceId }, deliver, {
+      flatParams: true,
+      events: [
+        { name: 'leads.open', frame: (data) => ({ type: 'leads.open', ...data }) },
+        { name: 'leads.change', frame: (data) => ({ type: 'leads.change', ...data }) }
+      ]
+    })
+    return () => {
+      destroyed = true
+      unsub()
+    }
+  }
 }
 
 export const createLeadService = config => new LeadService(config)
