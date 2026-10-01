@@ -236,3 +236,90 @@ test('(6) a simulated hang-up settles the handle on the server answer, before an
   vc.stop()
   t.end()
 })
+
+test('(7) a microphone refusal is err.code microphone_denied (Twilio 31208 / 31401 / 31402, NotAllowedError); the original rides err.cause; any other connect failure is call_not_connected', async t => {
+  const cases = [
+    [Object.assign(new Error('UserMediaDenied'), { code: 31208 }), 'microphone_denied'],
+    [Object.assign(new Error('Permission denied'), { code: 31401 }), 'microphone_denied'],
+    [Object.assign(new Error('Acquisition failed'), { code: 31402 }), 'microphone_denied'],
+    [Object.assign(new Error('Permission denied by user'), { name: 'NotAllowedError' }), 'microphone_denied'],
+    [Object.assign(new Error('wrapped'), { code: 31400, originalError: { name: 'NotAllowedError' } }), 'microphone_denied'],
+    [Object.assign(new Error('Signaling failed'), { code: 31005 }), 'call_not_connected']
+  ]
+  for (const [raw, want] of cases) {
+    const channels = fakeChannels({ mode: 'live' })
+    class Device {
+      on () {}
+      async register () {}
+      updateToken () {}
+      async connect () { throw raw }
+      destroy () {}
+    }
+    const vc = createVoiceClient({ channels, workspaceId: 'ws1', loadVoiceSdk: async () => ({ Device }) })
+    await vc.start()
+    const err = await vc.call({ partyId: 'p1' }).catch((e) => e)
+    t.equal(err.code, want, `${raw.message} → ${want}`)
+    t.equal(err.cause, raw, 'the Twilio error stays on err.cause')
+    t.deepEqual(channels.log.find((l) => l[0] === 'logCallOutcome'), ['logCallOutcome', 'c1', { status: 'failed' }, { workspaceId: 'ws1' }])
+    vc.stop()
+  }
+  t.end()
+})
+
+test('(7) every voice client error carries err.code', async t => {
+  const noToken = createVoiceClient({ channels: { ...fakeChannels(), voiceToken: async () => null }, workspaceId: 'ws1' })
+  t.equal((await noToken.start().catch((e) => e)).code, 'voice_token_unavailable')
+  const noDevice = createVoiceClient({ channels: fakeChannels({ mode: 'live' }), workspaceId: 'ws1', loadVoiceSdk: async () => ({}) })
+  t.equal((await noDevice.start().catch((e) => e)).code, 'voice_sdk_unavailable')
+  const badRegister = createVoiceClient({
+    channels: fakeChannels({ mode: 'live' }),
+    workspaceId: 'ws1',
+    loadVoiceSdk: async () => ({ Device: class { on () {} async register () { throw Object.assign(new Error('token invalid'), { code: 20101 }) } destroy () {} } })
+  })
+  const e3 = await badRegister.start().catch((e) => e)
+  t.equal(e3.code, 'voice_device_unavailable')
+  t.equal(e3.cause.code, 20101)
+  const errors = []
+  const tw = fakeTwilio()
+  const vc = createVoiceClient({ channels: fakeChannels({ mode: 'live' }), workspaceId: 'ws1', loadVoiceSdk: async () => tw.module, deviceOptions: {} })
+  vc.on('error', (e) => errors.push(e))
+  await vc.start()
+  const h = await vc.call({ partyId: 'p1' })
+  tw.calls[0].fire('error', Object.assign(new Error('media'), { code: 31402 }))
+  t.equal(errors[0].code, 'microphone_denied', 'an error event carries err.code too')
+  t.ok(h)
+  for (const e of [noToken, noDevice, badRegister, vc]) e.stop()
+  t.end()
+})
+
+test('(6) a live INCOMING call cancelled by the caller before accept ends at once: incoming state + a local call frame', async t => {
+  const handlers = {}
+  class Device {
+    on (ev, fn) { handlers[ev] = fn }
+    async register () {}
+    updateToken () {}
+    destroy () {}
+  }
+  const vc = createVoiceClient({ channels: fakeChannels({ mode: 'live' }), workspaceId: 'ws1', loadVoiceSdk: async () => ({ Device }) })
+  await vc.start()
+  const incoming = []
+  const frames = []
+  vc.on('incoming', (i) => incoming.push(i))
+  vc.on('call', (f) => frames.push(f))
+  const twCall = new FakeCall()
+  twCall.customParameters = new Map([['callId', 'c7']])
+  handlers.incoming(twCall)
+  const states = []
+  incoming[0].on('state', (s) => states.push(s))
+  t.equal(incoming[0].status, 'ringing')
+  twCall.fire('cancel')
+  t.equal(incoming[0].status, 'canceled')
+  t.deepEqual(states, ['canceled'])
+  t.equal(frames.length, 1)
+  t.equal(frames[0].id, 'c7')
+  t.equal(frames[0].local, true)
+  t.equal(frames[0].call.call.status, 'canceled')
+  t.equal(frames[0].call.call.direction, 'in')
+  vc.stop()
+  t.end()
+})

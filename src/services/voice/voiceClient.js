@@ -20,7 +20,15 @@
 //
 // Events: 'open' (the stream (re)connected — re-read what you show), 'call'
 // (every frame), 'incoming' ({ callId, call, accept() → a call handle,
-// reject() }), 'error'.
+// reject(), status, on('state') — a live call the caller cancels before accept
+// ends at once: 'canceled' + a local call frame }), 'error'.
+//
+// ERRORS: every error this client throws or emits carries err.code (the
+// original on err.cause): microphone_denied, call_not_connected,
+// voice_device_unavailable, voice_device_error, call_error,
+// voice_sdk_unavailable, voice_token_unavailable, call_not_started,
+// invalid_digits, not_found — and the server's codes from the channels
+// service (ChannelService sets err.code on every refusal).
 //
 // A CALL HANDLE (call(), accept(), attach()): callId, call (the row, the
 // panel's truth), status, on('state' | 'digits' | 'hold'), and — when THIS
@@ -37,6 +45,28 @@ export const loadTwilioVoiceSdk = () => import('@twilio/voice-sdk')
 
 const TERMINAL = ['completed', 'no_answer', 'busy', 'failed', 'canceled']
 const DIGITS = /^[0-9*#wW]+$/
+
+// Every microphone refusal, whatever shape it arrives in: Twilio's codes
+// (31208 user media denied, 31401 permission denied, 31402 acquisition
+// failed) or the browser's NotAllowedError / PermissionDeniedError — also
+// when wrapped (originalError / cause).
+const MIC_CODES = [31208, 31401, 31402]
+const MIC_NAMES = ['NotAllowedError', 'PermissionDeniedError']
+export function isMicrophoneRefusal (err) {
+  for (let e = err, i = 0; e && i < 4; e = e.originalError || e.cause, i += 1) {
+    if (MIC_CODES.includes(Number(e.code)) || MIC_NAMES.includes(e.name)) return true
+  }
+  return false
+}
+
+// A Twilio / browser error → a voice error with err.code (the original on
+// err.cause): microphone_denied, else `fallback`.
+function fromTwilio (err, fallback, message) {
+  if (err && typeof err === 'object' && typeof err.code === 'string' && err.code.length && !/^\d+$/.test(err.code)) return err
+  return isMicrophoneRefusal(err)
+    ? voiceError('microphone_denied', 'the microphone was refused', err)
+    : voiceError(fallback, message, err)
+}
 
 function voiceError (code, message, cause) {
   const err = new Error(message)
@@ -101,10 +131,16 @@ export function createVoiceClient ({
   // call handle (hang-up, mute, state) — the Twilio call's in live mode, the
   // server's /simulate states in simulated mode.
   function incomingFor (callId, row, twilioCall) {
-    return {
+    const local = emitter()
+    let accepted = false
+    const inc = {
       callId,
       call: row,
+      status: 'ringing',
+      on: local.on,
+      off: local.off,
       async accept () {
+        accepted = true
         let answered = null
         if (twilioCall) twilioCall.accept()
         else answered = await channels.simulateCall(callId, { status: 'answered' }, opts)
@@ -118,6 +154,27 @@ export function createVoiceClient ({
         else await channels.simulateCall(callId, { status: 'no_answer' }, opts)
       }
     }
+    if (twilioCall) {
+      // The caller hung up before accept: end the ring at once — the
+      // incoming's own 'state' and a LOCAL call frame (local: true) for
+      // whoever follows the call by frames; the stream frame confirms.
+      twilioCall.on?.('cancel', () => {
+        if (accepted || inc.status !== 'ringing') return
+        inc.status = 'canceled'
+        local.emit('state', 'canceled')
+        if (callId) {
+          events.emit('call', {
+            type: 'channels.call',
+            id: callId,
+            local: true,
+            call: { ...(row || { id: callId }), call: { ...((row && row.call) || {}), direction: 'in', status: 'canceled' } },
+            conversation: null,
+            ring: false
+          })
+        }
+      })
+    }
+    return inc
   }
 
   // `twilioCall` = the Twilio Voice SDK call when THIS tab carries the audio
@@ -196,7 +253,7 @@ export function createVoiceClient ({
       // The other side hung up, or the network dropped: settle now.
       twilioCall.on?.('disconnect', () => h._settle(endedStatus()))
       twilioCall.on?.('cancel', () => h._settle('canceled'))
-      twilioCall.on?.('error', (err) => events.emit('error', err))
+      twilioCall.on?.('error', (err) => events.emit('error', fromTwilio(err, 'call_error', 'the call reported an error')))
     }
     return h
   }
@@ -247,7 +304,7 @@ export function createVoiceClient ({
         const Device = sdk?.Device || sdk?.default?.Device
         if (!Device) throw voiceError('voice_sdk_unavailable', 'the Twilio Voice SDK has no Device')
         device = new Device(t.token, { edge: t.edge, ...deviceOptions })
-        device.on('error', (err) => events.emit('error', err))
+        device.on('error', (err) => events.emit('error', fromTwilio(err, 'voice_device_error', 'the voice device reported an error')))
         device.on('tokenWillExpire', async () => {
           try {
             const next = await mintSession()
@@ -261,7 +318,11 @@ export function createVoiceClient ({
           if (callId) incomingSeen.add(callId)
           events.emit('incoming', incomingFor(callId, null, twilioCall))
         })
-        await device.register()
+        try {
+          await device.register()
+        } catch (err) {
+          throw fromTwilio(err, 'voice_device_unavailable', 'the voice device could not register')
+        }
       }
       return describe()
     },
@@ -294,7 +355,7 @@ export function createVoiceClient ({
         twilioCall = await device.connect({ params: started.connect?.params || { callId: row.id } })
       } catch (err) {
         await channels.logCallOutcome(row.id, { status: 'failed' }, opts).catch(() => {})
-        throw err
+        throw fromTwilio(err, 'call_not_connected', 'the call could not connect')
       }
       const h = makeHandle(row, twilioCall)
       handles.set(row.id, h)

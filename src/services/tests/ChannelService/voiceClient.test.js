@@ -138,7 +138,7 @@ function fakeTwilio ({ connectThrows = false } = {}) {
     async register () { this.registered += 1 }
     updateToken (token) { this.token = token }
     async connect ({ params }) {
-      if (connectThrows) throw new Error('microphone denied')
+      if (connectThrows) throw Object.assign(new Error('Permission denied'), { name: 'NotAllowedError' })
       const c = new FakeCall(params)
       this.calls.push(c)
       return c
@@ -212,7 +212,8 @@ test('voiceClient, live: a Device that cannot connect closes the row it opened',
     await vc.call({ partyId: 'p1' })
     t.fail('the call should reject')
   } catch (err) {
-    t.match(err.message, /microphone/)
+    t.equal(err.code, 'microphone_denied')
+    t.equal(err.cause.name, 'NotAllowedError', 'the browser error rides err.cause')
   }
   t.deepEqual(channels.log.find((l) => l[0] === 'logCallOutcome'), ['logCallOutcome', 'c1', { status: 'failed' }, { workspaceId: 'ws1' }])
   vc.stop()
