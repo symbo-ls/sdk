@@ -221,3 +221,18 @@ test('ChannelService.hangupCall POSTs /channels/calls/:id/hangup; sdk.execute ch
   sinon.restore()
   t.end()
 })
+
+test('(6) a simulated hang-up settles the handle on the server answer, before any stream frame', async t => {
+  const channels = fakeChannels()
+  const vc = createVoiceClient({ channels, workspaceId: 'ws1' })
+  await vc.start()
+  const h = await vc.call({ partyId: 'p1' })
+  h._update({ id: 'c1', call: { status: 'answered', direction: 'out' } })
+  const states = []
+  h.on('state', (s) => states.push(s))
+  await h.hangup()
+  t.equal(h.status, 'completed')
+  t.deepEqual(states, ['completed'])
+  vc.stop()
+  t.end()
+})

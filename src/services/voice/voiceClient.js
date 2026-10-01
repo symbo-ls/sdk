@@ -152,7 +152,9 @@ export function createVoiceClient ({
           h._settle(status)
           return
         }
-        await channels.simulateCall(h.callId, { status: endedStatus() }, opts)
+        // Simulated: the server's answer is the end — settle on it now.
+        const r = await channels.simulateCall(h.callId, { status: endedStatus() }, opts)
+        if (r?.call) h._update(r)
       },
       _update (call) {
         h.call = call
