@@ -938,12 +938,14 @@ const ENTITY_ROUTES = {
       start: 'startCall',
       create: 'startCall',
       get: 'getCall',
+      hangup: 'hangupCall',
       outcome: 'logCallOutcome',
       update: 'logCallOutcome',
       simulate: 'simulateCall'
     },
     argMap: {
       get: (a) => [a?.id, { workspaceId: a?.workspaceId }],
+      hangup: (a) => [a?.id, { workspaceId: a?.workspaceId }],
       start: (a) => [a?.payload ?? _stripWs(a), { workspaceId: a?.workspaceId }],
       create: (a) => [a?.payload ?? _stripWs(a), { workspaceId: a?.workspaceId }],
       outcome: (a) => [a?.id, a?.payload ?? _stripWs(a, ['id']), { workspaceId: a?.workspaceId }],

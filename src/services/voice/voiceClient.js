@@ -21,12 +21,22 @@
 // Events: 'open' (the stream (re)connected — re-read what you show), 'call'
 // (every frame), 'incoming' ({ callId, call, accept() → a call handle,
 // reject() }), 'error'.
+//
+// A CALL HANDLE (call(), accept(), attach()): callId, call (the row, the
+// panel's truth), status, on('state' | 'digits' | 'hold'), and — when THIS
+// tab carries the call's audio — mute(on) / isMuted(), sendDigits(keys)
+// (0-9 * # w), hold(on) / isHeld() (simulated always; live only when the
+// server reports capabilities.hold). hangup() settles the handle at once (a
+// terminal 'state': completed when answered, else canceled); the stream frame
+// confirms. attach(callId) follows a call started elsewhere: no audio here
+// (media 'none' — no mute / keypad / hold), hang-up through the server.
 
 // The ONE place the Twilio Voice JS SDK is loaded — a literal specifier, so a
 // bundler code-splits it and loads it only when a live voice session starts.
 export const loadTwilioVoiceSdk = () => import('@twilio/voice-sdk')
 
 const TERMINAL = ['completed', 'no_answer', 'busy', 'failed', 'canceled']
+const DIGITS = /^[0-9*#wW]+$/
 
 function voiceError (code, message, cause) {
   const err = new Error(message)
@@ -110,29 +120,39 @@ export function createVoiceClient ({
     }
   }
 
-  function makeHandle (row, twilioCall) {
+  // `twilioCall` = the Twilio Voice SDK call when THIS tab carries the audio
+  // (live); null for a simulated call; `attached` = followed only (no audio).
+  function makeHandle (row, twilioCall, { attached = false } = {}) {
     const local = emitter()
     let muted = false
+    let held = false
+    let digits = ''
+    const live = !!twilioCall
+    const endedStatus = () => (h._status === 'answered' ? 'completed' : 'canceled')
     const h = {
       callId: row.id,
       call: row,
+      attached,
+      media: attached ? 'none' : live ? 'live' : 'simulated',
       _status: row.call?.status || 'initiated',
       get status () { return h._status },
+      get digits () { return digits },
       on: local.on,
       off: local.off,
-      isMuted: () => (twilioCall ? !!twilioCall.isMuted?.() : muted),
-      mute (on) {
-        if (twilioCall) twilioCall.mute?.(!!on)
-        else muted = !!on
-      },
       async hangup () {
-        if (twilioCall) {
-          twilioCall.disconnect?.()
+        if (attached) {
+          const r = await channels.hangupCall(h.callId, opts)
+          if (r?.call) h._update(r.call)
           return
         }
         if (TERMINAL.includes(h._status)) return
-        const status = h._status === 'answered' ? 'completed' : 'canceled'
-        await channels.simulateCall(h.callId, { status }, opts)
+        if (live) {
+          const status = endedStatus()
+          twilioCall.disconnect?.()
+          h._settle(status)
+          return
+        }
+        await channels.simulateCall(h.callId, { status: endedStatus() }, opts)
       },
       _update (call) {
         h.call = call
@@ -141,9 +161,52 @@ export function createVoiceClient ({
           h._status = next
           local.emit('state', next)
         }
+      },
+      // A local terminal state (the stream frame confirms it later).
+      _settle (status) {
+        if (TERMINAL.includes(h._status)) return
+        h._update({ ...(h.call || { id: h.callId }), call: { ...((h.call && h.call.call) || {}), status } })
       }
     }
+    if (attached) return h
+    h.isMuted = () => (live ? !!twilioCall.isMuted?.() : muted)
+    h.mute = (on) => {
+      if (live) twilioCall.mute?.(!!on)
+      else muted = !!on
+    }
+    h.sendDigits = (keys) => {
+      const k = String(keys ?? '')
+      if (!DIGITS.test(k)) throw voiceError('invalid_digits', 'digits are 0-9, *, # and w (a pause)')
+      if (live) twilioCall.sendDigits?.(k)
+      digits += k
+      local.emit('digits', k)
+    }
+    if (!live || session?.capabilities?.hold === true) {
+      h.isHeld = () => held
+      h.hold = async (on) => {
+        const next = !!on
+        if (live) await channels.holdCall(h.callId, { on: next }, opts)
+        held = next
+        local.emit('hold', next)
+      }
+    }
+    if (live) {
+      // The other side hung up, or the network dropped: settle now.
+      twilioCall.on?.('disconnect', () => h._settle(endedStatus()))
+      twilioCall.on?.('cancel', () => h._settle('canceled'))
+      twilioCall.on?.('error', (err) => events.emit('error', err))
+    }
     return h
+  }
+
+  function describe () {
+    return {
+      mode: session.mode,
+      identity: session.identity,
+      accountId: session.accountId,
+      accountIds: [...session.accountIds],
+      capabilities: { ...session.capabilities }
+    }
   }
 
   async function mintSession () {
@@ -155,13 +218,22 @@ export function createVoiceClient ({
   return {
     get mode () { return session?.mode ?? null },
     get identity () { return session?.identity ?? null },
+    // Every number this session calls from and rings on (one Twilio account).
+    get accountIds () { return session?.accountIds ? [...session.accountIds] : [] },
     on: events.on,
     off: events.off,
 
     async start () {
-      if (session) return { mode: session.mode, identity: session.identity, accountId: session.accountId }
+      if (session) return describe()
       const t = await mintSession()
-      session = { mode: t.mode, identity: t.identity, accountId: t.accountId, edge: t.edge }
+      session = {
+        mode: t.mode,
+        identity: t.identity,
+        accountId: t.accountId,
+        accountIds: Array.isArray(t.accountIds) && t.accountIds.length ? [...t.accountIds] : t.accountId ? [t.accountId] : [],
+        edge: t.edge,
+        capabilities: t.capabilities || {}
+      }
       unsubscribe = channels.subscribe({ workspaceId }, onFrame)
       if (t.mode === 'live') {
         let sdk
@@ -189,16 +261,19 @@ export function createVoiceClient ({
         })
         await device.register()
       }
-      return { mode: session.mode, identity: session.identity, accountId: session.accountId }
+      return describe()
     },
 
-    // A call from the browser to a contact: { partyId | conversationId, to?, regarding? }.
-    async call ({ partyId, conversationId, to, regarding } = {}) {
+    // A call from the browser to a contact: { partyId | conversationId, to?,
+    // regarding?, accountId? } — accountId = the number to call from (one of
+    // accountIds); the session's default number when omitted.
+    async call ({ partyId, conversationId, to, regarding, accountId: from } = {}) {
       if (!session) await this.start()
+      const number = from || session.accountId || accountId
       const payload = {
         via: 'browser',
         channel: 'phone',
-        ...(session.accountId || accountId ? { accountId: session.accountId || accountId } : {}),
+        ...(number ? { accountId: number } : {}),
         ...(partyId ? { partyId } : {}),
         ...(conversationId ? { conversationId } : {}),
         ...(to ? { to } : {}),
@@ -220,6 +295,18 @@ export function createVoiceClient ({
         throw err
       }
       const h = makeHandle(row, twilioCall)
+      handles.set(row.id, h)
+      return h
+    },
+
+    // Follow a call started elsewhere (another tab, an adopted call): the row
+    // now, the stream after; no audio in this tab; hang-up through the server.
+    async attach (callId) {
+      if (!session) await this.start()
+      const r = await channels.getCall(callId, opts)
+      const row = r?.call || (r?.id ? r : null)
+      if (!row?.id) throw voiceError('not_found', 'call not found')
+      const h = makeHandle(row, null, { attached: true })
       handles.set(row.id, h)
       return h
     },

@@ -43,8 +43,9 @@ import { createVoiceClient } from './voice/voiceClient.js'
 //                general number — the number masked to its last 4 digits,
 //                never a credential (rows + `pagination.nextBefore`).
 //
-// Errors: a refused call throws an Error with `status` (the HTTP status) and
-// `cause` = the server body `{ error: <code>, message, … }` — e.g. 409
+// Errors: a refused call throws an Error with `code` (THE field to read: the
+// server's machine code, or http_<status> when the server sent none), `status`
+// (the HTTP status) and `cause` = the server body `{ error: <code>, message, … }` — e.g. 409
 // `template_required` (+ `windowOpenUntil`), 429 `channel_rate_limited`
 // (+ `retryAfterMs`), 400 `account_required` / `member_phone_required`.
 // The messages of ONE thread: sdk.getService('conversations').listMessages(id).
@@ -74,7 +75,25 @@ const _rows = (response) => {
   return rows
 }
 
+// Every refusal carries ONE field to read: err.code (contract v3).
+function withCode (err) {
+  if (err && typeof err === 'object' && !err.code) {
+    const server = err.cause && typeof err.cause.error === 'string' ? err.cause.error : null
+    if (server) err.code = server
+    else if (err.status) err.code = `http_${err.status}`
+  }
+  return err
+}
+
 export class ChannelService extends BaseService {
+  async _call (methodName, endpoint, options) {
+    try {
+      return await super._call(methodName, endpoint, options)
+    } catch (err) {
+      throw withCode(err)
+    }
+  }
+
   // ── accounts ─────────────────────────────────────────────────────────
 
   // GET /core/channels/accounts — filter: { channel: 'whatsapp'|'sms'|'voice', status }.
@@ -230,6 +249,18 @@ export class ChannelService extends BaseService {
       destroyed = true
       unsub()
     }
+  }
+
+  // POST /core/channels/calls/:id/hangup (editor; the member who started it,
+  // the member it rang, or an admin) → { call } — ends a call from anywhere: a
+  // live Twilio call through Twilio, a call that never connected as canceled,
+  // a simulated one at once. The stream frame confirms the end.
+  hangupCall (messageId, { workspaceId } = {}) {
+    return this._call(
+      'channels.hangupCall',
+      `/channels/calls/${encodeURIComponent(messageId)}/hangup${qs({ workspaceId })}`,
+      { method: 'POST', body: {} }
+    )
   }
 
   // The browser call panel's one object — see services/voice/voiceClient.js.

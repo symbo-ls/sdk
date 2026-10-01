@@ -59,7 +59,7 @@ test('voiceClient, simulated: no Twilio loaded; a call rings, answers and hangs 
   let loaded = 0
   const vc = createVoiceClient({ channels, workspaceId: 'ws1', accountId: 'a1', loadVoiceSdk: async () => { loaded += 1; return {} } })
   const ready = await vc.start()
-  t.deepEqual(ready, { mode: 'simulated', identity: 'wsW_uU', accountId: 'a1' })
+  t.deepEqual(ready, { mode: 'simulated', identity: 'wsW_uU', accountId: 'a1', accountIds: ['a1'], capabilities: {} })
   t.equal(loaded, 0, 'a simulated number never loads the Twilio SDK')
   t.deepEqual(channels.log.find((l) => l[0] === 'subscribe'), ['subscribe', { workspaceId: 'ws1' }])
 
