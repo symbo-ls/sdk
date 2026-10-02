@@ -619,11 +619,9 @@ export class AiService extends BaseService {
     // Plane fingerprint — see `_fnv1aHex` above. Included in the cache key
     // so an id minted against one API base can never be retrieved (or
     // overwritten) by a different one for the same workspace/project.
-    const plane = this._planeTag()
-    let base, cacheKey
+    let base
     if (projectId) {
       base = `${this._apiUrl}/core/agents/projects/${encodeURIComponent(projectId)}/conversations`
-      cacheKey = `symbols_ai_conversation_project_${projectId}_${plane}`
     } else {
       const wsId = this._activeWorkspaceId()
       if (!wsId) {
@@ -631,8 +629,8 @@ export class AiService extends BaseService {
         return () => {}
       }
       base = `${this._apiUrl}/core/agents/workspaces/${encodeURIComponent(wsId)}/conversations`
-      cacheKey = `symbols_ai_conversation_${wsId}_${plane}`
     }
+    const cacheKey = this._conversationCacheKey({ projectId })
 
     let answered = false
     let cancelled = false
@@ -1459,11 +1457,19 @@ export class AiService extends BaseService {
   }
 
   // Soft-archive a thread for the current member (keeps the conversation).
+  // The server answers a deleted thread with 404 on every read and turn path,
+  // so the cached last-used id is dropped when it IS this thread — the next
+  // turn without an explicit thread then starts a fresh one instead of
+  // failing on the deleted id first.
   async deleteConversation(conversationId, opts = {}) {
     await this._requestExternal(
       `${this._conversationBase(opts)}/${encodeURIComponent(conversationId)}`,
       { method: 'DELETE', methodName: 'ai.deleteConversation' }
     )
+    try {
+      const key = this._conversationCacheKey(opts)
+      if (key && this._readStorage(key) === String(conversationId)) this._clearStorage(key)
+    } catch (_) {}
     return true
   }
 
@@ -1514,6 +1520,18 @@ export class AiService extends BaseService {
   // BaseService._readActiveWorkspaceStorage for the precedence rationale).
   _activeWorkspaceId(explicit) {
     return this._resolveWorkspaceId(explicit, { fallbackToStorage: true })
+  }
+
+  // The localStorage key of the cached last-used conversation for the active
+  // scope — project when in scope, else the active workspace — folded with the
+  // API plane fingerprint (see `_planeTag`). ONE place for the turn
+  // (`_streamWorkspaceTurn`) and `deleteConversation`. null without a scope.
+  _conversationCacheKey(opts = {}) {
+    const plane = this._planeTag()
+    const projectId = opts?.projectId || this._context?.activeProjectId
+    if (projectId) return `symbols_ai_conversation_project_${projectId}_${plane}`
+    const wsId = this._activeWorkspaceId(opts?.workspaceId)
+    return wsId ? `symbols_ai_conversation_${wsId}_${plane}` : null
   }
 
   // Short fingerprint of the API plane (base URL) this instance is bound
