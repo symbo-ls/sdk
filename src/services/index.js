@@ -129,6 +129,9 @@ import { BuildsService } from './BuildsService.js'
 // "storefront catalog read API", NAT-V1-25..30) — peer to ProductService but
 // with NO workspace-membership identity (anonymous shoppers).
 import { StorefrontService } from './StorefrontService.js'
+// Generic opt-in ANONYMOUS records surface (/core/public/*) — list / get /
+// submit / vote on collections whose owner set RecordCollection.public.
+import { PublicCollectionService } from './PublicCollectionService.js'
 // Persona sessions — role simulation ("view as <role>"), never per-person
 // impersonation. /core/persona/* on the main server; scope resolution is
 // server-side in claimsToScope (server 886a9b27). See PersonaService.js.
@@ -263,6 +266,10 @@ export const createBuildsService = (config) =>
 // Public storefront catalog service — see StorefrontService.js header.
 export const createStorefrontService = (config) =>
   createService(StorefrontService, config)
+
+// Public records service — see PublicCollectionService.js header.
+export const createPublicCollectionService = (config) =>
+  createService(PublicCollectionService, config)
 
 // Meet service — guest waiting-room flow (anonymous) + host-side remote
 // mute against /core/meet/* on the main server.
@@ -461,5 +468,6 @@ export {
   ConversationService,
   RecurrenceService,
   MailService,
-  StorefrontService
+  StorefrontService,
+  PublicCollectionService
 }

@@ -69,6 +69,7 @@ import {
   createCalendarService,
   createBuildsService,
   createStorefrontService,
+  createPublicCollectionService,
   createPersonaService,
   workspaceProjectBaseUrl
 } from './services/index.js'
@@ -708,6 +709,15 @@ export class SDK {
           options: this._options
         })
       ),
+      // Generic opt-in ANONYMOUS records surface against /core/public/*
+      // (list / get / submit / vote) — see PublicCollectionService.js.
+      this._initService(
+        'publicRecords',
+        createPublicCollectionService({
+          context: this._context,
+          options: this._options
+        })
+      ),
       // Persona sessions ("view as <role>" — role simulation, never
       // per-person impersonation) against /core/persona/* on the main
       // server. Scope resolution is server-side in claimsToScope (server
@@ -1169,6 +1179,7 @@ export {
   createCalendarService,
   createBuildsService,
   createStorefrontService,
+  createPublicCollectionService,
   createPersonaService,
   workspaceProjectBaseUrl
 } from './services/index.js'

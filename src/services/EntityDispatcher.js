@@ -623,6 +623,58 @@ const ENTITY_ROUTES = {
     },
     argMap: CRUD_ARG_MAP
   },
+  // ─── Public records (PublicCollectionService, /core/public/*) ────────────────
+  // The generic opt-in ANONYMOUS surface over RecordCollection.public. Every
+  // call carries `scope` + `key` (collection key; `collection` accepted
+  // as an alias) in its args bag. `scope` (a workspace id OR an org slug) is
+  // the canonical name; `workspaceId` is accepted as an alias:
+  //   fetch: { from: 'publicRecords', params: { scope, key, q, where,
+  //            sort, limit, page }, transform: (d) => d.items }
+  //     → listPublicRecords — resolves { items, pagination }
+  //   fetch: { from: 'publicRecord', params: { scope, key, slug } }
+  //     → getPublicRecord — the declarative `select` always runs op 'list',
+  //       so the single-row read is its own entity path
+  //   insert on 'publicRecords' (data = the form) → submitPublicRecord
+  //   sdk.execute('publicRecords', 'vote', { scope, key, id })
+  publicRecords: {
+    service: 'publicRecords',
+    methods: {
+      list: 'listPublicRecords',
+      get: 'getPublicRecord',
+      create: 'submitPublicRecord',
+      submit: 'submitPublicRecord',
+      vote: 'votePublicRecord'
+    },
+    argMap: {
+      list: (a) => [
+        a?.scope ?? a?.workspaceId,
+        a?.key ?? a?.collection,
+        { q: a?.q, where: a?.where, sort: a?.sort, limit: a?.limit, page: a?.page }
+      ],
+      get: (a) => [a?.scope ?? a?.workspaceId, a?.key ?? a?.collection, a?.idOrSlug ?? a?.slug ?? a?.id],
+      create: (a) => [
+        a?.scope ?? a?.workspaceId,
+        a?.key ?? a?.collection,
+        a?.data ?? a?.payload,
+        { captchaToken: a?.captchaToken, honeypot: a?.honeypot }
+      ],
+      submit: (a) => [
+        a?.scope ?? a?.workspaceId,
+        a?.key ?? a?.collection,
+        a?.data ?? a?.payload,
+        { captchaToken: a?.captchaToken, honeypot: a?.honeypot }
+      ],
+      vote: (a) => [a?.scope ?? a?.workspaceId, a?.key ?? a?.collection, a?.id]
+    }
+  },
+  publicRecord: {
+    service: 'publicRecords',
+    methods: { list: 'getPublicRecord', get: 'getPublicRecord' },
+    argMap: {
+      list: (a) => [a?.scope ?? a?.workspaceId, a?.key ?? a?.collection, a?.idOrSlug ?? a?.slug ?? a?.id],
+      get: (a) => [a?.scope ?? a?.workspaceId, a?.key ?? a?.collection, a?.idOrSlug ?? a?.slug ?? a?.id]
+    }
+  },
   recordCollections: {
     service: 'recordCollections',
     methods: {

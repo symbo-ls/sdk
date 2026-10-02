@@ -571,6 +571,12 @@ export class BaseService {
       'listStorefrontJobs',
       'getStorefrontJob',
       'applyToStorefrontJob',
+      // Generic opt-in public records (PublicCollectionService, /core/public/*)
+      // — a published site's anonymous visitors list, read, submit and upvote.
+      'listPublicRecords',
+      'getPublicRecord',
+      'submitPublicRecord',
+      'votePublicRecord',
       // Storefront customer identity (tickets/server.md "storefront customer
       // identity layer", NAT-V1-25/27/28) — register/login/OTP/reset are the
       // anonymous-visitor surface itself, no bearer token. `getStorefrontCustomerMe`

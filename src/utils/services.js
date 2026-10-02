@@ -714,6 +714,12 @@ export const SERVICE_METHODS = {
   listStorefrontJobs: 'storefront',
   getStorefrontJob: 'storefront',
   applyToStorefrontJob: 'storefront',
+  // Generic opt-in ANONYMOUS records surface (PublicCollectionService,
+  // /core/public/*). All four are in BaseService._requiresInit's no-auth set.
+  listPublicRecords: 'publicRecords',
+  getPublicRecord: 'publicRecords',
+  submitPublicRecord: 'publicRecords',
+  votePublicRecord: 'publicRecords',
 
   // Persona sessions (tickets/sonnet.md PERSONA-4) — role simulation
   // ("view as <role>"), NEVER per-person impersonation; scope is resolved
