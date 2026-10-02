@@ -426,6 +426,29 @@ export class WorkspaceService extends BaseService {
     )
   }
 
+  /**
+   * Confirm a paid credit top-up from its return page. The success URL of
+   * the checkout carries `?session_id=<cs_…>`; the server reads that session
+   * from Stripe, checks it is a PAID top-up of THIS workspace, and grants the
+   * credits exactly once (the Stripe webhook and this call share one
+   * fulfilment — a repeat answers `alreadyApplied`). Owner/admin only.
+   * Mirrors POST /workspaces/:workspaceId/billing/topups/confirm.
+   *
+   * @param {string} workspaceId
+   * @param {string} sessionId - the Stripe checkout session id (`cs_…`)
+   * @returns {Promise<{ applied: boolean, alreadyApplied: boolean, credits: number, balance: object }>}
+   *   404 `topup_not_found` (not a top-up of this workspace), 409 `topup_not_paid`.
+   */
+  async confirmCreditTopup (workspaceId, sessionId) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!sessionId) throw new Error('sessionId is required')
+    return this._call(
+      'confirmCreditTopup',
+      `/workspaces/${workspaceId}/billing/topups/confirm`,
+      { method: 'POST', body: { sessionId } }
+    )
+  }
+
   // ==================== SPEND CONTROLS ====================
 
   /** Auto-top-up is workspace-scoped. Setup requires explicit recurring-charge consent. */
