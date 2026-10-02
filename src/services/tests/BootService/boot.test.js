@@ -82,3 +82,18 @@ test('teardown', t => {
   sandbox.restore()
   t.end()
 })
+
+// The URL's org + workspace handle (`/w/<org>/<ws>`) rides as a HINT the
+// server uses only when the caller can reach it (server bootScope.js).
+test('boot({ org, ws }) sends the URL hint as ?org=&ws=; workspaceId still pins', async t => {
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({ data: {}, errors: {} })
+  await svc.boot({ org: 'unreal', ws: 'default' })
+  t.equal(stub.firstCall.args[1], '/boot?org=unreal&ws=default')
+  await svc.boot({ org: 'unreal' })
+  t.equal(stub.secondCall.args[1], '/boot?org=unreal')
+  await svc.boot({ workspaceId: 'w1', org: 'a b', ws: 'x&y' })
+  t.equal(stub.thirdCall.args[1], '/boot?workspaceId=w1&org=a%20b&ws=x%26y')
+  sandbox.restore()
+  t.end()
+})
