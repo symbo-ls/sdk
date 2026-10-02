@@ -19,7 +19,7 @@ import { BaseService } from './BaseService.js'
 // repo).
 export class BootService extends BaseService {
   /**
-   * @param {{ workspaceId?: string }} [opts] — optional explicit workspace
+   * @param {{ workspaceId?: string, org?: string, ws?: string }} [opts] — optional explicit workspace
    *   scope pin (multi-tab: the tab-chosen workspace wins over the caller's
    *   stored active workspace). Omit to use the caller's own active
    *   workspace — the exact server-side resolution (explicit param -> auth
@@ -27,10 +27,17 @@ export class BootService extends BaseService {
    *   route already uses, never a new rule invented for this endpoint.
    * @returns {Promise<{ data: object, errors: object }>}
    */
-  async boot ({ workspaceId } = {}) {
+  async boot ({ workspaceId, org, ws } = {}) {
     // _call() itself gates readiness (this._requireReady('boot')) — no need
     // to duplicate that check here, mirroring WorkspaceService.getWorkspace.
-    const qs = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : ''
+    // `org` + `ws`: the URL's org slug and workspace handle (`/w/<org>/<ws>`)
+    // — a HINT the server uses only when the caller can reach it; otherwise
+    // it answers exactly as without one (server boot/services/bootScope.js).
+    const parts = []
+    if (workspaceId) parts.push(`workspaceId=${encodeURIComponent(workspaceId)}`)
+    if (org) parts.push(`org=${encodeURIComponent(org)}`)
+    if (ws) parts.push(`ws=${encodeURIComponent(ws)}`)
+    const qs = parts.length ? `?${parts.join('&')}` : ''
     return this._call('boot', `/boot${qs}`)
   }
 }
