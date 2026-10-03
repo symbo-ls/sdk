@@ -420,13 +420,26 @@ export class TicketService extends BaseService {
      * post in the detail modal. Attach the active workspace the same way
      * get()/update()/remove() do (`?workspaceId=`, read by workspaceIdFromRequest).
      *
+     * Paging rides the query string next to `workspaceId`. As with list(),
+     * ONLY `limit`, `skip`, `sortBy`, `sortDir` and `includeCount` are read —
+     * `offset` / `order` are not option names on this route and are dropped.
+     * Naming any paging key opts into the page envelope; with none, the
+     * server keeps answering the legacy bare array.
+     *
      * @param {string} ticketId - Ticket ID
-     * @returns {Promise<Array>} Array of comment documents
+     * @param {object} [options] - Paging/sort: limit, skip, sortBy, sortDir, includeCount
+     * @returns {Promise<Array|object>} Array of comment documents, or
+     *   `{ data, count, complete, limit, skip, hasMore, nextSkip }` when a paging key is given
      */
-    list: (ticketId) => {
+    list: (ticketId, options = {}) => {
+      const params = new URLSearchParams()
       const wid = this._workspaceScope()
-      const qs = wid ? `?workspaceId=${encodeURIComponent(wid)}` : ''
-      return this._call('tickets.comments.list', `/tickets/${encodeURIComponent(ticketId)}/comments${qs}`)
+      if (wid) params.set('workspaceId', wid)
+      for (const k of ['limit', 'skip', 'sortBy', 'sortDir', 'includeCount']) {
+        if (options?.[k] !== undefined && options[k] !== null) params.set(k, String(options[k]))
+      }
+      const qs = params.toString()
+      return this._call('tickets.comments.list', `/tickets/${encodeURIComponent(ticketId)}/comments${qs ? `?${qs}` : ''}`)
     },
 
     /**
