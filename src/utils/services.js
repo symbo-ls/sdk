@@ -490,6 +490,8 @@ export const SERVICE_METHODS = {
   // see services/VoiceService.js.
   voiceTranscribe: 'voice',
   voiceTts: 'voice',
+  // The account's voice list for the workspace settings Voice card.
+  voiceVoices: 'voice',
 
   createWorkspace: 'workspace',
   listWorkspaces: 'workspace',

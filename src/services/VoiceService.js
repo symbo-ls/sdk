@@ -79,6 +79,35 @@ export class VoiceService extends BaseService {
     }
     return res
   }
+
+  /**
+   * GET /ai/voice/voices — the voices of the server's ElevenLabs account,
+   * for the workspace settings Voice card: `{ voices: [{ id, name,
+   * category, labels, previewUrl }], defaultVoiceId }` verbatim. The server
+   * holds the key and caches the list; a workspace admin's pick is checked
+   * against the same list when it is saved (settings.voice.voiceId).
+   *
+   * A refusal throws with `status` and the route's typed `code` — the 503
+   * `elevenlabs_not_configured` means voice is not set up on this server.
+   *
+   * @param {{ signal?: AbortSignal }} [opts]
+   * @returns {Promise<{ voices: object[], defaultVoiceId: string }>}
+   */
+  async voiceVoices({ signal } = {}) {
+    this._requireReady('voiceVoices')
+    try {
+      return await this._request('/ai/voice/voices', {
+        method: 'GET',
+        methodName: 'voiceVoices',
+        ...(signal ? { signal } : {})
+      })
+    } catch (err) {
+      if (err && !err.code && err.cause && typeof err.cause.error === 'string') {
+        err.code = err.cause.error
+      }
+      throw err
+    }
+  }
 }
 
 export const createVoiceService = (config) => new VoiceService(config)
