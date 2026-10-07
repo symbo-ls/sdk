@@ -56,3 +56,25 @@ test('voiceVoices is registered on the SDK method map beside voiceTts', t => {
   t.equal(SERVICE_METHODS.voiceTts, 'voice', 'control: voiceTts is there too')
   t.end()
 })
+
+// voiceTranscribe({ language }) — the speaker's UI language rides as the
+// multipart field `language`, a Whisper hint the server validates against
+// its own languages (a Georgian clip came back as Latin transliteration
+// without it, measured on dev 2026-10-07). No language → no field.
+test('voiceTranscribe sends language as a multipart field; none → no field', async t => {
+  t.plan(5)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({ text: 'x' })
+  const audio = new Blob(['x'], { type: 'audio/webm' })
+  await svc.voiceTranscribe({ audio, language: 'ka' })
+  const form = stub.firstCall.args[2].body
+  t.equal(stub.firstCall.args[1], '/ai/voice/transcribe', 'path')
+  t.equal(form.get('language'), 'ka', 'the hint is sent')
+  t.ok(form.get('audio'), 'the clip is sent')
+  await svc.voiceTranscribe({ audio })
+  t.equal(stub.secondCall.args[2].body.get('language'), null, 'no language, no field')
+  await svc.voiceTranscribe({ audio, language: 42 })
+  t.equal(stub.thirdCall.args[2].body.get('language'), null, 'a non-string is not sent')
+  sandbox.restore()
+  t.end()
+})

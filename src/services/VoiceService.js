@@ -22,13 +22,19 @@ export class VoiceService extends BaseService {
    * stringify, no Content-Type header — the browser sets the multipart
    * boundary itself), so this needs no special transport handling.
    *
-   * @param {{ audio: Blob|File, filename?: string }} opts
+   * `language` — the speaker's UI language ('en', 'ka', …), sent as the
+   * multipart field `language`: a Whisper hint the server validates against
+   * its own languages (without it a Georgian clip came back as Latin
+   * transliteration). Omitted when not a string.
+   *
+   * @param {{ audio: Blob|File, filename?: string, language?: string }} opts
    * @returns {Promise<{ text: string, … }>} the route's JSON verbatim
    */
-  voiceTranscribe({ audio, filename = 'clip.webm' } = {}) {
+  voiceTranscribe({ audio, filename = 'clip.webm', language } = {}) {
     if (!audio) throw new Error('audio is required')
     const form = new FormData()
     form.append('audio', audio, filename)
+    if (typeof language === 'string' && language) form.append('language', language)
     return this._call('voiceTranscribe', '/ai/voice/transcribe', {
       method: 'POST',
       body: form
