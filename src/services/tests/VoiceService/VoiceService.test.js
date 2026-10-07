@@ -78,3 +78,19 @@ test('voiceTranscribe sends language as a multipart field; none → no field', a
   sandbox.restore()
   t.end()
 })
+
+// The list is a workspace surface on the server (requireWorkspaceMember):
+// the caller names its workspace explicitly, so a browser tab on workspace
+// B never reads with workspace A's claim. No id → the server's claim
+// fallback, as before.
+test('voiceVoices({ workspaceId }) names the workspace in the query', async t => {
+  t.plan(2)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_request').resolves({ voices: [], defaultVoiceId: 'x' })
+  await svc.voiceVoices({ workspaceId: 'ws 1/2' })
+  t.equal(stub.firstCall.args[0], '/ai/voice/voices?workspaceId=ws%201%2F2', 'encoded workspace id')
+  await svc.voiceVoices()
+  t.equal(stub.secondCall.args[0], '/ai/voice/voices', 'no id, no query')
+  sandbox.restore()
+  t.end()
+})

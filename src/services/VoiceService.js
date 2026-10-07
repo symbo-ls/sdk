@@ -87,7 +87,8 @@ export class VoiceService extends BaseService {
   }
 
   /**
-   * GET /ai/voice/voices — the voices of the server's ElevenLabs account,
+   * GET /ai/voice/voices — the STOCK voices (premade + professional) of the
+   * server's ElevenLabs account,
    * for the workspace settings Voice card: `{ voices: [{ id, name,
    * category, labels, previewUrl }], defaultVoiceId }` verbatim. The server
    * holds the key and caches the list; a workspace admin's pick is checked
@@ -96,13 +97,19 @@ export class VoiceService extends BaseService {
    * A refusal throws with `status` and the route's typed `code` — the 503
    * `elevenlabs_not_configured` means voice is not set up on this server.
    *
-   * @param {{ signal?: AbortSignal }} [opts]
+   * The route is a workspace surface (the caller must be a member):
+   * `workspaceId` names the workspace explicitly — a tab on another
+   * workspace than the session's active one reads its own; without it the
+   * server falls back to the active-workspace claim.
+   *
+   * @param {{ workspaceId?: string, signal?: AbortSignal }} [opts]
    * @returns {Promise<{ voices: object[], defaultVoiceId: string }>}
    */
-  async voiceVoices({ signal } = {}) {
+  async voiceVoices({ workspaceId, signal } = {}) {
     this._requireReady('voiceVoices')
+    const qs = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : ''
     try {
-      return await this._request('/ai/voice/voices', {
+      return await this._request(`/ai/voice/voices${qs}`, {
         method: 'GET',
         methodName: 'voiceVoices',
         ...(signal ? { signal } : {})
