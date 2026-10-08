@@ -437,6 +437,7 @@ export const SERVICE_METHODS = {
   unassignAgent: 'organization',
   setMemberStatus: 'organization',
   createOrgInvitation: 'organization',
+  createOrgInvitationLink: 'organization',
   listOrgInvitations: 'organization',
   revokeOrgInvitation: 'organization',
   acceptOrgInvitation: 'organization',

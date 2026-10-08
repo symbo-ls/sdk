@@ -719,6 +719,10 @@ await organization.removeTeamMember(orgId, teamId, teamMemberId)
 
 // Org & team invitations
 await organization.createOrgInvitation(orgId, { email, role, teams })
+// "Share by magic link": bound to no email; the first person who opens the
+// link and accepts joins at `role`, once. Returns the row + its one-time
+// `inviteUrl` (never stored, never listed) and the server's `expiresAt`.
+await organization.createOrgInvitationLink(orgId, { role })
 await organization.listOrgInvitations(orgId)
 await organization.revokeOrgInvitation(orgId, inviteId)
 await organization.acceptOrgInvitation({ token })

@@ -517,6 +517,20 @@ export class OrganizationService extends BaseService {
     throw new Error(response.message)
   }
 
+  // INVITE-MAGIC-LINK-1 — a LINK invitation ("share by magic link"): bound to
+  // no email, the first person who opens it and accepts joins at `role`, once.
+  // Same route as createOrgInvitation (so the same server gate and role
+  // ceiling), with `kind: 'link'` and no email. Returns the row plus
+  // `inviteUrl` — the bearer accept link, returned ONLY here (the server never
+  // stores it and never lists it). `expiresAt` comes from the server.
+  async createOrgInvitationLink (orgId, { role = 'member' } = {}) {
+    if (!orgId) throw new Error('orgId is required')
+    return this._call('createOrgInvitationLink', `/organizations/${orgId}/invitations`, {
+      method: 'POST',
+      body: { kind: 'link', role }
+    })
+  }
+
   async listOrgInvitations (orgId) {
     this._requireReady('listOrgInvitations')
     if (!orgId) throw new Error('orgId is required')
