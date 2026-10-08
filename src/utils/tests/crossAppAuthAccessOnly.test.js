@@ -117,22 +117,28 @@ test('D3: hydrateAuthFromIframeBridge ignores a reply from another window of the
   assert.equal(store.getItem('symbols_access_token'), null)
 })
 
-// Review D9 (2026-10-10): with the refresh key gone from DEFAULT_TOKEN_KEYS,
-// installAuthSync's "an access-token removal clears every mirror" step no
-// longer removed the refresh token — a sign-out through it left the refresh
-// token behind. It names the refresh key itself now.
-test('D9: installAuthSync — removing the access token also removes the refresh token', () => {
+// Review D9 (2026-10-10) meets the session hardening (80677a5, 2026-10-08):
+// installAuthSync used to patch localStorage to mirror tokens into the
+// parent-domain cookie, and its "an access-token removal clears every mirror"
+// step had to name the refresh key itself (D9). The cookie mirror is gone, so
+// installAuthSync patches nothing: no mirror step exists that could strand a
+// refresh token, and an access-token removal removes exactly that key.
+test('D9: installAuthSync patches no storage method (no mirror step can strand a refresh token)', () => {
   const store = page(fullReply, (f) => f.contentWindow)
   globalThis.window.removeEventListener = () => {}
   globalThis.document.addEventListener = () => {}
   globalThis.document.removeEventListener = () => {}
+  const { setItem, removeItem, clear } = globalThis.localStorage
   const auth = createCrossAppAuth({ resolvePeerOrigin: () => PEER })
   auth.installAuthSync()
   try {
+    assert.equal(globalThis.localStorage.setItem, setItem)
+    assert.equal(globalThis.localStorage.removeItem, removeItem)
+    assert.equal(globalThis.localStorage.clear, clear)
     globalThis.localStorage.setItem('symbols_access_token', 'acc')
     globalThis.localStorage.setItem('symbols_refresh_token', 'ref')
     globalThis.localStorage.removeItem('symbols_access_token')
-    assert.equal(store.getItem('symbols_refresh_token'), null)
+    assert.equal(store.getItem('symbols_access_token'), null)
   } finally {
     auth.uninstallAuthSync()
   }
