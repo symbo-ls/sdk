@@ -63,6 +63,57 @@ const DEFAULT_MAX_RETRIES = 3
 
 const _sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
+// A REST request that never answers must not leave its caller waiting for
+// ever (work.astio.ai 2026-10-08: the workspace shell's boot gate awaited SDK
+// calls with no bound and sat on its loader). Every `_request` /
+// `_requestExternal` attempt aborts at `options.timeoutMs` (default below) and
+// rejects with code REQUEST_TIMEOUT — never retried, it already waited.
+// The DEFAULT bound applies to reads (GET/HEAD/OPTIONS) and the retry-safe
+// session/scope writes (getMe, setActiveOrganization, …) only — a mutation can
+// legitimately run long (an AI generation, an upload, a publish), so it gets a
+// bound only when the caller names one. `timeoutMs` sets it per call, `0`
+// opts out; a caller-owned `signal` keeps its own cancellation and gets no
+// default bound.
+export const REQUEST_TIMEOUT = 'REQUEST_TIMEOUT'
+export const DEFAULT_REQUEST_TIMEOUT_MS = 30000
+
+const _timeoutFor = (options, methodName) => {
+  if (options.timeoutMs !== undefined) {
+    const ms = Number(options.timeoutMs)
+    return Number.isFinite(ms) && ms > 0 ? ms : 0
+  }
+  if (options.signal !== undefined) return 0
+  const method = String(options.method || 'GET').toUpperCase()
+  if (IDEMPOTENT_METHODS.has(method) || RETRY_SAFE_METHOD_NAMES.has(methodName)) {
+    return DEFAULT_REQUEST_TIMEOUT_MS
+  }
+  return 0
+}
+
+// fetch with an abort timer; a timer abort rejects with REQUEST_TIMEOUT.
+const _fetchWithTimeout = async (url, init, timeoutMs) => {
+  if (!timeoutMs || typeof AbortController !== 'function') return fetch(url, init)
+  const controller = new AbortController()
+  let timedOut = false
+  const timer = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, timeoutMs)
+  try {
+    return await fetch(url, { ...init, signal: controller.signal })
+  } catch (error) {
+    if (timedOut) {
+      const err = new Error(`Request timed out after ${timeoutMs} ms: ${url}`, { cause: error })
+      err.code = REQUEST_TIMEOUT
+      err.name = 'TimeoutError'
+      throw err
+    }
+    throw error
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 const _wrapRequestError = (error, url) => {
   const network = _isNetworkFailure(error)
   const msg = network
@@ -354,13 +405,17 @@ export class BaseService {
     const runFetch = async () => {
       for (let attempt = 0; ; attempt++) {
         try {
-          const response = await fetch(url, {
-            ...options,
-            headers: {
-              ...defaultHeaders,
-              ...options.headers
-            }
-          })
+          const response = await _fetchWithTimeout(
+            url,
+            {
+              ...options,
+              headers: {
+                ...defaultHeaders,
+                ...options.headers
+              }
+            },
+            _timeoutFor(options, options.methodName)
+          )
 
           if (!response.ok) {
             let error = {
@@ -388,7 +443,10 @@ export class BaseService {
 
           return response.status === 204 ? null : response.json()
         } catch (error) {
-          const wrapped = error?.status !== undefined ? error : _wrapRequestError(error, url)
+          const wrapped =
+            error?.status !== undefined || error?.code === REQUEST_TIMEOUT
+              ? error
+              : _wrapRequestError(error, url)
           if (_shouldRetryRequest(wrapped, method, options.methodName, attempt, maxRetries)) {
             await _sleep(_retryDelay(attempt))
             continue
@@ -450,10 +508,11 @@ export class BaseService {
     const runFetch = async () => {
       for (let attempt = 0; ; attempt++) {
         try {
-          const response = await fetch(url, {
-            ...init,
-            headers: { ...defaultHeaders, ...init.headers }
-          })
+          const response = await _fetchWithTimeout(
+            url,
+            { ...init, headers: { ...defaultHeaders, ...init.headers } },
+            _timeoutFor(init, methodName)
+          )
 
           if (!response.ok) {
             let error = { message: `HTTP ${response.status}: ${response.statusText}` }
@@ -472,7 +531,10 @@ export class BaseService {
           if (!text) return null
           try { return JSON.parse(text) } catch { return text }
         } catch (error) {
-          const wrapped = error?.status !== undefined ? error : _wrapRequestError(error, url)
+          const wrapped =
+            error?.status !== undefined || error?.code === REQUEST_TIMEOUT
+              ? error
+              : _wrapRequestError(error, url)
           if (_shouldRetryRequest(wrapped, method, methodName, attempt, maxRetries)) {
             await _sleep(_retryDelay(attempt))
             continue
