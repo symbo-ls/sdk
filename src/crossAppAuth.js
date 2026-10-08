@@ -1,20 +1,18 @@
-// Cross-app auth sync — mirror the Symbols SDK tokens into a parent-domain
-// cookie (plus an iframe bridge for dev, where `.localhost` cookies are
-// dropped) so peer subdomains share a single signed-in session even though
-// their localStorages are origin-isolated.
+// Cross-app auth sync — share one signed-in session between the Symbols
+// shell and canvas origins through the iframe `/_session-bridge` handshake
+// (hydrateAuthFromIframeBridge). Each origin keeps its own session in its own
+// storage.
 //
-// Ported from the retired @symbo.ls/sdk-supabase-bridge package (deleted with
-// the Supabase plane, 2026-07-27). That module ALSO mirrored `sb-*-auth-token`
-// Supabase auth-js sessions; nothing writes those keys any more, so this port
-// carries only the SDK-token half — same cookie name, same token keys, same
-// message contract, so sessions minted before the port keep working.
-//
-// Trade-off: a cookie on `.symbols.app` is readable by every subdomain.
-// Keep user-code rendering subdomains off the parent domain (use a
-// separate apex like `.symbo.ls` for preview/mermaid) — otherwise
-// untrusted code can read the cookie.
+// SESSION HARDENING (2026-10-08, P0): this module used to mirror the tokens
+// into a `smbls_session` cookie on the parent domain (`.symbols.app`). Every
+// subdomain can read such a cookie — including hosts that render user project
+// code — and dev and prod shared the one cookie. The cookie path is gone:
+// `hydrateAuthFromCookie`, `persistAuthToCookie` and `installAuthSync` keep
+// their names (older callers still invoke them) but only DELETE an old copy of
+// the cookie; nothing reads it and nothing writes a token into it
+// (src/utils/tests/sessionHardening.test.js).
 
-import { readCookie, writeCookie } from './cookies.js'
+import { writeCookie } from './cookies.js'
 
 export const DEFAULT_TOKEN_KEYS = [
   'symbols_access_token',
@@ -24,8 +22,6 @@ export const DEFAULT_TOKEN_KEYS = [
   'symbols_bridge_access_token',
   'symbols_bridge_expires_at'
 ]
-
-const COOKIE_MAX_AGE = 60 * 60 * 24 * 30 // 30 days
 
 export function createCrossAppAuth({
   tokenKeys = DEFAULT_TOKEN_KEYS,
@@ -60,65 +56,15 @@ export function createCrossAppAuth({
     return collectLocalSession()
   }
 
+  // Never reads the cookie. Deletes an old copy and reports "nothing hydrated".
   function hydrateAuthFromCookie() {
-    if (typeof localStorage === 'undefined') return false
-    const local = collectLocalSession()
-    if (isFresh(local)) return false
-
-    const raw = readCookie(sessionCookieName)
-    if (!raw) return false
-    let cookieSession
-    try {
-      cookieSession = JSON.parse(raw)
-    } catch {
-      return false
-    }
-    if (!isFresh(cookieSession)) return false
-
-    for (const k of tokenKeys) {
-      const v = cookieSession[k]
-      if (v != null) localStorage.setItem(k, String(v))
-    }
-    if (
-      !cookieSession.symbols_access_token &&
-      cookieSession.symbols_bridge_access_token
-    ) {
-      localStorage.setItem(
-        'symbols_access_token',
-        String(cookieSession.symbols_bridge_access_token)
-      )
-      if (cookieSession.symbols_bridge_expires_at) {
-        localStorage.setItem(
-          'symbols_expires_at',
-          String(cookieSession.symbols_bridge_expires_at)
-        )
-      }
-    }
-    if (
-      !cookieSession.symbols_bridge_access_token &&
-      cookieSession.symbols_access_token
-    ) {
-      localStorage.setItem(
-        'symbols_bridge_access_token',
-        String(cookieSession.symbols_access_token)
-      )
-      if (cookieSession.symbols_expires_at) {
-        localStorage.setItem(
-          'symbols_bridge_expires_at',
-          String(cookieSession.symbols_expires_at)
-        )
-      }
-    }
-    return true
+    clearAuthCookie()
+    return false
   }
 
+  // Never writes a token. Deletes an old copy of the cookie.
   function persistAuthToCookie() {
-    const session = collectLocalSession()
-    if (!session) {
-      writeCookie(sessionCookieName, null, 0)
-      return
-    }
-    writeCookie(sessionCookieName, JSON.stringify(session), COOKIE_MAX_AGE)
+    clearAuthCookie()
   }
 
   function clearAuthCookie() {
@@ -221,102 +167,14 @@ export function createCrossAppAuth({
     })
   }
 
-  // Snapshot of the originals + the listeners we register, so installAuthSync
-  // can be undone (tests, hot-reload) without poisoning the global JSDOM.
-  let _installed = false
-  let _uninstall = null
+  // Used to patch localStorage so every token write was mirrored into the
+  // parent-domain cookie. Now it only deletes an old copy of that cookie.
   function installAuthSync() {
-    if (_installed || typeof window === 'undefined') return
-    _installed = true
-
-    // Snapshot the originals at install time so subsequent re-patches by
-    // unrelated shims can't reach back into our wrappers (avoids recursion
-    // if another library decides to monkey-patch localStorage on top of
-    // ours). Keep both the unbound reference (for restoration on uninstall)
-    // and a bound copy (for internal calls).
-    const origSetUnbound = localStorage.setItem
-    const origRemoveUnbound = localStorage.removeItem
-    const origClearUnbound = localStorage.clear
-    const origSet = origSetUnbound.bind(localStorage)
-    const origRemove = origRemoveUnbound.bind(localStorage)
-    const origGet = localStorage.getItem.bind(localStorage)
-    const origClear = origClearUnbound.bind(localStorage)
-
-    let persistAuthTimer = null
-    const schedulePersistAuth = () => {
-      if (persistAuthTimer) return
-      persistAuthTimer = setTimeout(() => {
-        persistAuthTimer = null
-        persistAuthToCookie()
-      }, 200)
-    }
-
-    const removeAllTokenMirrors = (keptKey) => {
-      for (const k of tokenKeys) if (k !== keptKey) origRemove(k)
-    }
-
-    const patchedSet = function (key, value) {
-      origSet(key, value)
-      if (tokenKeys.includes(key)) schedulePersistAuth()
-    }
-    const patchedRemove = function (key) {
-      origRemove(key)
-      if (tokenKeys.includes(key)) {
-        if (
-          key === 'symbols_access_token' ||
-          key === 'symbols_bridge_access_token'
-        ) {
-          removeAllTokenMirrors(key)
-        }
-        // Use the snapshot getter, not the (possibly re-patched) live one,
-        // so no third party can recursively re-enter our patched remove.
-        const stillHasAny = tokenKeys.some((k) => origGet(k))
-        if (!stillHasAny) clearAuthCookie()
-        else schedulePersistAuth()
-      }
-    }
-    const patchedClear = function () {
-      origClear()
-      clearAuthCookie()
-    }
-
-    localStorage.setItem = patchedSet
-    localStorage.removeItem = patchedRemove
-    localStorage.clear = patchedClear
-
-    const onStorage = (e) => {
-      if (!e.key) return
-      if (tokenKeys.includes(e.key)) schedulePersistAuth()
-    }
-    const onVisibility = () => {
-      if (document.visibilityState !== 'visible') return
-      hydrateAuthFromCookie()
-    }
-    window.addEventListener('storage', onStorage)
-    document.addEventListener('visibilitychange', onVisibility)
-
-    _uninstall = () => {
-      // Only restore if our patch is still on top; otherwise something else
-      // wrapped us and we'd un-wrap into THEIR patch's state — leave alone.
-      if (localStorage.setItem === patchedSet)
-        localStorage.setItem = origSetUnbound
-      if (localStorage.removeItem === patchedRemove)
-        localStorage.removeItem = origRemoveUnbound
-      if (localStorage.clear === patchedClear)
-        localStorage.clear = origClearUnbound
-      window.removeEventListener('storage', onStorage)
-      document.removeEventListener('visibilitychange', onVisibility)
-      if (persistAuthTimer) clearTimeout(persistAuthTimer)
-      _installed = false
-      _uninstall = null
-    }
-
-    persistAuthToCookie()
+    if (typeof window === 'undefined') return
+    clearAuthCookie()
   }
 
-  function uninstallAuthSync() {
-    if (_uninstall) _uninstall()
-  }
+  function uninstallAuthSync() {}
 
   return {
     TOKEN_KEYS: tokenKeys,

@@ -118,6 +118,24 @@ export class SDK {
     // call.
     this._tokenManager = null
 
+    // `tokenStorage` ('localStorage' | 'sessionStorage' | 'memory') picks where
+    // the shared TokenManager keeps the session. A surface that must never
+    // persist one — a preview origin renders user project code — passes
+    // 'memory'. The TokenManager is a page-wide singleton created by the FIRST
+    // caller, so it is created here, before any service initializes; a page
+    // that already holds one keeps it (and says so).
+    if (this._options.tokenStorage) {
+      const tm = getTokenManager({
+        apiUrl: this._options.apiUrl,
+        storageType: this._options.tokenStorage
+      })
+      if (tm.config.storageType !== this._options.tokenStorage) {
+        logger.warn(
+          `[SDK] tokenStorage "${this._options.tokenStorage}" ignored: this page's TokenManager already uses "${tm.config.storageType}"`
+        )
+      }
+    }
+
     // Seed context with apiUrl from options so services resolve the correct host
     if (this._options.apiUrl) {
       this._context.apiUrl = this._options.apiUrl
@@ -737,6 +755,34 @@ export class SDK {
     this._tokenManager = getTokenManager()
 
     return this
+  }
+
+  /**
+   * Adopt a session this page received from elsewhere (e.g. a sign-in
+   * handoff fragment) into the TokenManager, in whatever storage the SDK was
+   * created with — memory for `tokenStorage: 'memory'`. Returns true when a
+   * token was adopted.
+   *
+   * @param {{ accessToken: string, refreshToken?: string, expiresAt?: number, expiresIn?: number }} tokens
+   */
+  adoptTokens ({ accessToken, refreshToken, expiresAt, expiresIn } = {}) {
+    if (!accessToken) return false
+    const tm =
+      this._tokenManager ||
+      getTokenManager({
+        apiUrl: this._options.apiUrl,
+        ...(this._options.tokenStorage ? { storageType: this._options.tokenStorage } : {})
+      })
+    let seconds = Number(expiresIn) || 0
+    if (!seconds && Number(expiresAt) > Date.now()) {
+      seconds = Math.round((Number(expiresAt) - Date.now()) / 1000)
+    }
+    tm.setTokens({
+      access_token: accessToken,
+      refresh_token: refreshToken || undefined,
+      ...(seconds ? { expires_in: seconds } : {})
+    })
+    return true
   }
 
   // Private helper to initialize a service
