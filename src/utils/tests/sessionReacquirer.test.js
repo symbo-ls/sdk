@@ -222,3 +222,76 @@ describe('TokenManager session reacquirer', () => {
     assert.equal(tm.getTokenStatus().status, 'valid')
   })
 })
+
+// ── Review round 3 (2026-10-09): D1, D2, D4 ──────────────────────────────
+describe('TokenManager session ownership mark and back-off', () => {
+  beforeEach(() => {
+    local.clear()
+    mockFetch(revoked)
+  })
+  afterEach(() => {
+    delete globalThis.fetch
+    while (made.length) made.pop().destroy?.()
+  })
+
+  // D1: every SDK sign-in stores its tokens through setTokens. A refresh token
+  // there is THIS origin's own login: mark it, so a copy (unmarked) can be told
+  // apart on the borrowing origin.
+  test("D1: setTokens with a refresh token marks the session 'own'", () => {
+    const tm = manager()
+    tm.setTokens({ access_token: 'acc', refresh_token: 'ref', expires_in: 3600 })
+    assert.equal(local.getItem('symbols_session_source'), 'own')
+  })
+
+  test("D1: adoptAccessToken marks the session 'bridge'; clearTokens removes the mark", () => {
+    const tm = manager()
+    tm.adoptAccessToken({ access_token: 'acc', expires_at: Date.now() + HOUR })
+    assert.equal(local.getItem('symbols_session_source'), 'bridge')
+    tm.clearTokens()
+    assert.equal(local.getItem('symbols_session_source'), null)
+  })
+
+  // D4: the STORAGE copy of a refresh token goes too, not only memory.
+  test('D4: adoptAccessToken removes a refresh token held in STORAGE', () => {
+    local.setItem('symbols_refresh_token', 'copied-ref')
+    const tm = manager()
+    tm.adoptAccessToken({ access_token: 'acc', expires_at: Date.now() + HOUR })
+    assert.equal(local.getItem('symbols_refresh_token'), null)
+    assert.equal(tm.hasRefreshToken(), false)
+  })
+
+  // D2: a handover with less than refreshBuffer (60 s) left reads as expired at
+  // once, so every call asked the bridge again (20 calls → 20 iframe loads).
+  // One ask per token; then use it until it really expires.
+  test('D2: a short-lived handover is asked for ONCE, then used until it really expires', async () => {
+    seedAccessOnly('acc-old', Date.now() - 1000)
+    const tm = manager()
+    let asked = 0
+    const shortLived = () => ({ access_token: `acc-${asked}`, expires_at: Date.now() + 30_000 })
+    tm.setSessionReacquirer(async () => {
+      asked++
+      return shortLived()
+    })
+    const tokens = []
+    for (let i = 0; i < 20; i++) tokens.push(await tm.ensureValidToken())
+    assert.equal(asked, 1, '20 calls, one ask')
+    assert.equal(new Set(tokens).size, 1)
+    assert.ok(tokens[0], 'the short-lived token is used meanwhile')
+    // once it has REALLY expired, one more ask
+    tm.tokens.expiresAt = Date.now() - 1
+    await tm.ensureValidToken()
+    assert.equal(asked, 2)
+  })
+
+  test('D2 CONTROL: a long-lived handover is also asked for once', async () => {
+    seedAccessOnly('acc-old', Date.now() - 1000)
+    const tm = manager()
+    let asked = 0
+    tm.setSessionReacquirer(async () => {
+      asked++
+      return { access_token: 'acc-new', expires_at: Date.now() + HOUR }
+    })
+    for (let i = 0; i < 20; i++) await tm.ensureValidToken()
+    assert.equal(asked, 1)
+  })
+})

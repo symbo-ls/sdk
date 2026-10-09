@@ -64,7 +64,13 @@ export class TokenManager {
       accessToken: `${this.config.storagePrefix}access_token`,
       refreshToken: `${this.config.storagePrefix}refresh_token`,
       expiresAt: `${this.config.storagePrefix}expires_at`,
-      expiresIn: `${this.config.storagePrefix}expires_in`
+      expiresIn: `${this.config.storagePrefix}expires_in`,
+      // WHO owns this session (review D1, 2026-10-09): 'own' = a sign-in on
+      // this origin stored the refresh token (setTokens); 'bridge' = adopted
+      // from the /_session-bridge peer (adoptAccessToken). A consumer reads
+      // an UNMARKED refresh token on its borrowing origin as a copy an older
+      // bridge build handed over.
+      sessionSource: `${this.config.storagePrefix}session_source`
     }
   }
 
@@ -175,6 +181,10 @@ export class TokenManager {
 
     // Persist to storage
     this.saveTokens()
+    // Every SDK sign-in (password, OAuth, signup, demo, magic link) and every
+    // own rotation stores its tokens here: a refresh token is this origin's
+    // own login (review D1).
+    if (this.tokens.refreshToken) this._markSessionSource('own')
 
     // Schedule automatic refresh
     this.scheduleRefresh()
@@ -333,7 +343,9 @@ export class TokenManager {
         logger.warn('[TokenManager] session reacquirer failed:', error?.message || error)
         return null
       }
-      return this.adoptAccessToken(data) ? this.getAccessToken() : null
+      if (!this.adoptAccessToken(data)) return null
+      this._reacquiredToken = this.tokens.accessToken
+      return this.getAccessToken()
     })()
     try {
       return await this._reacquirePromise
@@ -375,6 +387,7 @@ export class TokenManager {
     } catch (_) {
       /* locked storage — memory already holds the access-only session */
     }
+    this._markSessionSource('bridge')
     // Clears any pending refresh timer; schedules none (no refresh token).
     this.scheduleRefresh()
     this.retryCount = 0
@@ -382,6 +395,14 @@ export class TokenManager {
       this.config.onTokenRefresh(this.tokens)
     }
     return true
+  }
+
+  _markSessionSource (source) {
+    try {
+      this.storage.setItem(this.storageKeys.sessionSource, source)
+    } catch (_) {
+      /* locked storage — the mark is advisory */
+    }
   }
 
   /**
@@ -505,6 +526,16 @@ export class TokenManager {
     // Ask the owner again before giving up; never send a refresh without a
     // refresh token.
     if (!this.hasRefreshToken()) {
+      // BACK-OFF (review D2): a handover with less than refreshBuffer left
+      // reads as "expired" at once. Ask ONCE per token; then keep using it
+      // until it has really expired, instead of one bridge load per call.
+      if (
+        this._reacquiredToken &&
+        this._reacquiredToken === this.tokens.accessToken &&
+        this.isAccessTokenActuallyValid()
+      ) {
+        return this.getAccessToken()
+      }
       const reacquired = await this.reacquireSession()
       if (reacquired) return reacquired
       this.clearTokens()

@@ -16,9 +16,11 @@
 
 import { readCookie, writeCookie } from './cookies.js'
 
+// No refresh token here (review D3, 2026-10-09): a refresh token is
+// single-use and belongs to the origin that signed in. Nothing that walks this
+// list (the cookie mirror, the iframe fallback) may ever move it.
 export const DEFAULT_TOKEN_KEYS = [
   'symbols_access_token',
-  'symbols_refresh_token',
   'symbols_expires_at',
   'symbols_expires_in',
   'symbols_bridge_access_token',
@@ -164,8 +166,10 @@ export function createCrossAppAuth({
         } catch {}
         resolve(val)
       }
+      // Only THIS request's bridge iframe may answer (origin AND source),
+      // review D3 — the M1 rule of the workspace requester.
       const onMessage = (ev) => {
-        if (ev.origin !== origin) return
+        if (ev.origin !== origin || ev.source !== iframe.contentWindow) return
         const t = ev.data?.type
         if (t === 'symbols-session-ready') {
           try {
@@ -183,7 +187,16 @@ export function createCrossAppAuth({
         }
         const tokens = ev.data.sdkTokens || {}
         let wrote = false
-        for (const [k, v] of Object.entries(tokens)) {
+        // Access-token keys ONLY (review D3): never a refresh token an older
+        // bridge build may still send, never any other key of the reply.
+        const ACCESS_KEYS = [
+          'symbols_access_token',
+          'symbols_expires_at',
+          'symbols_bridge_access_token',
+          'symbols_bridge_expires_at'
+        ]
+        for (const k of ACCESS_KEYS) {
+          const v = tokens[k]
           if (v != null) {
             localStorage.setItem(k, String(v))
             wrote = true
