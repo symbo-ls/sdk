@@ -790,8 +790,12 @@ export class AuthService extends BaseService {
         }
       }
 
-      // If tokens exist but are invalid, try to refresh
-      if (!tokenStatus.isValid && tokenStatus.hasRefreshToken) {
+      // If tokens exist but are invalid, try to refresh — or, for an
+      // access-only session, reacquire it (TokenManager.setSessionReacquirer)
+      if (
+        !tokenStatus.isValid &&
+        (tokenStatus.hasRefreshToken || this._tokenManager.hasSessionReacquirer?.())
+      ) {
         try {
           await this._tokenManager.ensureValidToken()
         } catch (error) {
