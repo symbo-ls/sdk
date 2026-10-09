@@ -57,7 +57,9 @@ test('_request: a request that never answers rejects with REQUEST_TIMEOUT at tim
   const calls = []
   await withFetch(hangingFetch(calls), async () => {
     const t0 = Date.now()
-    const out = await guarded(makeService()._request('/auth/me', { method: 'GET', methodName: 'getMe', timeoutMs: 100 }))
+    // a plain read (not a retry-safe session call — those retry a timeout once,
+    // see requestTimeoutReview.test.js)
+    const out = await guarded(makeService()._request('/projects', { method: 'GET', methodName: 'listProjects', timeoutMs: 100 }))
     t.notEqual(out, HANG, 'the request settles instead of hanging')
     t.equal(out.error && out.error.code, REQUEST_TIMEOUT, 'rejects with code REQUEST_TIMEOUT')
     t.ok(Date.now() - t0 < 1500, 'within the timeout (plus margin)')

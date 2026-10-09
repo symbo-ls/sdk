@@ -44,8 +44,17 @@ const RETRY_SAFE_METHOD_NAMES = new Set([
 ])
 const RETRY_BASE_DELAY_MS = 300
 
-const _shouldRetryRequest = (err, method, methodName, attempt, maxRetries) => {
+// A REQUEST_TIMEOUT is retried ONCE, and only for the retry-safe session calls
+// above (idempotent by contract, and each one gates a boot/scope switch that
+// should ride out a single stalled connection). Any other timeout already
+// waited its full bound and is final.
+const MAX_TIMEOUT_RETRIES = 1
+
+const _shouldRetryRequest = (err, method, methodName, attempt, maxRetries, timeoutRetries = 0) => {
   if (attempt >= maxRetries) return false
+  if (err?.code === REQUEST_TIMEOUT) {
+    return RETRY_SAFE_METHOD_NAMES.has(methodName) && timeoutRetries < MAX_TIMEOUT_RETRIES
+  }
   // Pre-send transport failures only — never an HTTP status.
   if (err?.code !== NETWORK_UNREACHABLE || err?.status !== undefined) return false
   return IDEMPOTENT_METHODS.has(method) || RETRY_SAFE_METHOD_NAMES.has(methodName)
@@ -67,13 +76,17 @@ const _sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 // ever (work.astio.ai 2026-10-08: the workspace shell's boot gate awaited SDK
 // calls with no bound and sat on its loader). Every `_request` /
 // `_requestExternal` attempt aborts at `options.timeoutMs` (default below) and
-// rejects with code REQUEST_TIMEOUT — never retried, it already waited.
+// rejects with code REQUEST_TIMEOUT. The bound covers the WHOLE attempt —
+// headers AND body read — so a server that answers headers and then stalls
+// the body cannot hold the caller either. A timeout is retried once for the
+// retry-safe session calls only (MAX_TIMEOUT_RETRIES); anything else is final.
 // The DEFAULT bound applies to reads (GET/HEAD/OPTIONS) and the retry-safe
 // session/scope writes (getMe, setActiveOrganization, …) only — a mutation can
 // legitimately run long (an AI generation, an upload, a publish), so it gets a
 // bound only when the caller names one. `timeoutMs` sets it per call, `0`
-// opts out; a caller-owned `signal` keeps its own cancellation and gets no
-// default bound.
+// opts out. A caller-owned `signal` keeps its own cancellation and gets no
+// DEFAULT bound; with an explicit `timeoutMs` both apply — whichever fires
+// first ends the attempt, and only the timer reports REQUEST_TIMEOUT.
 export const REQUEST_TIMEOUT = 'REQUEST_TIMEOUT'
 export const DEFAULT_REQUEST_TIMEOUT_MS = 30000
 
@@ -90,27 +103,39 @@ const _timeoutFor = (options, methodName) => {
   return 0
 }
 
-// fetch with an abort timer; a timer abort rejects with REQUEST_TIMEOUT.
-const _fetchWithTimeout = async (url, init, timeoutMs) => {
-  if (!timeoutMs || typeof AbortController !== 'function') return fetch(url, init)
+const _timeoutError = (timeoutMs, url) => {
+  const err = new Error(`Request timed out after ${timeoutMs} ms: ${url}`)
+  err.code = REQUEST_TIMEOUT
+  err.name = 'TimeoutError'
+  return err
+}
+
+// Run ONE attempt (fetch + body read) under the bound. `run(signal)` gets the
+// signal to hand to fetch: the caller's own when there is no bound, else a
+// signal that aborts on the caller's abort OR the timer (manual link — no
+// AbortSignal.any dependency). The attempt also RACES the timer, so a body
+// read that ignores abort still ends at the bound. The timer never aborts the
+// caller's controller.
+const _runAttempt = async (url, timeoutMs, callerSignal, run) => {
+  if (!timeoutMs || typeof AbortController !== 'function') return run(callerSignal)
   const controller = new AbortController()
-  let timedOut = false
-  const timer = setTimeout(() => {
-    timedOut = true
-    controller.abort()
-  }, timeoutMs)
+  const onCallerAbort = () => controller.abort(callerSignal.reason)
+  if (callerSignal) {
+    if (callerSignal.aborted) controller.abort(callerSignal.reason)
+    else callerSignal.addEventListener('abort', onCallerAbort, { once: true })
+  }
+  let timer
+  const timeout = new Promise((resolve, reject) => {
+    timer = setTimeout(() => {
+      reject(_timeoutError(timeoutMs, url))
+      controller.abort()
+    }, timeoutMs)
+  })
   try {
-    return await fetch(url, { ...init, signal: controller.signal })
-  } catch (error) {
-    if (timedOut) {
-      const err = new Error(`Request timed out after ${timeoutMs} ms: ${url}`, { cause: error })
-      err.code = REQUEST_TIMEOUT
-      err.name = 'TimeoutError'
-      throw err
-    }
-    throw error
+    return await Promise.race([run(controller.signal), timeout])
   } finally {
     clearTimeout(timer)
+    if (callerSignal) callerSignal.removeEventListener('abort', onCallerAbort)
   }
 }
 
@@ -158,9 +183,11 @@ const _canDedupeRequest = (method, options) =>
   options.signal === undefined &&
   options.body === undefined
 
-const _dedupeGetKey = (url, headers) => {
+// The bound is part of the key: callers with different `timeoutMs` never share
+// a flight, so a short-bound caller is never held by a peer's longer bound.
+const _dedupeGetKey = (url, headers, timeoutMs = 0) => {
   const h = headers || {}
-  let key = url
+  let key = `${url}\ntimeout:${timeoutMs}`
   for (const name of Object.keys(h).sort()) {
     key += `\n${name.toLowerCase()}:${h[name]}`
   }
@@ -402,52 +429,49 @@ export class BaseService {
 
     const method = String(options.method || 'GET').toUpperCase()
     const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES
+    const timeoutMs = _timeoutFor(options, options.methodName)
     const runFetch = async () => {
+      let timeoutRetries = 0
       for (let attempt = 0; ; attempt++) {
         try {
-          const response = await _fetchWithTimeout(
-            url,
-            {
-              ...options,
-              headers: {
-                ...defaultHeaders,
-                ...options.headers
-              }
-            },
-            _timeoutFor(options, options.methodName)
-          )
+          return await _runAttempt(url, timeoutMs, options.signal, async (signal) => {
+            const init = { ...options, headers: { ...defaultHeaders, ...options.headers } }
+            if (signal !== undefined) init.signal = signal
+            const response = await fetch(url, init)
 
-          if (!response.ok) {
-            let error = {
-              message: `HTTP ${response.status}: ${response.statusText}`
-            }
-            try {
-              error = await response.json()
-            } catch {
-              // Use default error message
-            }
-            // Track HTTP error before throwing
-            this._trackServiceError(
-              new Error(error.message || error.error || `HTTP ${response.status}: ${response.statusText}`),
-              {
-                endpoint,
-                methodName: options.methodName,
-                status: response.status,
-                statusText: response.statusText
+            if (!response.ok) {
+              let error = {
+                message: `HTTP ${response.status}: ${response.statusText}`
               }
-            )
-            const httpErr = new Error(error.message || error.error || 'Request failed', { cause: error })
-            httpErr.status = response.status
-            throw httpErr
-          }
+              try {
+                error = await response.json()
+              } catch {
+                // Use default error message
+              }
+              // Track HTTP error before throwing
+              this._trackServiceError(
+                new Error(error.message || error.error || `HTTP ${response.status}: ${response.statusText}`),
+                {
+                  endpoint,
+                  methodName: options.methodName,
+                  status: response.status,
+                  statusText: response.statusText
+                }
+              )
+              const httpErr = new Error(error.message || error.error || 'Request failed', { cause: error })
+              httpErr.status = response.status
+              throw httpErr
+            }
 
-          return response.status === 204 ? null : response.json()
+            return response.status === 204 ? null : await response.json()
+          })
         } catch (error) {
           const wrapped =
             error?.status !== undefined || error?.code === REQUEST_TIMEOUT
               ? error
               : _wrapRequestError(error, url)
-          if (_shouldRetryRequest(wrapped, method, options.methodName, attempt, maxRetries)) {
+          if (_shouldRetryRequest(wrapped, method, options.methodName, attempt, maxRetries, timeoutRetries)) {
+            if (wrapped.code === REQUEST_TIMEOUT) timeoutRetries++
             await _sleep(_retryDelay(attempt))
             continue
           }
@@ -462,7 +486,7 @@ export class BaseService {
     // included). Mutations, aborted-able and body-carrying requests never
     // enter the table.
     if (_canDedupeRequest(method, options)) {
-      const key = _dedupeGetKey(url, { ...defaultHeaders, ...options.headers })
+      const key = _dedupeGetKey(url, { ...defaultHeaders, ...options.headers }, timeoutMs)
       return _dedupeInflightGet(key, runFetch)
     }
     return runFetch()
@@ -505,37 +529,40 @@ export class BaseService {
 
     const method = String(init.method || 'GET').toUpperCase()
     const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES
+    const timeoutMs = _timeoutFor(init, methodName)
     const runFetch = async () => {
+      let timeoutRetries = 0
       for (let attempt = 0; ; attempt++) {
         try {
-          const response = await _fetchWithTimeout(
-            url,
-            { ...init, headers: { ...defaultHeaders, ...init.headers } },
-            _timeoutFor(init, methodName)
-          )
+          return await _runAttempt(url, timeoutMs, init.signal, async (signal) => {
+            const attemptInit = { ...init, headers: { ...defaultHeaders, ...init.headers } }
+            if (signal !== undefined) attemptInit.signal = signal
+            const response = await fetch(url, attemptInit)
 
-          if (!response.ok) {
-            let error = { message: `HTTP ${response.status}: ${response.statusText}` }
-            try { error = await response.json() } catch {}
-            this._trackServiceError(
-              new Error(error.message || error.error || `HTTP ${response.status}: ${response.statusText}`),
-              { endpoint: url, methodName, status: response.status, statusText: response.statusText }
-            )
-            const httpErr = new Error(error.message || error.error || 'Request failed', { cause: error })
-            httpErr.status = response.status
-            throw httpErr
-          }
+            if (!response.ok) {
+              let error = { message: `HTTP ${response.status}: ${response.statusText}` }
+              try { error = await response.json() } catch {}
+              this._trackServiceError(
+                new Error(error.message || error.error || `HTTP ${response.status}: ${response.statusText}`),
+                { endpoint: url, methodName, status: response.status, statusText: response.statusText }
+              )
+              const httpErr = new Error(error.message || error.error || 'Request failed', { cause: error })
+              httpErr.status = response.status
+              throw httpErr
+            }
 
-          if (response.status === 204) return null
-          const text = await response.text()
-          if (!text) return null
-          try { return JSON.parse(text) } catch { return text }
+            if (response.status === 204) return null
+            const text = await response.text()
+            if (!text) return null
+            try { return JSON.parse(text) } catch { return text }
+          })
         } catch (error) {
           const wrapped =
             error?.status !== undefined || error?.code === REQUEST_TIMEOUT
               ? error
               : _wrapRequestError(error, url)
-          if (_shouldRetryRequest(wrapped, method, methodName, attempt, maxRetries)) {
+          if (_shouldRetryRequest(wrapped, method, methodName, attempt, maxRetries, timeoutRetries)) {
+            if (wrapped.code === REQUEST_TIMEOUT) timeoutRetries++
             await _sleep(_retryDelay(attempt))
             continue
           }
@@ -548,7 +575,7 @@ export class BaseService {
     // Same identical-GET dedupe as _request (workspace boot F6) — off-core
     // wrappers (workspace-project, KV worker) stampede at boot too.
     if (_canDedupeRequest(method, init)) {
-      const key = _dedupeGetKey(url, { ...defaultHeaders, ...init.headers })
+      const key = _dedupeGetKey(url, { ...defaultHeaders, ...init.headers }, timeoutMs)
       return _dedupeInflightGet(key, runFetch)
     }
     return runFetch()
