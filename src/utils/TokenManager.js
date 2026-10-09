@@ -297,14 +297,16 @@ export class TokenManager {
    * owner again and resolves `{ access_token, expires_at }` (`expires_at` in
    * epoch ms; `expires_in` seconds is accepted too) or null.
    *
-   * The reacquirer runs:
-   *   - in ensureValidToken when the access token is expired and there is no
-   *     refresh token — instead of clearing the session;
-   *   - in ensureValidToken when a refresh was REFUSED by the server (not a
-   *     transport failure) — a copied refresh token an older build left
-   *     behind is exactly that case.
-   * It never runs for a signed-out manager (no access token at all), and a
-   * refresh is never sent without a refresh token.
+   * The reacquirer runs ONLY in ensureValidToken when the access token is
+   * expired and there is NO refresh token — an access-only session adopted
+   * from the owner — instead of clearing that session.
+   *
+   * It never runs for a session that holds its own refresh token: that
+   * session OWNS the login. When the server refuses its refresh token on
+   * purpose (revoked, suspended, sign-out-everywhere) it signs out; it must
+   * never borrow a peer's access token (review M2, 2026-10-09). It never runs
+   * for a signed-out manager (no access token at all), and a refresh is never
+   * sent without a refresh token.
    *
    * @param {Function|null} fn
    */
@@ -528,11 +530,8 @@ export class TokenManager {
         logger.warn('[TokenManager] refresh unreachable — keeping session for retry')
         throw error
       }
-      // The server refused the refresh token (e.g. 401 REVOKED: a copy of a
-      // single-use token another origin already spent). Ask the owner again
-      // before clearing the session.
-      const reacquired = await this.reacquireSession()
-      if (reacquired) return reacquired
+      // The server refused this session's OWN refresh token: sign out. Never
+      // reacquire here — an owner must not borrow a peer's token (review M2).
       this.clearTokens()
       if (this.config.onTokenError) {
         this.config.onTokenError(error)
@@ -642,7 +641,13 @@ export class TokenManager {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}))
-      throw new Error(errorData.message || `Token refresh failed: ${response.status}`)
+      // Carry the server's verdict (status + reason, e.g. 401 'revoked') so a
+      // caller can tell a refused session from any other failure.
+      const refused = new Error(errorData.message || `Token refresh failed: ${response.status}`)
+      refused.status = response.status
+      if (errorData.reason) refused.reason = errorData.reason
+      if (errorData.code) refused.code = errorData.code
+      throw refused
     }
 
     const responseData = await response.json()

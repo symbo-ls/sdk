@@ -101,21 +101,60 @@ describe('TokenManager session reacquirer', () => {
     assert.equal(tm.hasTokens(), false)
   })
 
-  test('a refused refresh (copied, already-spent token) reacquires and drops the dead refresh token', async () => {
+  // Review M2 (2026-10-09): a session that holds its OWN refresh token is the
+  // owner of the login. When the server refuses that token on purpose
+  // (revoked, suspended, sign-out-everywhere) the owner must sign out — it
+  // must never borrow a peer's access token through the reacquirer.
+  test('an OWNER whose refresh is refused (401 revoked) signs out and never borrows', async () => {
     seedAccessOnly('acc-old', Date.now() - 1000)
-    local.setItem('symbols_refresh_token', 'ref-copied')
+    local.setItem('symbols_refresh_token', 'ref-own')
+    globalThis.fetch = async (url, opts) => {
+      refreshCalls.push(JSON.parse(opts.body).refreshToken)
+      return {
+        ok: false,
+        status: 401,
+        json: async () => ({ error: 'invalid_token', code: 'invalid_token', reason: 'revoked', message: 'Refresh token is revoked or expired.' })
+      }
+    }
     const tm = manager()
-    tm.setSessionReacquirer(async () => ({ access_token: 'acc-new', expires_at: Date.now() + HOUR }))
-    const token = await tm.ensureValidToken()
-    assert.equal(token, 'acc-new')
-    assert.deepEqual(refreshCalls, ['ref-copied'], 'one refresh, refused')
-    assert.equal(tm.hasRefreshToken(), false)
-    assert.equal(local.getItem('symbols_refresh_token'), null)
+    let asked = 0
+    tm.setSessionReacquirer(async () => {
+      asked++
+      return { access_token: 'acc-peer', expires_at: Date.now() + HOUR }
+    })
+    await assert.rejects(() => tm.ensureValidToken())
+    assert.deepEqual(refreshCalls, ['ref-own'], 'one refresh, refused')
+    assert.equal(asked, 0, 'the owner must not borrow the peer token')
+    assert.equal(tm.hasTokens(), false, 'signed out')
+    assert.equal(local.getItem('symbols_access_token'), null)
+  })
 
-    // Next expiry: no second refresh with the dead token.
-    tm.tokens.expiresAt = Date.now() - 1000
-    await tm.ensureValidToken()
-    assert.deepEqual(refreshCalls, ['ref-copied'])
+  test('an OWNER whose refresh is refused for any other reason (500) still never borrows', async () => {
+    seedAccessOnly('acc-old', Date.now() - 1000)
+    local.setItem('symbols_refresh_token', 'ref-own')
+    globalThis.fetch = async () => ({ ok: false, status: 500, json: async () => ({ message: 'boom' }) })
+    const tm = manager()
+    let asked = 0
+    tm.setSessionReacquirer(async () => {
+      asked++
+      return { access_token: 'acc-peer', expires_at: Date.now() + HOUR }
+    })
+    await assert.rejects(() => tm.ensureValidToken())
+    assert.equal(asked, 0)
+  })
+
+  test('the refused refresh error carries the server status and reason', async () => {
+    seedAccessOnly('acc-old', Date.now() - 1000)
+    local.setItem('symbols_refresh_token', 'ref-own')
+    globalThis.fetch = async () => ({
+      ok: false,
+      status: 401,
+      json: async () => ({ reason: 'revoked', message: 'Refresh token is revoked or expired.' })
+    })
+    const tm = manager()
+    const err = await tm.ensureValidToken().then(() => null, (e) => e)
+    assert.equal(err?.status, 401)
+    assert.equal(err?.reason, 'revoked')
   })
 
   test('a transport failure on refresh keeps the session and does not reacquire', async () => {
