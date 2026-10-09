@@ -136,14 +136,19 @@ export class AuthService extends BaseService {
       })
       if (response.success && response.data) {
         const { accessToken, refreshToken } = response.data
-        if (accessToken && this._tokenManager) {
-          this._tokenManager.setTokens({
-            access_token: accessToken,
-            refresh_token: refreshToken || null,
-            token_type: 'Bearer'
-          })
+        // An EXISTING demo email gets no tokens: the server mails a sign-in
+        // link and answers { isNew:false, signInLinkSent:true }. Only a
+        // response that carries an accessToken is a sign-in.
+        if (accessToken) {
+          if (this._tokenManager) {
+            this._tokenManager.setTokens({
+              access_token: accessToken,
+              refresh_token: refreshToken || null,
+              token_type: 'Bearer'
+            })
+          }
+          this._emitAuth?.('SIGNED_IN')
         }
-        this._emitAuth?.('SIGNED_IN')
         return response.data
       }
       throw new Error(response.message)
