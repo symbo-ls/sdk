@@ -24,6 +24,7 @@ export const SERVICE_METHODS = {
   // Auth methods
   getStoredAuthState: 'auth',
   getAuthToken: 'auth',
+  mintPreviewToken: 'auth',
   register: 'auth',
   login: 'auth',
   startDemo: 'auth',

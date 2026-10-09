@@ -169,8 +169,14 @@ export class BaseService {
         throw new Error('Service base URL not configured')
       }
 
+      // PREVIEW-READ-TOKEN: an SDK built with `{ previewReadToken }` carries a
+      // per-instance ScopedTokenHolder (utils/ScopedTokenHolder.js) on its
+      // options. Use it, and NEVER touch the page-global TokenManager: on a
+      // page that runs user project code that global (and the platform
+      // tokens it loads from storage) must not exist.
+      const scoped = this._options?.scopedTokenHolder
       // Initialize token manager (singleton). TokenManager handles persistence
-      this._tokenManager = getTokenManager({
+      this._tokenManager = scoped || getTokenManager({
         apiUrl: this._apiUrl,
         onTokenError: error => {
           logger.error('Token management error:', error)
@@ -179,7 +185,7 @@ export class BaseService {
 
       // Seed token manager with authToken from context (e.g. CLI passes it)
       const ctx = context || this._context
-      if (ctx.authToken && !this._tokenManager.getAccessToken()) {
+      if (!scoped && ctx.authToken && !this._tokenManager.getAccessToken()) {
         this._tokenManager.setTokens({ access_token: ctx.authToken })
       }
 

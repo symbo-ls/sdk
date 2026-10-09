@@ -643,6 +643,36 @@ export class AuthService extends BaseService {
     }
   }
 
+  /**
+   * Mint a preview-read token (PREVIEW-READ-TOKEN) for ONE private project
+   * the signed-in user may read. `POST /core/auth/preview-token`.
+   *
+   * The workspace shell calls this right before it hands a sign-in off to a
+   * preview host that runs user project code; the token minted here is the
+   * ONLY credential that host receives (never the platform access or refresh
+   * token). The token reads that one project for <= 10 minutes and has no
+   * refresh: the preview mints again through the shell. Use it with
+   * `new SDK({ previewReadToken })`.
+   *
+   * @param {{ projectId?: string, owner?: string, key?: string }} target
+   * @returns {Promise<{ previewToken: string, expiresIn: number,
+   *   expiresAt: string, projectId: string }>}
+   *   Rejects on 403 (no read access), 404, and 409 (the project is public
+   *   or password-protected — no token is needed or given).
+   */
+  async mintPreviewToken({ projectId, owner, key } = {}) {
+    const body = projectId ? { projectId: String(projectId) } : { owner, key }
+    if (!body.projectId && !body.key) {
+      throw new Error('mintPreviewToken: projectId, or owner and key, is required')
+    }
+    const data = await this._call('mintPreviewToken', '/auth/preview-token', {
+      method: 'POST',
+      body
+    })
+    if (!data?.previewToken) throw new Error('preview-token mint returned no token')
+    return data
+  }
+
   getAuthToken() {
     if (!this._tokenManager) {
       return null

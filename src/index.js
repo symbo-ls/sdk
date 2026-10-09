@@ -79,6 +79,7 @@ import environment from './config/environment.js'
 import { rootBus } from './state/rootEventBus.js'
 import { logger, setDebug } from './utils/logger.js'
 import { getTokenManager } from './utils/TokenManager.js'
+import { createScopedTokenHolder } from './utils/ScopedTokenHolder.js'
 import {
   createEntityDispatcher,
   registerEntity
@@ -102,10 +103,32 @@ export const isLocalhost = () => {
 }
 
 export class SDK {
+  // Feature flag for consumers (PREVIEW-READ-TOKEN): this build understands
+  // `new SDK({ previewReadToken })` and `sdk.mintPreviewToken()`. A consumer
+  // that finds it missing must hand the preview NO credential at all — never
+  // fall back to the platform session.
+  static supportsPreviewReadToken = true
+
   constructor(options = {}) {
     this._services = new Map()
     this._context = {}
+    // PREVIEW-READ-TOKEN: `{ previewReadToken }` (the key present, even with
+    // a null value) builds a PREVIEW SDK for a page that runs user project
+    // code: a per-instance ScopedTokenHolder replaces the page-global
+    // TokenManager — no globalThis.__SMBLS_TOKEN_MANAGER__, no storage, no
+    // refresh, no setTokens. The raw token never stays on the options; the
+    // holder rides them as a NON-enumerable key, so a spread or a JSON dump
+    // of the options carries neither.
+    let scopedTokenHolder = null
+    if (options && Object.prototype.hasOwnProperty.call(options, 'previewReadToken')) {
+      const { previewReadToken, ...rest } = options
+      scopedTokenHolder = createScopedTokenHolder(previewReadToken)
+      options = rest
+    }
     this._options = this._validateOptions(options)
+    if (scopedTokenHolder) {
+      Object.defineProperty(this._options, 'scopedTokenHolder', { value: scopedTokenHolder })
+    }
 
     // Real accessor for the shared TokenManager singleton (see
     // utils/TokenManager.js). Every BaseService gets the same instance via
@@ -734,9 +757,15 @@ export class SDK {
     // Every service above just called getTokenManager() in its own init()
     // (see BaseService.js), creating the shared singleton with the real
     // apiUrl. Adopt that same instance on the root now that it exists.
-    this._tokenManager = getTokenManager()
+    this._tokenManager = this._options.scopedTokenHolder || getTokenManager()
 
     return this
+  }
+
+  // True when this SDK was built with `{ previewReadToken }` (see the
+  // constructor) — a preview SDK that holds at most one preview-read token.
+  isPreviewReadSession() {
+    return !!this._options?.scopedTokenHolder
   }
 
   // Private helper to initialize a service
