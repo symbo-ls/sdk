@@ -68,8 +68,9 @@ export class TokenManager {
     /**
      * Register how an access-only session (no refresh token) gets a new
      * access token: an async function resolving { access_token, expires_at }
-     * or null. Runs instead of clearing the session on expiry, and after a
-     * refused refresh.
+     * or null. Runs instead of clearing an access-only session on expiry.
+     * Never runs for a session that holds its own refresh token (the owner
+     * signs out when the server refuses it).
      */
     setSessionReacquirer(fn: (() => Promise<any>) | null): void;
     hasSessionReacquirer(): boolean;
