@@ -477,6 +477,26 @@ export class AuthService extends BaseService {
         methodName: 'confirmRegistration'
       })
       if (response.success) {
+        // core/auth-takeover-paths: a first proof of the address from a
+        // browser with no session for this account (the link opened on
+        // another device) drops the password set before the proof and
+        // answers with a fresh session in `data.tokens`. Adopt it the way
+        // login does, or the inbox owner is left with no password and no
+        // session. The cached user may belong to whoever was signed in here
+        // before — drop it; getSession() falls back to the token claims.
+        const tokens = response.data?.tokens
+        if (tokens?.accessToken) {
+          if (this._tokenManager) {
+            this._tokenManager.setTokens({
+              access_token: tokens.accessToken,
+              refresh_token: tokens.refreshToken,
+              expires_in: tokens.accessTokenExp?.expiresIn,
+              token_type: 'Bearer'
+            })
+          }
+          this._currentUser = null
+          this._emitAuth?.('SIGNED_IN')
+        }
         return response.data
       }
       throw new Error(response.message)
