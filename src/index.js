@@ -143,9 +143,12 @@ export class SDK {
 
   // Initialize SDK with context
   async initialize(context = {}) {
+    // `reacquireSession` is a TokenManager hook, not service context — keep
+    // it out of `_context` (see TokenManager.setSessionReacquirer).
+    const { reacquireSession, ...serviceContext } = context || {}
     this._context = {
       ...this._context,
-      ...context
+      ...serviceContext
     }
 
     //
@@ -735,6 +738,11 @@ export class SDK {
     // (see BaseService.js), creating the shared singleton with the real
     // apiUrl. Adopt that same instance on the root now that it exists.
     this._tokenManager = getTokenManager()
+    // An origin whose session came from a sibling origin (access token only,
+    // no refresh token) asks that sibling again instead of signing out.
+    if (typeof reacquireSession === 'function') {
+      this._tokenManager.setSessionReacquirer(reacquireSession)
+    }
 
     return this
   }

@@ -29,6 +29,8 @@ export class TokenManager {
       onTokenRefresh: options.onTokenRefresh || null,
       onTokenExpired: options.onTokenExpired || null,
       onTokenError: options.onTokenError || null,
+      // SESSION REACQUIRER — see setSessionReacquirer below. null = none.
+      reacquireSession: typeof options.reacquireSession === 'function' ? options.reacquireSession : null,
       ...options
     }
 
@@ -40,6 +42,7 @@ export class TokenManager {
     }
 
     this.refreshPromise = null
+    this._reacquirePromise = null
     this.refreshTimeout = null
     this.retryCount = 0
 
@@ -277,6 +280,109 @@ export class TokenManager {
   }
 
   /**
+   * SESSION REACQUIRER — how a session that holds NO refresh token of its own
+   * gets a new access token.
+   *
+   * Refresh tokens are single-use: every /core/auth/refresh retires the token
+   * it was sent. An origin that received its session from a SIBLING origin
+   * (the workspace `/_session-bridge` iframe handoff: shell <-> canvas) used
+   * to receive a copy of the sibling's refresh token too. Two origins then
+   * held one single-use token; whichever refreshed second sent a retired
+   * token, got 401 REVOKED, and was signed out — about once per access-token
+   * lifetime for every user of both apps.
+   *
+   * The handoff now carries the ACCESS token only. The origin that owns the
+   * login keeps the refresh token and is the only one that refreshes. A peer
+   * origin registers a reacquirer here: an async function that asks the
+   * owner again and resolves `{ access_token, expires_at }` (`expires_at` in
+   * epoch ms; `expires_in` seconds is accepted too) or null.
+   *
+   * The reacquirer runs:
+   *   - in ensureValidToken when the access token is expired and there is no
+   *     refresh token — instead of clearing the session;
+   *   - in ensureValidToken when a refresh was REFUSED by the server (not a
+   *     transport failure) — a copied refresh token an older build left
+   *     behind is exactly that case.
+   * It never runs for a signed-out manager (no access token at all), and a
+   * refresh is never sent without a refresh token.
+   *
+   * @param {Function|null} fn
+   */
+  setSessionReacquirer (fn) {
+    this.config.reacquireSession = typeof fn === 'function' ? fn : null
+  }
+
+  hasSessionReacquirer () {
+    return typeof this.config.reacquireSession === 'function'
+  }
+
+  /**
+   * Run the reacquirer once (concurrent callers share one call) and adopt
+   * what it returns. Resolves the new access token, or null.
+   */
+  async reacquireSession () {
+    if (!this.hasSessionReacquirer()) return null
+    if (this._reacquirePromise) return this._reacquirePromise
+    this._reacquirePromise = (async () => {
+      let data = null
+      try {
+        data = await this.config.reacquireSession()
+      } catch (error) {
+        logger.warn('[TokenManager] session reacquirer failed:', error?.message || error)
+        return null
+      }
+      return this.adoptAccessToken(data) ? this.getAccessToken() : null
+    })()
+    try {
+      return await this._reacquirePromise
+    } finally {
+      this._reacquirePromise = null
+    }
+  }
+
+  /**
+   * Adopt an access-only session (no refresh token). Any refresh token this
+   * manager held is DROPPED, in memory and in storage: a session handed over
+   * by another origin must never be refreshed from here. Returns false (and
+   * changes nothing) for a missing or already-expired token.
+   */
+  adoptAccessToken (data) {
+    const accessToken = data?.access_token || data?.accessToken
+    if (!accessToken || typeof accessToken !== 'string') return false
+    const now = Date.now()
+    let expiresAt = Number(data.expires_at ?? data.expiresAt) || null
+    if (!expiresAt && Number(data.expires_in)) expiresAt = now + Number(data.expires_in) * 1000
+    if (expiresAt && expiresAt <= now) return false
+
+    this.tokens = {
+      accessToken,
+      refreshToken: null,
+      expiresAt,
+      expiresIn: expiresAt ? Math.max(0, Math.floor((expiresAt - now) / 1000)) : null,
+      tokenType: 'Bearer'
+    }
+    this.saveTokens()
+    try {
+      const { storage } = this
+      const keys = this.storageKeys
+      storage.removeItem(keys.refreshToken)
+      if (!expiresAt) {
+        storage.removeItem(keys.expiresAt)
+        storage.removeItem(keys.expiresIn)
+      }
+    } catch (_) {
+      /* locked storage — memory already holds the access-only session */
+    }
+    // Clears any pending refresh timer; schedules none (no refresh token).
+    this.scheduleRefresh()
+    this.retryCount = 0
+    if (this.config.onTokenRefresh) {
+      this.config.onTokenRefresh(this.tokens)
+    }
+    return true
+  }
+
+  /**
    * Get current refresh token
    */
   getRefreshToken () {
@@ -393,8 +499,12 @@ export class TokenManager {
       return this.getAccessToken()
     }
 
-    // If no refresh token, clear tokens and return null
+    // No refresh token: an access-only session (see setSessionReacquirer).
+    // Ask the owner again before giving up; never send a refresh without a
+    // refresh token.
     if (!this.hasRefreshToken()) {
+      const reacquired = await this.reacquireSession()
+      if (reacquired) return reacquired
       this.clearTokens()
       if (this.config.onTokenExpired) {
         this.config.onTokenExpired()
@@ -418,6 +528,11 @@ export class TokenManager {
         logger.warn('[TokenManager] refresh unreachable — keeping session for retry')
         throw error
       }
+      // The server refused the refresh token (e.g. 401 REVOKED: a copy of a
+      // single-use token another origin already spent). Ask the owner again
+      // before clearing the session.
+      const reacquired = await this.reacquireSession()
+      if (reacquired) return reacquired
       this.clearTokens()
       if (this.config.onTokenError) {
         this.config.onTokenError(error)
@@ -736,8 +851,9 @@ export class TokenManager {
     if (hasTokens) {
       if (isValid) {
         status = 'valid'
-      } else if (this.hasRefreshToken()) {
-        // Expired but recoverable — treat as valid for UI purposes; the
+      } else if (this.hasRefreshToken() || this.hasSessionReacquirer()) {
+        // Expired but recoverable (a refresh, or a reacquire for an
+        // access-only session) — treat as valid for UI purposes; the
         // next request will trigger refreshTokens() automatically.
         status = 'valid'
       } else {
