@@ -1,5 +1,18 @@
 import { BaseService } from './BaseService.js'
 import { logger } from '../utils/logger.js'
+import { readSseStream } from '../utils/sseParser.js'
+
+// An aborted turnStream rejects with an AbortError whatever the signal's
+// reason was (fetch rejects with the reason itself), so callers can test
+// `err.name === 'AbortError'` — or simply their own signal.aborted.
+const _abortErrorOf = (signal, cause) => {
+  const reason = signal && signal.reason
+  if (reason && reason.name === 'AbortError') return reason
+  if (cause && cause.name === 'AbortError') return cause
+  const err = new Error('[sdk.ai] the turn was aborted', { cause: reason || cause })
+  err.name = 'AbortError'
+  return err
+}
 
 // AiService — single entry point for every UI surface that talks to an
 // LLM (AppAssistant, CanvasPromptTextarea, ticket standup/detail editor,
@@ -1368,19 +1381,7 @@ export class AiService extends BaseService {
     const wsId = this._activeWorkspaceId(opts?.workspaceId)
     if (!wsId) throw new Error('[sdk.ai] no active workspace selected')
     const url = `${this._apiUrl}/core/agents/workspaces/${encodeURIComponent(wsId)}/turn`
-    const body = {
-      ...(Array.isArray(payload.messages) && payload.messages.length
-        ? { messages: payload.messages }
-        : { content: String(payload.content || payload.text || '') }),
-      ...(payload.system ? { system: payload.system } : {}),
-      // Server-stored system prompt key (AgentSystemPrompt, B1) — resolved
-      // server-side and prepended ahead of `system`; dropping it here would
-      // silently strip the caller's charter (Bellforge B3 regression).
-      ...(payload.systemRef ? { systemRef: String(payload.systemRef) } : {}),
-      // Opt out of the ephemeral read-tool loop (prose-only turns).
-      ...(payload.allowTools === false ? { allowTools: false } : {}),
-      modelMode: payload.modelMode || this.getModelMode() || 'auto'
-    }
+    const body = this._turnBody(payload)
     // Bellforge B10 — `opts.signal` (an AbortSignal) rides straight into
     // fetch via _requestExternal (which spreads init). A caller Cancel then
     // closes the request, and the server's ephemeral /turn maps that close to
@@ -1400,6 +1401,170 @@ export class AiService extends BaseService {
       usage: (data && data.usage) || null,
       raw: data
     }
+  }
+
+  // The /turn request body — ONE builder for `turn` and `turnStream`, so the
+  // streamed turn can never send a different request than the JSON one.
+  _turnBody(payload = {}) {
+    return {
+      ...(Array.isArray(payload.messages) && payload.messages.length
+        ? { messages: payload.messages }
+        : { content: String(payload.content || payload.text || '') }),
+      ...(payload.system ? { system: payload.system } : {}),
+      // Server-stored system prompt key (AgentSystemPrompt, B1) — resolved
+      // server-side and prepended ahead of `system`; dropping it here would
+      // silently strip the caller's charter (Bellforge B3 regression).
+      ...(payload.systemRef ? { systemRef: String(payload.systemRef) } : {}),
+      // Opt out of the ephemeral read-tool loop (prose-only turns).
+      ...(payload.allowTools === false ? { allowTools: false } : {}),
+      modelMode: payload.modelMode || this.getModelMode() || 'auto'
+    }
+  }
+
+  // Streamed ephemeral turn — the SAME POST /core/agents/workspaces/:id/turn
+  // as `turn` (zero persistence, the same server gate, cap and credits),
+  // asked with `stream: true` + `Accept: text/event-stream`. The server
+  // answers SSE:
+  //   event: delta  data {text}               — words, appended
+  //   event: reset  data {reason}             — drop what was shown (a tool
+  //                                             step's narration, a failed
+  //                                             model's partial answer)
+  //   event: done   data {text, type, usage}  — the JSON turn's data
+  //   event: error  data {message, code}      — a failure after the stream
+  //                                             opened
+  //   : heartbeat                             — ignored
+  // A refusal before the stream opens (no access, ai_cap_exceeded, a bad
+  // request) is the normal JSON error, rejected like `turn` rejects it.
+  //
+  // Resolves { text, usage, raw } — the shape `turn` resolves. Rejects with
+  // the server's message (+ `code`, `status`) on an HTTP error or an `error`
+  // frame; with code STREAM_TRUNCATED when the stream ends without `done`;
+  // with an AbortError when `opts.signal` aborts (the server then aborts the
+  // upstream model call and releases the credit reservation).
+  //
+  // opts.onDelta(deltaText, fullText) — after every delta. RENDER fullText:
+  //   it restarts after a `reset` (onDelta('', '') fires then), so a
+  //   consumer that only appends deltaText would keep words the server
+  //   dropped. opts.onReset(reason) — optional, for consumers that append.
+  //   A listener that throws never breaks the turn.
+  // A server that predates the stream answers the JSON turn; turnStream then
+  // resolves with it and calls onDelta once with the whole text.
+  async turnStream(payload = {}, opts = {}) {
+    const wsId = this._activeWorkspaceId(opts?.workspaceId)
+    if (!wsId) throw new Error('[sdk.ai] no active workspace selected')
+    const signal = opts?.signal || null
+    const onDelta = typeof opts?.onDelta === 'function' ? opts.onDelta : null
+    const onReset = typeof opts?.onReset === 'function' ? opts.onReset : null
+    const notify = (fn, ...args) => {
+      if (!fn) return
+      try {
+        fn(...args)
+      } catch (_) {
+        // a consumer's render fault never breaks the turn
+      }
+    }
+    const url = `${this._apiUrl}/core/agents/workspaces/${encodeURIComponent(wsId)}/turn`
+    const res = await this._requestStream(url, {
+      method: 'POST',
+      body: { ...this._turnBody(payload), stream: true },
+      headers: { Accept: 'text/event-stream' },
+      methodName: 'ai.turnStream',
+      ...(signal ? { signal } : {})
+    })
+
+    const contentType = (res.headers && res.headers.get && res.headers.get('content-type')) || ''
+    if (!res.ok || !/text\/event-stream/i.test(contentType) || !res.body) {
+      return this._turnStreamJsonAnswer(res, url, (text) => notify(onDelta, text, text))
+    }
+
+    let full = ''
+    let outcome = null
+    try {
+      await readSseStream(res.body, ({ event, data }) => {
+        let frame
+        try {
+          frame = JSON.parse(data)
+        } catch (_) {
+          return // not a frame of this protocol
+        }
+        if (event === 'delta') {
+          const piece = typeof frame?.text === 'string' ? frame.text : ''
+          if (!piece) return
+          full += piece
+          notify(onDelta, piece, full)
+        } else if (event === 'reset') {
+          full = ''
+          notify(onReset, (frame && frame.reason) || '')
+          notify(onDelta, '', '')
+        } else if (event === 'done') {
+          outcome = { done: frame || {} }
+          return false
+        } else if (event === 'error') {
+          outcome = { error: frame || {} }
+          return false
+        }
+      })
+    } catch (error) {
+      if (signal && signal.aborted) throw _abortErrorOf(signal, error)
+      const broken = new Error(
+        '[sdk.ai] the turn stream broke before the answer was complete',
+        { cause: error }
+      )
+      broken.code = 'STREAM_INTERRUPTED'
+      this._trackServiceError(broken, { endpoint: url, methodName: 'ai.turnStream' })
+      throw broken
+    }
+
+    if (outcome && outcome.error) {
+      const err = new Error(outcome.error.message || 'AI turn failed', { cause: outcome.error })
+      if (outcome.error.code) err.code = outcome.error.code
+      this._trackServiceError(err, { endpoint: url, methodName: 'ai.turnStream' })
+      throw err
+    }
+    if (!outcome) {
+      if (signal && signal.aborted) throw _abortErrorOf(signal)
+      const err = new Error('[sdk.ai] the turn stream ended before the answer was complete')
+      err.code = 'STREAM_TRUNCATED'
+      this._trackServiceError(err, { endpoint: url, methodName: 'ai.turnStream' })
+      throw err
+    }
+    const done = outcome.done
+    const text = typeof done.text === 'string' ? done.text : full
+    // The server's deltas always add up to done.text; should a server ever
+    // differ, the final text wins and the renderer is told.
+    if (text !== full) notify(onDelta, '', text)
+    return { text, usage: done.usage || null, raw: done }
+  }
+
+  // turnStream's non-SSE answer: the JSON error of a refused request, or —
+  // from a server without the stream — the JSON turn itself.
+  async _turnStreamJsonAnswer(res, url, onWholeText) {
+    let body = null
+    try {
+      const raw = await res.text()
+      body = raw ? JSON.parse(raw) : null
+    } catch (_) {
+      body = null
+    }
+    if (res.ok && body && body.success !== false) {
+      const data = body.data && typeof body.data === 'object' ? body.data : body
+      const text = (data && data.text) || ''
+      if (text) onWholeText(text)
+      return { text, usage: (data && data.usage) || null, raw: data }
+    }
+    const err = new Error(
+      (body && (body.message || body.error)) || `HTTP ${res.status}: ${res.statusText}`,
+      { cause: body }
+    )
+    err.status = res.status
+    if (body && typeof body.code === 'string') err.code = body.code
+    this._trackServiceError(err, {
+      endpoint: url,
+      methodName: 'ai.turnStream',
+      status: res.status,
+      statusText: res.statusText
+    })
+    throw err
   }
 
   // Monthly AI usage for the active (or given) workspace — powers admin

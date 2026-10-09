@@ -492,6 +492,49 @@ export class BaseService {
     return runFetch()
   }
 
+  // Streaming request against a fully-qualified URL — `_requestExternal`'s
+  // auth (TokenManager header, `authHeader` override), plain-object body
+  // encoding and NETWORK_UNREACHABLE wrapping, but it resolves with the RAW
+  // Response so the caller can read the body as a stream (SSE), and it does
+  // not throw on an HTTP error status: a stream endpoint answers a refusal
+  // as plain JSON before its stream opens, and the caller reads that body.
+  // Never retried — a streamed request is a POST that spends. An abort
+  // (`signal`) rejects with the fetch's own AbortError, untracked.
+  async _requestStream (url, options = {}) {
+    const { methodName, authHeader, ...init } = options
+    const defaultHeaders = {}
+    if (init.body !== undefined && !(init.body instanceof FormData)) {
+      defaultHeaders['Content-Type'] = 'application/json'
+      const isPlainJson = init.body !== null && typeof init.body === 'object' &&
+        (Array.isArray(init.body) || Object.getPrototypeOf(init.body) === Object.prototype)
+      if (isPlainJson) init.body = JSON.stringify(init.body)
+    }
+
+    if (authHeader === undefined && this._requiresInit(methodName) && this._tokenManager) {
+      try {
+        await this._tokenManager.ensureValidToken()
+        const header = this._tokenManager.getAuthHeader()
+        if (header) defaultHeaders.Authorization = header
+      } catch (error) {
+        logger.warn('Token management failed, proceeding without authentication:', error)
+      }
+    } else if (authHeader) {
+      defaultHeaders.Authorization = authHeader
+    }
+
+    try {
+      return await fetch(url, {
+        ...init,
+        headers: { ...defaultHeaders, ...init.headers }
+      })
+    } catch (error) {
+      if (error?.name === 'AbortError' || init.signal?.aborted) throw error
+      const wrapped = _wrapRequestError(error, url)
+      this._trackServiceError(wrapped, { endpoint: url, methodName })
+      throw wrapped
+    }
+  }
+
   // Envelope-aware request: expects the server to respond with
   // { success, data, message } and unwraps to `data` on success or throws
   // `new Error(message)` otherwise. Collapses the ~5 lines of boilerplate

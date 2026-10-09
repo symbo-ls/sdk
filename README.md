@@ -941,6 +941,49 @@ await credits.updateProjectSpendControls(projectId, controls)
 await credits.topupProjectCredits(projectId, { packs, returnUrl })
 ```
 
+### AI Service
+
+Workspace AI turns. `turn` and `turnStream` are EPHEMERAL: one answer, no
+stored conversation (POST `/core/agents/workspaces/:workspaceId/turn`), with
+the workspace's model routing, monthly cap and credit billing applied by the
+server.
+
+```javascript
+const ai = await sdk.getService('ai')
+
+// One answer, as JSON.
+const { text, usage } = await ai.turn(
+  { messages, system, systemRef, modelMode, allowTools },
+  { workspaceId, signal }
+)
+
+// The same turn, streamed (SSE). Render fullText — it restarts ('' ) when
+// the server drops words that are not the answer (a tool step's narration).
+const controller = new AbortController()
+const result = await ai.turnStream(
+  { messages, system, allowTools: false },
+  {
+    workspaceId,
+    signal: controller.signal,                  // abort → the server stops the model call
+    onDelta: (deltaText, fullText) => render(fullText),
+    onReset: (reason) => {}                     // optional, for consumers that append
+  }
+)
+// result: { text, usage: { inputTokens, outputTokens }, raw }
+```
+
+`turnStream` resolves with the same `{ text, usage, raw }` as `turn`. It
+rejects with the server's message (`code`, `status`) when the request is
+refused (e.g. `ai_cap_exceeded`, 402) or the server sends an `error` frame,
+with `code: 'STREAM_TRUNCATED'` when the stream ends without its `done`
+frame, and with an `AbortError` when `signal` aborts. Against a server that
+has no stream yet it resolves with the JSON answer and calls `onDelta` once.
+
+Wire format (`stream: true` or `Accept: text/event-stream` on the same
+route): `event: delta {text}`, `event: reset {reason}`, `event: done {text,
+type, usage}`, `event: error {message, code}`, and `: heartbeat` comments.
+The `delta` texts since the last `reset` always add up to `done.text`.
+
 ---
 
 ## Token Management
