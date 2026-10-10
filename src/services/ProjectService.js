@@ -18,6 +18,15 @@ function _readErrorBody (err) {
   return {}
 }
 
+// Error codes of the anonymous public data route that mean "no public data
+// here" — the preview's env-fallback chain advances on them.
+const NO_PUBLIC_DATA_CODES = new Set([
+  'not_public',
+  'project_not_found',
+  'env_not_found',
+  'project_unavailable'
+])
+
 export class ProjectService extends BaseService {
   // ==================== PROJECT METHODS ====================
 
@@ -285,7 +294,8 @@ export class ProjectService extends BaseService {
   /**
    * Anonymous read of a public project's current data for a given env.
    * Server-side gated on `project.visibility === 'public'`. Returns null on
-   * 403/404 so callers can fall back to the authed route. Pass `{owner, key}`
+   * 403/404 (incl. 404 `project_unavailable`) so callers can fall back to the
+   * authed route. Pass `{owner, key}`
    * to use the collision-safe 2-seg route.
    *
    * Throws an error with `code: 'password_required'` (status 401) when the
@@ -320,9 +330,12 @@ export class ProjectService extends BaseService {
         throw e
       }
       // Visibility-bearing 403 (private) and the 404s (project_not_found,
-      // env_not_found) all mean "no public data here" — return null so
-      // the preview's env-fallback chain advances to the next env.
-      if (errCode === 'not_public' || errCode === 'project_not_found' || errCode === 'env_not_found') {
+      // env_not_found, project_unavailable) all mean "no public data here" —
+      // return null so the preview's env-fallback chain advances to the next
+      // env. `project_unavailable` is the server's ONE answer to a caller with
+      // no read access, for a private project and a missing one alike
+      // (CORE-PUBLIC-PROJECT-NO-EXISTENCE-ORACLE-1).
+      if (NO_PUBLIC_DATA_CODES.has(errCode)) {
         return null
       }
       throw new Error(
@@ -352,6 +365,10 @@ export class ProjectService extends BaseService {
       )
       return response?.data?.visibility || null
     } catch (err) {
+      // `project_unavailable` is an answer, not an outage: the project is
+      // private to this caller or does not exist, and the server will not
+      // say which. Null, with no probe-failed warning.
+      if (_readErrorBody(err)?.error === 'project_unavailable') return null
       // Probe-only — degrade to null so callers fall back to the
       // legacy "not published" message rather than blowing up. Log so
       // backend outages don't go silent.
@@ -387,14 +404,16 @@ export class ProjectService extends BaseService {
       return null
     } catch (error) {
       // Server reports `invalid_password` (403), `invalid_params` (400),
-      // and `not_password_protected` (400) for the user-recoverable
-      // states. Anything else is infrastructure — re-throw.
+      // `not_password_protected` (400) and `project_unavailable` (404: no
+      // such project for this caller, private or missing) for the states the
+      // caller handles. Anything else is infrastructure — re-throw.
       const body = _readErrorBody(error)
       const errCode = body?.error
       if (
         errCode === 'invalid_password' ||
         errCode === 'invalid_params' ||
-        errCode === 'not_password_protected'
+        errCode === 'not_password_protected' ||
+        errCode === 'project_unavailable'
       ) {
         return null
       }
