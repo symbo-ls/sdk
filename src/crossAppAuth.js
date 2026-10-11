@@ -266,6 +266,9 @@ export function createCrossAppAuth({
 
     const removeAllTokenMirrors = (keptKey) => {
       for (const k of tokenKeys) if (k !== keptKey) origRemove(k)
+      // The refresh token left tokenKeys (review D3) but a sign-out through an
+      // access-token removal must still take it (review D9, 2026-10-10).
+      if (keptKey !== 'symbols_refresh_token') origRemove('symbols_refresh_token')
     }
 
     const patchedSet = function (key, value) {

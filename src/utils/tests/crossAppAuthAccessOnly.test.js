@@ -39,6 +39,7 @@ const page = (reply, from) => {
     getItem: (k) => (m.has(k) ? m.get(k) : null),
     setItem: (k, v) => m.set(k, String(v)),
     removeItem: (k) => m.delete(k),
+    clear: () => m.clear(),
     keys: () => [...m.keys()]
   }
   const listeners = new Set()
@@ -114,4 +115,25 @@ test('D3: hydrateAuthFromIframeBridge ignores a reply from another window of the
     globalThis.setTimeout = realSetTimeout
   }
   assert.equal(store.getItem('symbols_access_token'), null)
+})
+
+// Review D9 (2026-10-10): with the refresh key gone from DEFAULT_TOKEN_KEYS,
+// installAuthSync's "an access-token removal clears every mirror" step no
+// longer removed the refresh token — a sign-out through it left the refresh
+// token behind. It names the refresh key itself now.
+test('D9: installAuthSync — removing the access token also removes the refresh token', () => {
+  const store = page(fullReply, (f) => f.contentWindow)
+  globalThis.window.removeEventListener = () => {}
+  globalThis.document.addEventListener = () => {}
+  globalThis.document.removeEventListener = () => {}
+  const auth = createCrossAppAuth({ resolvePeerOrigin: () => PEER })
+  auth.installAuthSync()
+  try {
+    globalThis.localStorage.setItem('symbols_access_token', 'acc')
+    globalThis.localStorage.setItem('symbols_refresh_token', 'ref')
+    globalThis.localStorage.removeItem('symbols_access_token')
+    assert.equal(store.getItem('symbols_refresh_token'), null)
+  } finally {
+    auth.uninstallAuthSync()
+  }
 })
