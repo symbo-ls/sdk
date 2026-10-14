@@ -469,11 +469,16 @@ export class AuthService extends BaseService {
     }
   }
 
-  async confirmRegistration(token) {
+  // `password` (optional, core/auth-takeover-paths review r3 D4): the
+  // password typed at signup, sent as a proof. With it the server keeps the
+  // pre-set password; without it a first proof drops that password and the
+  // answer carries a fresh session plus a single-use `setPasswordToken`
+  // (see setInitialPassword).
+  async confirmRegistration(token, { password } = {}) {
     try {
       const response = await this._request('/auth/register-confirmation', {
         method: 'POST',
-        body: JSON.stringify({ token }),
+        body: JSON.stringify(password ? { token, password } : { token }),
         methodName: 'confirmRegistration'
       })
       if (response.success) {
@@ -504,6 +509,23 @@ export class AuthService extends BaseService {
       throw new Error(`Registration confirmation failed: ${error.message}`, {
         cause: error
       })
+    }
+  }
+
+  // POST /auth/set-initial-password (core/auth-takeover-paths review r3 D4):
+  // the step after a confirm whose answer carried `setPasswordToken`. The
+  // token is the only credential — no bearer is read — and it is single-use.
+  async setInitialPassword(token, password) {
+    try {
+      const response = await this._request('/auth/set-initial-password', {
+        method: 'POST',
+        body: JSON.stringify({ token, password }),
+        methodName: 'setInitialPassword'
+      })
+      if (response.success) return response.data ?? { success: true }
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Set password failed: ${error.message}`, { cause: error })
     }
   }
 

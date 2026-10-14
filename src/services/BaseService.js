@@ -583,6 +583,7 @@ export class BaseService {
       'requestPasswordReset',
       'confirmPasswordReset',
       'confirmRegistration',
+      'setInitialPassword',
       'verifyEmail',
       'getPlans',
       'getPlan',

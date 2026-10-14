@@ -40,6 +40,7 @@ export const SERVICE_METHODS = {
   requestPasswordReset: 'auth',
   confirmPasswordReset: 'auth',
   confirmRegistration: 'auth',
+  setInitialPassword: 'auth',
   requestPasswordChange: 'auth',
   confirmPasswordChange: 'auth',
   getMe: 'auth',
