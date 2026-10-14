@@ -13,6 +13,7 @@ export class TokenManager {
         onTokenRefresh: any;
         onTokenExpired: any;
         onTokenError: any;
+        reacquireSession: (() => Promise<{ access_token?: string; accessToken?: string; expires_at?: number; expires_in?: number } | null>) | null;
     };
     tokens: {
         accessToken: any;
@@ -64,6 +65,20 @@ export class TokenManager {
      * Get current access token
      */
     getAccessToken(): any;
+    /**
+     * Register how an access-only session (no refresh token) gets a new
+     * access token: an async function resolving { access_token, expires_at }
+     * or null. Runs instead of clearing an access-only session on expiry.
+     * Never runs for a session that holds its own refresh token (the owner
+     * signs out when the server refuses it).
+     */
+    setSessionReacquirer(fn: (() => Promise<any>) | null): void;
+    hasSessionReacquirer(): boolean;
+    reacquireSession(): Promise<string | null>;
+    /**
+     * Adopt an access-only session; drops any refresh token held.
+     */
+    adoptAccessToken(data: { access_token?: string; accessToken?: string; expires_at?: number; expiresAt?: number; expires_in?: number } | null): boolean;
     /**
      * Get current refresh token
      */
