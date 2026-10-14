@@ -193,29 +193,45 @@ export class AuthService extends BaseService {
 
   async logout() {
     this._requireReady('logout')
+    const tm = this._tokenManager
+    // Hand the session's refresh token to the server so it is REVOKED, not
+    // merely forgotten locally: a copy taken before sign-out (another tab, a
+    // canvas that kept the shell's token aside) must stop working the moment
+    // the user signs out. Read straight from memory BEFORE any request —
+    // `logout` is in the no-init set, so `_request` never runs a refresh
+    // first (a refresh would rotate the very token we are about to revoke and
+    // leave its successor live). A borrowed session (marked 'bridge' by the
+    // session bridge) is access-only: any refresh token in its storage is not
+    // its own, so it sends none.
+    const refreshToken =
+      tm && !tm.isBorrowedSession?.() ? tm.getRefreshToken() : null
+    // The SESSION access token, never the per-tab persona overlay: the server
+    // must see the user who owns the refresh token.
+    const sessionAccess = tm?.tokens?.accessToken || null
     try {
-      // Call the logout API endpoint
       await this._request('/auth/logout', {
         method: 'POST',
+        body: JSON.stringify(refreshToken ? { refreshToken } : {}),
+        headers: sessionAccess
+          ? { Authorization: `${tm.tokens.tokenType || 'Bearer'} ${sessionAccess}` }
+          : {},
         methodName: 'logout'
       })
-
-      // Clear tokens from TokenManager and context
-      if (this._tokenManager) {
-        this._tokenManager.clearTokens()
-      }
-      this._currentUser = null
-      this._emitAuth?.('SIGNED_OUT')
     } catch (error) {
-      // Even if the API call fails, clear local tokens
-      if (this._tokenManager) {
-        this._tokenManager.clearTokens()
-      }
-      this._currentUser = null
-      this._emitAuth?.('SIGNED_OUT')
-
+      // Even if the API call fails (network down, expired access token on an
+      // older server), the local session is cleared below.
+      this._clearLocalSession()
       throw new Error(`Logout failed: ${error.message}`, { cause: error })
     }
+    this._clearLocalSession()
+  }
+
+  _clearLocalSession() {
+    if (this._tokenManager) {
+      this._tokenManager.clearTokens()
+    }
+    this._currentUser = null
+    this._emitAuth?.('SIGNED_OUT')
   }
 
   async refreshToken(refreshToken) {

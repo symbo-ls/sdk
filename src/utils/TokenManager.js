@@ -284,6 +284,21 @@ export class TokenManager {
   }
 
   /**
+   * True when this origin's session was BORROWED through the session bridge
+   * (`<prefix>session_source === 'bridge'`, written by the workspace bridge
+   * requester). Such a session is access-only: a refresh token found in its
+   * storage belongs to someone else (a kept-aside copy) and must never be
+   * sent — logout reads this before handing a refresh token to the server.
+   */
+  isBorrowedSession () {
+    try {
+      return this.storage.getItem(`${this.config.storagePrefix}session_source`) === 'bridge'
+    } catch {
+      return false
+    }
+  }
+
+  /**
    * Get authorization header value
    */
   getAuthHeader () {

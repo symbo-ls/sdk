@@ -68,6 +68,7 @@ export class TokenManager {
      * Get current refresh token
      */
     getRefreshToken(): any;
+    isBorrowedSession(): boolean;
     /**
      * Get authorization header value
      */

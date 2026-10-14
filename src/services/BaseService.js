@@ -574,6 +574,10 @@ export class BaseService {
     const noInitMethods = new Set([
       'register',
       'login',
+      // Sign-out sends its own headers + the refresh token to revoke; a
+      // pre-request refresh would rotate that token and leave the new one
+      // live (AuthService.logout).
+      'logout',
       'googleAuth',
       'googleAuthCallback',
       'githubAuth',
