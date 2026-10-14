@@ -132,3 +132,65 @@ test('logout — no tokens at all: posts with no refresh token and still clears'
   })
   t.end()
 })
+
+// Review S2 (2026-10-15): two tabs share localStorage. Tab B rotates R1 -> R2
+// (the server removes R1 in that rotation); tab A's memory still holds R1.
+// A logout from tab A must revoke the CURRENT token (R2), or R2 stays live.
+// Memory-mode storage is per instance, so this case runs on a shared
+// window.localStorage stand-in.
+test('logout — another tab rotated the refresh token: the CURRENT one is revoked, not the stale one', async t => {
+  const makeStore = () => {
+    const d = new Map()
+    return {
+      getItem: k => (d.has(k) ? d.get(k) : null),
+      setItem: (k, v) => d.set(k, String(v)),
+      removeItem: k => d.delete(k),
+      clear: () => d.clear(),
+      key: i => [...d.keys()][i] ?? null,
+      get length () { return d.size }
+    }
+  }
+  const hadWindow = 'window' in globalThis
+  const prevWindow = globalThis.window
+  const shared = makeStore()
+  globalThis.window = { localStorage: shared, sessionStorage: makeStore() }
+  const tabs = []
+  const tab = () => {
+    const tm = new TokenManager({ apiUrl: 'http://api.fixture.test', storageType: 'localStorage' })
+    tm.scheduleRefresh = () => {}
+    if (tm.refreshTimeout) clearTimeout(tm.refreshTimeout)
+    tabs.push(tm)
+    return tm
+  }
+  try {
+    const a = tab()
+    a.setTokens({ access_token: 'fixture-A1', refresh_token: 'fixture-R1', expires_in: FAR_FUTURE_S })
+    const b = tab()
+    t.equal(b.getRefreshToken(), 'fixture-R1', 'tab B loaded the shared session')
+    await withFetch(async (url) => String(url).endsWith('/core/auth/refresh')
+      ? { ok: true, status: 200, statusText: 'OK', json: async () => ({ success: true, data: { tokens: { accessToken: 'fixture-A2', refreshToken: 'fixture-R2', accessTokenExp: { expiresIn: FAR_FUTURE_S } } } }) }
+      : ok(), async () => {
+      await b.refreshTokens()
+    })
+    t.equal(shared.getItem('symbols_refresh_token'), 'fixture-R2', 'storage holds the rotated token')
+    t.equal(a.getRefreshToken(), 'fixture-R1', 'tab A memory is stale (precondition)')
+
+    const svc = new AuthService()
+    svc._requireReady = () => {}
+    svc._apiUrl = 'http://api.fixture.test'
+    svc._tokenManager = a
+    await withFetch(ok, async (calls) => {
+      await svc.logout()
+      const sent = logoutCalls(calls)
+      t.equal(sent.length, 1, 'one logout POST')
+      t.equal(bodyOf(sent[0]).refreshToken, 'fixture-R2', 'the current (rotated) refresh token is revoked')
+      t.equal(sent[0].init.headers.Authorization, 'Bearer fixture-A2', 'with the current session access token')
+    })
+    t.equal(shared.getItem('symbols_refresh_token'), null, 'shared storage cleared')
+  } finally {
+    for (const tm of tabs) if (tm.refreshTimeout) clearTimeout(tm.refreshTimeout)
+    if (hadWindow) globalThis.window = prevWindow
+    else delete globalThis.window
+  }
+  t.end()
+})

@@ -203,8 +203,15 @@ export class AuthService extends BaseService {
     // leave its successor live). A borrowed session (marked 'bridge' by the
     // session bridge) is access-only: any refresh token in its storage is not
     // its own, so it sends none.
-    const refreshToken =
-      tm && !tm.isBorrowedSession?.() ? tm.getRefreshToken() : null
+    //
+    // Memory can be stale: another tab of this origin may have rotated
+    // R1 -> R2 (the server removed R1 during that rotation). Sending R1 would
+    // revoke nothing and leave R2 live, so adopt the shared storage first —
+    // the same re-read refreshTokens() does. Skipped for a borrowed session,
+    // whose storage may hold a refresh token that is not its own.
+    const borrowed = Boolean(tm?.isBorrowedSession?.())
+    if (tm && !borrowed) tm._adoptStoredTokens?.()
+    const refreshToken = tm && !borrowed ? tm.getRefreshToken() : null
     // The SESSION access token, never the per-tab persona overlay: the server
     // must see the user who owns the refresh token.
     const sessionAccess = tm?.tokens?.accessToken || null
