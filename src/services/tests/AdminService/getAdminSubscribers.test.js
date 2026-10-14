@@ -15,8 +15,20 @@ const makeService = () => {
   return svc
 }
 const DATA = {
-  rows: [{ id: 's1', status: 'active', class: 'manual', monthly: 9900, currency: 'USD', hasStripe: false }],
-  summary: { total: 1, currencies: { USD: { mrr: 9900, arr: 118800, billable: 1, atRisk: { mrr: 0, count: 0 } } } },
+  rows: [{ id: 's1', status: 'active', class: 'manual', monthly: 9900, currency: 'USD', hasStripe: false, seats: 1 }],
+  summary: {
+    total: 1,
+    currencies: {
+      USD: {
+        mrr: 9900,
+        arr: 118800,
+        billable: 1,
+        mrrByClass: { stripe: 0, manual: 9900 },
+        trialing: { mrr: 0, count: 0 },
+        atRisk: { mrr: 0, count: 0 }
+      }
+    }
+  },
   paging: { limit: 50, offset: 0, total: 1 }
 }
 

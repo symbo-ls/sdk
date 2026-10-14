@@ -458,28 +458,35 @@ export class AdminService extends BaseService {
    * @property {'active'|'trialing'|'past_due'|'canceled'|'trial_expired'} status
    * @property {'ended'|'simulation'|'stripe'|'grant'|'comp'|'manual'|'legacy'|'unpriced'} class -
    *   the server's recurring-revenue class; only 'stripe' and 'manual' are revenue
-   * @property {number|null} monthly - minor units per month (billable classes only, else null)
+   * @property {number|null} monthly - minor units per month (billable classes only, else null);
+   *   a 'stripe' row is amount × seats, a 'manual' row its stored amount
    * @property {string} currency - upper-case ISO-4217
    * @property {boolean} hasStripe - true when a Stripe subscription backs the row (the id is never sent)
    * @property {'project'|'workspace'|'organization'|null} billingScope
    * @property {{ id: string, name: string|null, displayName: string|null, tier: string|null }|null} plan
-   * @property {{ id: string, name: string|null, slug: string|null }|null} organization
-   * @property {{ id: string, displayName: string|null, slug: string|null, key: string|null }|null} workspace
+   * @property {{ id: string, name: string|null, slug: string|null, personal: boolean }|null} organization -
+   *   name is null for a personal org (it is named after the user) and for any email-shaped name
+   * @property {{ id: string, displayName: string|null, slug: string|null, key: string|null, personal: boolean }|null} workspace -
+   *   displayName is null for a personal workspace and for any email-shaped name
    * @property {{ id: string, name: string|null, key: string|null }|null} project
    * @property {string|null} selectedPricingKey
    * @property {{ amount: number|null, currency: string, interval: string|null, displayName: string|null, lookupKey: string|null }|null} pricingSnapshot
    * @property {string|null} currentPeriodStart - ISO date
    * @property {string|null} currentPeriodEnd - ISO date
    * @property {boolean} cancelAtPeriodEnd
+   * @property {number} seats - positive integer, default 1
    * @property {string|null} createdAt - ISO date
    */
 
   /**
    * @typedef {object} AdminSubscribersSummary
    * @property {number} total - rows matching the filter (all pages)
-   * @property {Object<string, { mrr: number, arr: number, billable: number, atRisk: { mrr: number, count: number } }>} currencies -
+   * @property {Object<string, { mrr: number, arr: number, billable: number, mrrByClass: { stripe: number, manual: number }, trialing: { mrr: number, count: number }, atRisk: { mrr: number, count: number } }>} currencies -
    *   per currency, never mixed; mrr/arr in minor units over 'stripe' + 'manual'
-   *   rows in active/trialing; past_due rows sit in atRisk, outside mrr
+   *   rows in ACTIVE status only; mrrByClass splits mrr into Stripe-backed and
+   *   hand-billed; trialing rows (incl. Stripe 'incomplete') and past_due rows
+   *   (atRisk) sit in their own buckets, outside mrr. List prices: Stripe
+   *   coupons are not reflected.
    * @property {Object<string, number>} byClass - row count per class
    * @property {Object<string, number>} byStatus - row count per status
    * @property {number} unpricedBillable - billable rows with no computable monthly amount
