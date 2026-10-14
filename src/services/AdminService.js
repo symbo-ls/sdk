@@ -453,6 +453,86 @@ export class AdminService extends BaseService {
   }
 
   /**
+   * @typedef {object} AdminSubscriberRow
+   * @property {string} id - subscription id
+   * @property {'active'|'trialing'|'past_due'|'canceled'|'trial_expired'} status
+   * @property {'ended'|'simulation'|'stripe'|'grant'|'comp'|'manual'|'legacy'|'unpriced'} class -
+   *   the server's recurring-revenue class; only 'stripe' and 'manual' are revenue
+   * @property {number|null} monthly - minor units per month (billable classes only, else null)
+   * @property {string} currency - upper-case ISO-4217
+   * @property {boolean} hasStripe - true when a Stripe subscription backs the row (the id is never sent)
+   * @property {'project'|'workspace'|'organization'|null} billingScope
+   * @property {{ id: string, name: string|null, displayName: string|null, tier: string|null }|null} plan
+   * @property {{ id: string, name: string|null, slug: string|null }|null} organization
+   * @property {{ id: string, displayName: string|null, slug: string|null, key: string|null }|null} workspace
+   * @property {{ id: string, name: string|null, key: string|null }|null} project
+   * @property {string|null} selectedPricingKey
+   * @property {{ amount: number|null, currency: string, interval: string|null, displayName: string|null, lookupKey: string|null }|null} pricingSnapshot
+   * @property {string|null} currentPeriodStart - ISO date
+   * @property {string|null} currentPeriodEnd - ISO date
+   * @property {boolean} cancelAtPeriodEnd
+   * @property {string|null} createdAt - ISO date
+   */
+
+  /**
+   * @typedef {object} AdminSubscribersSummary
+   * @property {number} total - rows matching the filter (all pages)
+   * @property {Object<string, { mrr: number, arr: number, billable: number, atRisk: { mrr: number, count: number } }>} currencies -
+   *   per currency, never mixed; mrr/arr in minor units over 'stripe' + 'manual'
+   *   rows in active/trialing; past_due rows sit in atRisk, outside mrr
+   * @property {Object<string, number>} byClass - row count per class
+   * @property {Object<string, number>} byStatus - row count per status
+   * @property {number} unpricedBillable - billable rows with no computable monthly amount
+   * @property {number} renewalsDue30d - live billable rows renewing within 30 days
+   * @property {number} cancelAtPeriodEnd - live rows set to cancel at period end
+   * @property {string} asOf - ISO timestamp of the computation
+   */
+
+  /**
+   * The platform's subscriber ledger + recurring-revenue summary — the
+   * system/company Subscriptions console. Mirrors: GET /core/admin/subscribers
+   * (AdminSubscribersController.list) — platform SUPERUSER only, and only
+   * from an interactive session (a CLI / plugin / OAuth / workspace token
+   * gets 403 interactive_session_required).
+   *
+   * The summary covers every row matching `status`, not just the page.
+   * Rows never carry emails, payment method, billing address, user data or
+   * any Stripe id (`hasStripe` is a boolean).
+   *
+   * @param {object} [options]
+   * @param {string|string[]} [options.status] - statuses to list: any of
+   *   active, trialing, past_due, canceled, trial_expired, or 'all'.
+   *   Default (none sent): active + trialing + past_due.
+   * @param {number} [options.limit] - page size; the server defaults to 50 and caps at 100
+   * @param {number} [options.offset] - rows to skip
+   * @param {AbortSignal} [options.signal] - abort the request
+   * @returns {Promise<{ rows: AdminSubscriberRow[], summary: AdminSubscribersSummary, paging: { limit: number, offset: number, total: number } }>}
+   */
+  async getAdminSubscribers ({ status, limit, offset, signal } = {}) {
+    this._requireReady('getAdminSubscribers')
+    const qs = new URLSearchParams()
+    const statuses = (Array.isArray(status) ? status : [status])
+      .filter(s => typeof s === 'string' && s.trim())
+      .map(s => s.trim())
+    if (statuses.length) qs.append('status', statuses.join(','))
+    const n = Math.floor(Number(limit))
+    if (Number.isFinite(n) && n > 0) qs.append('limit', String(n))
+    const o = Math.floor(Number(offset))
+    if (Number.isFinite(o) && o > 0) qs.append('offset', String(o))
+    const query = qs.toString()
+    // Both paths literal at the _request call site so the drift analyzer
+    // matches /admin/subscribers (it drops a `qs` query hole).
+    const response = query
+      ? await this._request(`/admin/subscribers?${qs.toString()}`, { method: 'GET', methodName: 'getAdminSubscribers', signal })
+      : await this._request('/admin/subscribers', { method: 'GET', methodName: 'getAdminSubscribers', signal })
+    if (response && typeof response === 'object' && 'success' in response) {
+      if (response.success) return response.data
+      throw new Error(response.message || 'getAdminSubscribers failed')
+    }
+    return response
+  }
+
+  /**
    * Private helper to validate email format
    */
   _isValidEmail (email) {
