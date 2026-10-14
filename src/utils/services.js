@@ -310,6 +310,8 @@ export const SERVICE_METHODS = {
   // /admin/system — GET /core/system/status (public) + /core/system/uptime
   getSystemStatus: 'admin',
   getSystemUptime: 'admin',
+  // Subscriptions console — GET /core/admin/subscribers (platform superuser)
+  getAdminSubscribers: 'admin',
 
   // Screenshot methods
   createScreenshotProject: 'screenshot',
