@@ -2008,6 +2008,25 @@ const ENTITY_ROUTES = {
     argMap: { status: () => [], featureFlags: () => [] }
   },
 
+  // ─── Platform subscriber ledger (Subscriptions console) ──────────────────
+  // GET /core/admin/subscribers — platform superuser, interactive session
+  // only. sdk.execute('admin.subscribers', 'list', { status, limit, offset })
+  // → { rows, summary, paging }. The summary covers every matching row.
+  'admin.subscribers': {
+    service: 'admin',
+    methods: { list: 'getAdminSubscribers' },
+    argMap: {
+      list: (a) => [
+        {
+          status: a?.status ?? a?.filter?.status,
+          limit: a?.limit ?? a?.options?.limit,
+          offset: a?.offset ?? a?.options?.offset,
+          signal: a?.signal
+        }
+      ]
+    }
+  },
+
   // ─── Audit log ────────────────────────────────────────────────────────────
   // Replaces direct sb().from('activity_events') admin reads. Backend wires
   // /workspace/audit-log to the activity_events RLS-scoped view.
