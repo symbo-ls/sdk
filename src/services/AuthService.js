@@ -540,6 +540,24 @@ export class AuthService extends BaseService {
   // POST /auth/set-initial-password (core/auth-takeover-paths review r3 D4):
   // the step after a confirm whose answer carried `setPasswordToken`. The
   // token is the only credential — no bearer is read — and it is single-use.
+  // Server review r4 N2: the address a confirmation token confirms, read
+  // from the server (never from the `email` URL param, which anyone can
+  // write). The confirm page names it before Continue and warns when the
+  // browser holds a session for another account. Read only, no session.
+  async previewRegisterConfirmation(token) {
+    try {
+      const response = await this._request('/auth/register-confirmation/preview', {
+        method: 'POST',
+        body: JSON.stringify({ token }),
+        methodName: 'previewRegisterConfirmation'
+      })
+      if (response.success) return response.data
+      throw new Error(response.message)
+    } catch (error) {
+      throw new Error(`Confirmation preview failed: ${error.message}`, { cause: error })
+    }
+  }
+
   async setInitialPassword(token, password) {
     try {
       const response = await this._request('/auth/set-initial-password', {
