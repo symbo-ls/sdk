@@ -421,7 +421,7 @@ export class TokenManager {
    */
   isBorrowedSession () {
     try {
-      return this.storage.getItem(`${this.config.storagePrefix}session_source`) === 'bridge'
+      return this.storage.getItem(this.storageKeys.sessionSource) === 'bridge'
     } catch {
       return false
     }
