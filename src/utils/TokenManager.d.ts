@@ -84,6 +84,7 @@ export class TokenManager {
      */
     getRefreshToken(): any;
     isBorrowedSession(): boolean;
+    adoptStoredTokensIfSameUser(): boolean;
     /**
      * Get authorization header value
      */

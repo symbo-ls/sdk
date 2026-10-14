@@ -14,6 +14,32 @@ export const isNetworkFailure = (err) =>
     (err instanceof TypeError && _NETWORK_RX.test(err.message || '')) ||
     (err.name === 'TypeError' && _NETWORK_RX.test(err.message || '')))
 
+// Decode a JWT payload WITHOUT verifying it (identity hint only — never an
+// authorization decision). Returns null for anything that is not a JWT.
+const _decodeJwtClaims = (token) => {
+  if (!token || typeof token !== 'string') return null
+  const parts = token.split('.')
+  if (parts.length !== 3) return null
+  try {
+    let payload = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    while (payload.length % 4) payload += '='
+    const json = typeof atob === 'function'
+      ? atob(payload)
+      : Buffer.from(payload, 'base64').toString('utf8')
+    const claims = JSON.parse(json)
+    return claims && typeof claims === 'object' ? claims : null
+  } catch {
+    return null
+  }
+}
+
+// The user a Symbols token names: `userId` (server HS256 tokens), else `sub`.
+const _jwtUser = (token) => {
+  const c = _decodeJwtClaims(token)
+  const id = c?.userId ?? c?.sub
+  return id == null || id === '' ? null : String(id)
+}
+
 /**
  * TokenManager - Handles access and refresh token management
  * Provides persistence, automatic refresh, and token lifecycle management
@@ -742,6 +768,30 @@ export class TokenManager {
       }
       this.scheduleRefresh()
       return true
+    } catch (_) {
+      return false
+    }
+  }
+
+  /**
+   * Adopt the shared storage's tokens ONLY when they belong to the same user
+   * as this instance's memory — another tab rotated OUR session (R1 -> R2).
+   * If another tab signed in as a DIFFERENT user, or either side's identity
+   * cannot be read (not a JWT), nothing is adopted: a sign-out here must
+   * never revoke someone else's session. Requires both a stored access and
+   * a stored refresh token. Returns true when memory changed.
+   */
+  adoptStoredTokensIfSameUser () {
+    try {
+      const mine = _jwtUser(this.tokens.refreshToken) || _jwtUser(this.tokens.accessToken)
+      if (!mine) return false
+      const { storage } = this
+      const keys = this.storageKeys
+      const storedRefresh = storage.getItem(keys.refreshToken)
+      const storedAccess = storage.getItem(keys.accessToken)
+      if (!storedRefresh || !storedAccess) return false
+      if (_jwtUser(storedRefresh) !== mine || _jwtUser(storedAccess) !== mine) return false
+      return this._adoptStoredTokens()
     } catch (_) {
       return false
     }

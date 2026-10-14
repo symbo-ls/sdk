@@ -133,23 +133,27 @@ test('logout — no tokens at all: posts with no refresh token and still clears'
   t.end()
 })
 
-// Review S2 (2026-10-15): two tabs share localStorage. Tab B rotates R1 -> R2
-// (the server removes R1 in that rotation); tab A's memory still holds R1.
-// A logout from tab A must revoke the CURRENT token (R2), or R2 stays live.
-// Memory-mode storage is per instance, so this case runs on a shared
-// window.localStorage stand-in.
-test('logout — another tab rotated the refresh token: the CURRENT one is revoked, not the stale one', async t => {
-  const makeStore = () => {
-    const d = new Map()
-    return {
-      getItem: k => (d.has(k) ? d.get(k) : null),
-      setItem: (k, v) => d.set(k, String(v)),
-      removeItem: k => d.delete(k),
-      clear: () => d.clear(),
-      key: i => [...d.keys()][i] ?? null,
-      get length () { return d.size }
-    }
+// ── Two tabs on one origin (shared localStorage) ─────────────────────────
+// Memory-mode storage is per instance, so these cases run on a shared
+// window.localStorage stand-in. Tokens are JWT-SHAPED fixtures (unsigned,
+// fake signature) so the SDK can read which user each one names.
+const b64url = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64')
+  .replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_')
+const fakeJwt = (userId, tag) => `${b64url({ alg: 'none', typ: 'JWT' })}.${b64url({ userId, tag })}.fixture-sig`
+
+const makeStore = () => {
+  const d = new Map()
+  return {
+    getItem: k => (d.has(k) ? d.get(k) : null),
+    setItem: (k, v) => d.set(k, String(v)),
+    removeItem: k => d.delete(k),
+    clear: () => d.clear(),
+    key: i => [...d.keys()][i] ?? null,
+    get length () { return d.size }
   }
+}
+
+const withSharedStorage = async (fn) => {
   const hadWindow = 'window' in globalThis
   const prevWindow = globalThis.window
   const shared = makeStore()
@@ -163,34 +167,88 @@ test('logout — another tab rotated the refresh token: the CURRENT one is revok
     return tm
   }
   try {
-    const a = tab()
-    a.setTokens({ access_token: 'fixture-A1', refresh_token: 'fixture-R1', expires_in: FAR_FUTURE_S })
-    const b = tab()
-    t.equal(b.getRefreshToken(), 'fixture-R1', 'tab B loaded the shared session')
-    await withFetch(async (url) => String(url).endsWith('/core/auth/refresh')
-      ? { ok: true, status: 200, statusText: 'OK', json: async () => ({ success: true, data: { tokens: { accessToken: 'fixture-A2', refreshToken: 'fixture-R2', accessTokenExp: { expiresIn: FAR_FUTURE_S } } } }) }
-      : ok(), async () => {
-      await b.refreshTokens()
-    })
-    t.equal(shared.getItem('symbols_refresh_token'), 'fixture-R2', 'storage holds the rotated token')
-    t.equal(a.getRefreshToken(), 'fixture-R1', 'tab A memory is stale (precondition)')
-
-    const svc = new AuthService()
-    svc._requireReady = () => {}
-    svc._apiUrl = 'http://api.fixture.test'
-    svc._tokenManager = a
-    await withFetch(ok, async (calls) => {
-      await svc.logout()
-      const sent = logoutCalls(calls)
-      t.equal(sent.length, 1, 'one logout POST')
-      t.equal(bodyOf(sent[0]).refreshToken, 'fixture-R2', 'the current (rotated) refresh token is revoked')
-      t.equal(sent[0].init.headers.Authorization, 'Bearer fixture-A2', 'with the current session access token')
-    })
-    t.equal(shared.getItem('symbols_refresh_token'), null, 'shared storage cleared')
+    await fn({ shared, tab })
   } finally {
     for (const tm of tabs) if (tm.refreshTimeout) clearTimeout(tm.refreshTimeout)
     if (hadWindow) globalThis.window = prevWindow
     else delete globalThis.window
   }
+}
+
+const serviceFor = (tm) => {
+  const svc = new AuthService()
+  svc._requireReady = () => {}
+  svc._apiUrl = 'http://api.fixture.test'
+  svc._tokenManager = tm
+  return svc
+}
+
+// Review S2 (2026-10-15): tab B rotates R1 -> R2 (the server removes R1 in
+// that rotation); tab A's memory still holds R1. A logout from tab A must
+// revoke the CURRENT token (R2), or R2 stays live.
+test('logout — another tab rotated the refresh token: the CURRENT one is revoked, not the stale one', async t => {
+  const A1 = fakeJwt('user-1', 'A1'); const R1 = fakeJwt('user-1', 'R1')
+  const A2 = fakeJwt('user-1', 'A2'); const R2 = fakeJwt('user-1', 'R2')
+  await withSharedStorage(async ({ shared, tab }) => {
+    const a = tab()
+    a.setTokens({ access_token: A1, refresh_token: R1, expires_in: FAR_FUTURE_S })
+    const b = tab()
+    t.equal(b.getRefreshToken(), R1, 'tab B loaded the shared session')
+    await withFetch(async (url) => String(url).endsWith('/core/auth/refresh')
+      ? { ok: true, status: 200, statusText: 'OK', json: async () => ({ success: true, data: { tokens: { accessToken: A2, refreshToken: R2, accessTokenExp: { expiresIn: FAR_FUTURE_S } } } }) }
+      : ok(), async () => {
+      await b.refreshTokens()
+    })
+    t.equal(shared.getItem('symbols_refresh_token'), R2, 'storage holds the rotated token')
+    t.equal(a.getRefreshToken(), R1, 'tab A memory is stale (precondition)')
+
+    await withFetch(ok, async (calls) => {
+      await serviceFor(a).logout()
+      const sent = logoutCalls(calls)
+      t.equal(sent.length, 1, 'one logout POST')
+      t.ok(bodyOf(sent[0]).refreshToken === R2, 'the current (rotated) refresh token is revoked')
+      t.ok(sent[0].init.headers.Authorization === `Bearer ${A2}`, 'with the current session access token')
+    })
+    t.equal(shared.getItem('symbols_refresh_token'), null, 'shared storage cleared')
+  })
+  t.end()
+})
+
+// Review D-S8 (2026-10-15): tab A holds user X; tab B on the same origin
+// signs in as user Y (overwrites the shared storage). Tab A's sign-out must
+// revoke X's token — adopting storage would revoke Y and leave X live.
+test('logout — another tab signed in as a DIFFERENT user: the in-memory (own) token is revoked, never the other user\'s', async t => {
+  const AX = fakeJwt('user-X', 'AX'); const RX = fakeJwt('user-X', 'RX')
+  const AY = fakeJwt('user-Y', 'AY'); const RY = fakeJwt('user-Y', 'RY')
+  await withSharedStorage(async ({ shared, tab }) => {
+    const a = tab()
+    a.setTokens({ access_token: AX, refresh_token: RX, expires_in: FAR_FUTURE_S })
+    const b = tab()
+    b.setTokens({ access_token: AY, refresh_token: RY, expires_in: FAR_FUTURE_S })
+    t.equal(shared.getItem('symbols_refresh_token'), RY, 'storage now holds user Y (precondition)')
+    t.equal(a.getRefreshToken(), RX, 'tab A memory still user X (precondition)')
+    await withFetch(ok, async (calls) => {
+      await serviceFor(a).logout()
+      const sent = logoutCalls(calls)
+      t.equal(sent.length, 1, 'one logout POST')
+      t.ok(bodyOf(sent[0]).refreshToken === RX, 'X\'s own refresh token is revoked')
+      t.ok(sent[0].init.headers.Authorization === `Bearer ${AX}`, 'X\'s own access token in the header')
+      t.notOk(JSON.stringify(sent[0].init).includes(RY), 'Y\'s refresh token appears nowhere in the request')
+    })
+  })
+  t.end()
+})
+
+test('logout — identity unreadable (non-JWT tokens): nothing is adopted, the in-memory token is sent', async t => {
+  await withSharedStorage(async ({ shared, tab }) => {
+    const a = tab()
+    a.setTokens({ access_token: 'opaque-A1', refresh_token: 'opaque-R1', expires_in: FAR_FUTURE_S })
+    shared.setItem('symbols_access_token', 'opaque-A2')
+    shared.setItem('symbols_refresh_token', 'opaque-R2')
+    await withFetch(ok, async (calls) => {
+      await serviceFor(a).logout()
+      t.equal(bodyOf(logoutCalls(calls)[0]).refreshToken, 'opaque-R1', 'own in-memory token, no blind adoption')
+    })
+  })
   t.end()
 })

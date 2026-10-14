@@ -207,10 +207,12 @@ export class AuthService extends BaseService {
     // Memory can be stale: another tab of this origin may have rotated
     // R1 -> R2 (the server removed R1 during that rotation). Sending R1 would
     // revoke nothing and leave R2 live, so adopt the shared storage first —
-    // the same re-read refreshTokens() does. Skipped for a borrowed session,
-    // whose storage may hold a refresh token that is not its own.
+    // but ONLY when it names the same user: if another tab signed in as a
+    // different user, adopting would revoke THAT user's session and leave
+    // ours live. Skipped for a borrowed session, whose storage may hold a
+    // refresh token that is not its own.
     const borrowed = Boolean(tm?.isBorrowedSession?.())
-    if (tm && !borrowed) tm._adoptStoredTokens?.()
+    if (tm && !borrowed) tm.adoptStoredTokensIfSameUser?.()
     const refreshToken = tm && !borrowed ? tm.getRefreshToken() : null
     // The SESSION access token, never the per-tab persona overlay: the server
     // must see the user who owns the refresh token.
