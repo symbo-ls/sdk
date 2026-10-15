@@ -495,3 +495,52 @@ test('a client tool whose resume is ACKED again: the backstop reads again and de
   t.equal(w.onDone.firstCall.args[0].text, 'Opened.')
   t.equal(w.onError.callCount, 0)
 })
+
+test('a tab hidden past TURN_BACKSTOP_MAX_MS reads ONCE when it becomes visible, and settles', async (t) => {
+  const prev = global.document
+  const doc = new EventTarget()
+  doc.hidden = true
+  global.document = doc
+  t.teardown(() => {
+    if (prev === undefined) delete global.document
+    else global.document = prev
+  })
+  const w = wire(t, {
+    reads: [
+      { conversation: { id: 'conv-1' }, messages: [USER_MSG(), ANSWER()] }
+    ]
+  })
+  await w.clock.tickAsync(TURN_BACKSTOP_MAX_MS + TURN_BACKSTOP_INTERVAL_MS * 3)
+  t.equal(w.gets.length, 0, 'no reads while hidden, even past the bound')
+  doc.hidden = false
+  doc.dispatchEvent(new Event('visibilitychange'))
+  await w.clock.tickAsync(10)
+  t.equal(w.gets.length, 1, 'one read on return')
+  t.equal(w.onDone.callCount, 1, 'the turn settles')
+  doc.dispatchEvent(new Event('visibilitychange'))
+  await w.clock.tickAsync(TURN_BACKSTOP_INTERVAL_MS * 3)
+  t.equal(w.gets.length, 1, 'and only once')
+})
+
+test('a turn cancelled while hidden past the bound reads nothing on return', async (t) => {
+  const prev = global.document
+  const doc = new EventTarget()
+  doc.hidden = true
+  global.document = doc
+  t.teardown(() => {
+    if (prev === undefined) delete global.document
+    else global.document = prev
+  })
+  const w = wire(t, {
+    reads: [
+      { conversation: { id: 'conv-1' }, messages: [USER_MSG(), ANSWER()] }
+    ]
+  })
+  await w.clock.tickAsync(TURN_BACKSTOP_MAX_MS + TURN_BACKSTOP_INTERVAL_MS * 3)
+  w.cancel()
+  doc.hidden = false
+  doc.dispatchEvent(new Event('visibilitychange'))
+  await w.clock.tickAsync(10)
+  t.equal(w.gets.length, 0)
+  t.equal(w.onDone.callCount, 0)
+})

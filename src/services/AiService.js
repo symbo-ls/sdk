@@ -806,9 +806,20 @@ export class AiService extends BaseService {
         fallbackTimer = null
       }
     }
+    // The one-shot 'visibilitychange' read armed when the bound ran out in
+    // a hidden tab (see the backstop's tick).
+    let backstopOnVisible = null
+    const disarmVisibleRead = () => {
+      if (!backstopOnVisible) return
+      try {
+        document.removeEventListener('visibilitychange', backstopOnVisible)
+      } catch (_) {}
+      backstopOnVisible = null
+    }
     const stopBackstop = () => {
       backstopOver = true
       backstopGen += 1
+      disarmVisibleRead()
       if (backstopTimer) {
         clearTimeout(backstopTimer)
         backstopTimer = null
@@ -996,44 +1007,67 @@ export class AiService extends BaseService {
       }
       const nextMs = () =>
         backstopSlow ? TURN_BACKSTOP_SLOW_MS : TURN_BACKSTOP_INTERVAL_MS
+      // One conversation read. → true when the backstop is done (answered,
+      // or the conversation is gone). `ok()` is the liveness check after the
+      // await — a stale chain or a settled turn ignores what it read.
+      const readOnce = async (ok) => {
+        try {
+          const res = await this._requestExternal(
+            `${base}/${conversationId}`,
+            { method: 'GET', methodName: 'ai.getConversation' }
+          )
+          if (!ok()) return true
+          const env =
+            res && typeof res === 'object' && 'data' in res ? res.data : res
+          const { answer, pending } = turnOutcomeFromConversation(env, {
+            userMessageId,
+            sinceTs: turnStartedAt
+          })
+          if (answer) {
+            finishAnswer(
+              textOfMessage(answer),
+              answer.id || answer._id || null,
+              messageSuggestions(answer),
+              messageMetadata(answer)
+            )
+            return true
+          }
+          if (pending) runClientTool(pending)
+        } catch (err) {
+          if (!ok()) return true
+          if (err && err.status === 404) {
+            stopBackstop()
+            return true
+          }
+          /* a transient read failure: the next tick reads again */
+        }
+        return false
+      }
       const tick = async () => {
         backstopTimer = null
         if (!live()) return
         if (Date.now() - ackAt > TURN_BACKSTOP_MAX_MS) {
+          const hidden = documentHidden()
           stopBackstop()
+          // The bound ran out while the tab was hidden, so its last reads
+          // were skipped: read ONCE when the tab is visible again, or a
+          // turn left in a background tab would never settle.
+          if (
+            hidden &&
+            typeof document.addEventListener === 'function'
+          ) {
+            backstopOnVisible = () => {
+              if (documentHidden()) return
+              disarmVisibleRead()
+              if (answered || cancelled) return
+              readOnce(() => !answered && !cancelled)
+            }
+            document.addEventListener('visibilitychange', backstopOnVisible)
+          }
           return
         }
         if (!clientToolPending && !documentHidden()) {
-          try {
-            const res = await this._requestExternal(
-              `${base}/${conversationId}`,
-              { method: 'GET', methodName: 'ai.getConversation' }
-            )
-            if (!live()) return
-            const env =
-              res && typeof res === 'object' && 'data' in res ? res.data : res
-            const { answer, pending } = turnOutcomeFromConversation(env, {
-              userMessageId,
-              sinceTs: turnStartedAt
-            })
-            if (answer) {
-              finishAnswer(
-                textOfMessage(answer),
-                answer.id || answer._id || null,
-                messageSuggestions(answer),
-                messageMetadata(answer)
-              )
-              return
-            }
-            if (pending) runClientTool(pending)
-          } catch (err) {
-            if (!live()) return
-            if (err && err.status === 404) {
-              stopBackstop()
-              return
-            }
-            /* a transient read failure: the next tick reads again */
-          }
+          if (await readOnce(live)) return
         }
         schedule(nextMs())
       }
