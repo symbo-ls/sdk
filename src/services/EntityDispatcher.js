@@ -502,7 +502,28 @@ const ENTITY_ROUTES = {
       update: 'comments.update',
       remove: 'comments.remove'
     },
-    argMap: CRUD_ARG_MAP
+    argMap: {
+      ...CRUD_ARG_MAP,
+      // comments.list is (ticketId, { limit, skip, sortBy, sortDir,
+      // includeCount }), not (filter, options): filterOptions handed it the
+      // filter OBJECT as the ticket id (`/tickets/[object Object]/comments`),
+      // `undefined` for a bare-string id, and dropped flat `skip`/`sortBy`/
+      // `sortDir`/`includeCount` into the filter it never reads.
+      list: (a) => {
+        const bag = a && typeof a === 'object' && !Array.isArray(a) ? a : {}
+        const scope = bag.filter ?? bag.params
+        const ticketId =
+          bag.ticketId ??
+          bag.id ??
+          (scope && typeof scope === 'object' ? scope.ticketId ?? scope.id : scope) ??
+          (bag === a ? undefined : a)
+        const options = {}
+        for (const k of ['limit', 'skip', 'sortBy', 'sortDir', 'includeCount']) {
+          if (bag[k] !== undefined) options[k] = bag[k]
+        }
+        return [ticketId, { ...options, ...(bag.options || {}) }]
+      }
+    }
   },
 
   // Release coordination (workspace + server + sdk). Two-stage flow on
