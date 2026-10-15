@@ -42,7 +42,12 @@ const makeService = () => {
 // skip the fallback entirely (see _streamWorkspaceTurn's `if (outcome &&
 // outcome.accepted) return`). Returns the captured onEvent so the test can
 // drive the stream directly, plus the onDone/onError spies.
-const wireAcceptedTurn = (svc, payload = {}) => {
+//
+// The turn is cancelled when its test ends: an accepted turn now keeps a
+// bounded conversation-read backstop running (TURN_BACKSTOP_* in
+// AiService.js), and a turn left open would read through a LATER test's
+// global fetch stub.
+const wireAcceptedTurn = (svc, payload = {}, t = null) => {
   let capturedOnEvent = null
   sandbox.stub(svc, '_streamSSE').callsFake((url, { onEvent }) => {
     capturedOnEvent = onEvent
@@ -52,17 +57,18 @@ const wireAcceptedTurn = (svc, payload = {}) => {
 
   const onDone = sinon.spy()
   const onError = sinon.spy()
-  svc._streamWorkspaceTurn(
+  const cancel = svc._streamWorkspaceTurn(
     { projectId: 'proj-1', conversationId: 'conv-123', text: 'do the thing', ...payload },
     { onDone, onError }
   )
+  if (t) t.teardown(cancel)
   return { getOnEvent: () => capturedOnEvent, onDone, onError }
 }
 
 test('a reconnect conversation.snapshot carrying THIS turn\'s persisted answer finishes the turn (the loss the audit reported)', async (t) => {
   t.plan(3)
   const svc = makeService()
-  const { getOnEvent, onDone, onError } = wireAcceptedTurn(svc)
+  const { getOnEvent, onDone, onError } = wireAcceptedTurn(svc, {}, t)
 
   // Give the async IIFE inside _streamWorkspaceTurn a tick to resolve the
   // conversationId + wire the stream + POST before we drive events.
@@ -107,7 +113,7 @@ test('a reconnect conversation.snapshot carrying THIS turn\'s persisted answer f
 test('a conversation.snapshot with only STALE (pre-turn) assistant messages does NOT finish the turn', async (t) => {
   t.plan(2)
   const svc = makeService()
-  const { getOnEvent, onDone, onError } = wireAcceptedTurn(svc)
+  const { getOnEvent, onDone, onError } = wireAcceptedTurn(svc, {}, t)
 
   await new Promise((resolve) => setTimeout(resolve, 0))
   await new Promise((resolve) => setTimeout(resolve, 0))
@@ -139,7 +145,7 @@ test('a conversation.snapshot with only STALE (pre-turn) assistant messages does
 test('conversation.snapshot with no assistant message at all is a no-op (initial connect before the turn produced anything)', async (t) => {
   t.plan(2)
   const svc = makeService()
-  const { getOnEvent, onDone, onError } = wireAcceptedTurn(svc)
+  const { getOnEvent, onDone, onError } = wireAcceptedTurn(svc, {}, t)
 
   await new Promise((resolve) => setTimeout(resolve, 0))
   await new Promise((resolve) => setTimeout(resolve, 0))

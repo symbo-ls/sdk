@@ -76,6 +76,102 @@ const MODEL_MODES = [
 // synchronously during the POST, so the SSE frame normally beats this.
 const ASSISTANT_FALLBACK_MS = 1000
 
+// Backstop for a 202 `{ accepted: true }` turn (the server acks a slow turn
+// after its WORKSPACE_TURN_ACK_TIMEOUT_MS, 8 s by default, and keeps running).
+// The answer then rides ONLY the SSE stream — and with several API replicas
+// it reaches the browser only if the server's cross-replica Redis bridge is
+// live. When it is not, the stream stays open on heartbeats, never
+// reconnects, and the turn sat on "Thinking" forever with no error. So after
+// the ack, with no turn frame on the stream, the SDK reads the conversation:
+//   - first TURN_BACKSTOP_FIRST_MS after the ack (half the server's ack
+//     window: the turn already ran that long, a frame normally follows fast),
+//   - then every TURN_BACKSTOP_INTERVAL_MS,
+//   - until TURN_BACKSTOP_MAX_MS: the server's WORKSPACE_TURN_LOCK_TTL_MS
+//     (10 min) after which a lost turn is reconciled into a stored error
+//     message on the next conversation read, plus one minute for that read.
+// Any turn frame on the stream (delta, message.created, tool.call_required,
+// tool.activity, …) proves the stream delivers for this turn and stops it.
+export const TURN_BACKSTOP_FIRST_MS = 4000
+export const TURN_BACKSTOP_INTERVAL_MS = 5000
+export const TURN_BACKSTOP_MAX_MS = 11 * 60 * 1000
+
+// Stream events that prove the stream delivers THIS turn's frames.
+// `conversation.snapshot` / `conversation.heartbeat` are sent by the replica
+// that holds the GET itself, so they prove nothing about the bridge.
+const TURN_FRAME_EVENTS = new Set([
+  'message.delta',
+  'message.created',
+  'message.reset',
+  'tool.call_required',
+  'tool.activity',
+  'agent.started',
+  'agent.completed'
+])
+
+const textOfMessage = (m) =>
+  (m?.content || [])
+    .filter((p) => p && p.type === 'text')
+    .map((p) => p.text)
+    .join('')
+
+/**
+ * What a conversation read says about ONE turn — the backstop's decision.
+ * `envelope` = `{ conversation, messages }` as GET …/conversations/:id serves
+ * it. Only messages AFTER this turn's user message count (`userMessageId`,
+ * from the 202 ack); without it, messages created since `sinceTs` (5 s clock
+ * slack, the same bound _fallbackToLatestAssistant uses).
+ * → `{ answer, pending }`: the turn's final assistant message (never an
+ *   intermediate tool_call one) or null; the conversation's stored pending
+ *   client call when no tool-result message resolved it, or null.
+ */
+export const turnOutcomeFromConversation = (
+  envelope,
+  { userMessageId = null, sinceTs = 0 } = {}
+) => {
+  const messages = Array.isArray(envelope?.messages) ? envelope.messages : []
+  let scoped = messages
+  const uid = userMessageId ? String(userMessageId) : ''
+  const at = uid
+    ? messages.findIndex((m) => String(m?.id || m?._id || '') === uid)
+    : -1
+  if (at >= 0) scoped = messages.slice(at + 1)
+  else if (sinceTs) {
+    scoped = messages.filter((m) => {
+      const ts = Date.parse(m?.createdAt || m?.created_at || '') || 0
+      return ts >= sinceTs - 5000
+    })
+  }
+  const answer =
+    [...scoped]
+      .reverse()
+      .find(
+        (m) =>
+          m?.role === 'assistant' && !isToolCallMessage(m) && textOfMessage(m)
+      ) || null
+
+  let pending = null
+  const raw = envelope?.conversation?.metadata?.pendingClientCall
+  const callId = raw && String(raw.callId || '')
+  if (callId && raw.fn) {
+    const resolved = messages.some(
+      (m) =>
+        m?.metadata?.kind === 'workspace_client_action' &&
+        String(m.metadata.callId || '') === callId
+    )
+    if (!resolved) {
+      pending = {
+        callId,
+        tool: String(raw.tool || raw.fn),
+        fn: String(raw.fn),
+        args: Array.isArray(raw.args) ? raw.args : [],
+        confirm: !!raw.confirm,
+        readOnly: !!raw.readOnly
+      }
+    }
+  }
+  return { answer, pending }
+}
+
 // Deterministic short fingerprint of a string — used below to scope the
 // conversation cache key by API plane, not just workspace id (tickets/
 // sonnet.md "stale cached conversation id permanently bricks the workspace
@@ -654,6 +750,12 @@ export class AiService extends BaseService {
     let clientToolPending = false
     let cancelStream = () => {}
     let fallbackTimer = null
+    // Accepted-turn backstop (TURN_BACKSTOP_*): the timer of the next
+    // conversation read, and whether the backstop is over for this turn.
+    let backstopTimer = null
+    let backstopOver = false
+    // This turn's user message as the 202 ack served it — bounds the read.
+    let turnUserMessage = null
     // A cached conversation id can still go stale (deleted server-side, or
     // the backend was reseeded / repointed at a different Mongo) — tickets/
     // sonnet.md "stale cached conversation id permanently bricks the
@@ -689,6 +791,13 @@ export class AiService extends BaseService {
         fallbackTimer = null
       }
     }
+    const stopBackstop = () => {
+      backstopOver = true
+      if (backstopTimer) {
+        clearTimeout(backstopTimer)
+        backstopTimer = null
+      }
+    }
 
     // Pull the joined text out of an assistant message's content blocks.
     const blocksToText = (content) =>
@@ -701,6 +810,7 @@ export class AiService extends BaseService {
       if (answered || cancelled) return
       answered = true
       clearFallback()
+      stopBackstop()
       // If text deltas already streamed in, the chunks are already applied —
       // re-emitting the full text here would double it. Just finalize.
       if (!streamedAny) onChunk?.(txt)
@@ -745,6 +855,7 @@ export class AiService extends BaseService {
       if (answered || cancelled) return
       answered = true
       clearFallback()
+      stopBackstop()
       // Carry the conversation id on the error — the transport's post-error
       // reconciliation re-reads the conversation to adopt an answer the
       // server finished while the connection was dead, and without this it
@@ -802,6 +913,12 @@ export class AiService extends BaseService {
         )
         .then((resume) => {
           if (!resume) return
+          // The RESUMED loop outlived the ack window too: its answer rides
+          // the stream again, so the backstop reads again (TURN_BACKSTOP_*).
+          if (resume.accepted) {
+            if (resolvedConvId) startBackstop(resolvedConvId, turnUserMessage)
+            return
+          }
           if (resume.suspended) {
             if (resume.fn && resume.callId) runClientTool(resume)
             return
@@ -829,6 +946,74 @@ export class AiService extends BaseService {
         .finally(() => {
           clientToolPending = false
         })
+    }
+
+    // After a 202 `{ accepted: true }` ack, read the conversation on a bounded
+    // schedule (TURN_BACKSTOP_*) until the turn is answered, the stream
+    // delivers a turn frame, the turn is cancelled, or the bound runs out. A
+    // stored answer goes through finishAnswer — the one path every delivery
+    // takes, so `answered` makes it exactly-once against a late SSE frame for
+    // the same message. A stored pending client call goes through
+    // runClientTool, deduped by callId against the tool.call_required frame.
+    // A failed read is never a turn error (the stream may still deliver); a
+    // 404 means the conversation is gone, which the stream reports itself.
+    const startBackstop = (conversationId, userMessage) => {
+      stopBackstop()
+      if (answered || cancelled) return
+      backstopOver = false
+      if (userMessage) turnUserMessage = userMessage
+      const ackAt = Date.now()
+      const userMessageId =
+        (turnUserMessage && (turnUserMessage.id || turnUserMessage._id)) ||
+        null
+      const schedule = (ms) => {
+        if (backstopOver || answered || cancelled) return
+        backstopTimer = setTimeout(tick, ms)
+        // Never hold a Node process (tests, CLI) open for a background read.
+        if (backstopTimer && typeof backstopTimer.unref === 'function')
+          backstopTimer.unref()
+      }
+      const tick = async () => {
+        backstopTimer = null
+        if (backstopOver || answered || cancelled) return
+        if (Date.now() - ackAt > TURN_BACKSTOP_MAX_MS) {
+          stopBackstop()
+          return
+        }
+        if (!clientToolPending) {
+          try {
+            const res = await this._requestExternal(
+              `${base}/${conversationId}`,
+              { method: 'GET', methodName: 'ai.getConversation' }
+            )
+            if (backstopOver || answered || cancelled) return
+            const env =
+              res && typeof res === 'object' && 'data' in res ? res.data : res
+            const { answer, pending } = turnOutcomeFromConversation(env, {
+              userMessageId,
+              sinceTs: turnStartedAt
+            })
+            if (answer) {
+              finishAnswer(
+                textOfMessage(answer),
+                answer.id || answer._id || null,
+                messageSuggestions(answer),
+                messageMetadata(answer)
+              )
+              return
+            }
+            if (pending) runClientTool(pending)
+          } catch (err) {
+            if (err && err.status === 404) {
+              stopBackstop()
+              return
+            }
+            /* a transient read failure: the next tick reads again */
+          }
+        }
+        schedule(TURN_BACKSTOP_INTERVAL_MS)
+      }
+      schedule(TURN_BACKSTOP_FIRST_MS)
     }
 
     // Returns true (and kicks off the one-shot retry) if `err` is a 404 this
@@ -893,6 +1078,9 @@ export class AiService extends BaseService {
       cancelStream = this._streamSSE(`${base}/${conversationId}/stream`, {
         onEvent: ({ event, data }) => {
           if (answered || cancelled) return
+          // The stream delivers THIS turn's frames — the backstop read is
+          // not needed (TURN_FRAME_EVENTS; snapshots/heartbeats prove nothing).
+          if (TURN_FRAME_EVENTS.has(event)) stopBackstop()
           if (event === 'message.delta' && data?.message) {
             streamedAny = true
             onChunk?.(data.message)
@@ -1084,7 +1272,14 @@ export class AiService extends BaseService {
           // tool.call_required — never start the short race-guard fallback for
           // it, which would fire long before a multi-minute turn finishes and
           // wrongly report "no assistant response".
-          if (outcome && outcome.accepted) return
+          //
+          // The SSE stream is not trusted ALONE for it, though: with several
+          // API replicas its frames cross a Redis bridge that can be down
+          // while the stream itself stays open — see TURN_BACKSTOP_*.
+          if (outcome && outcome.accepted) {
+            startBackstop(conversationId, outcome.userMessage)
+            return
+          }
           // Race guard: if the assistant frame hasn't arrived shortly after
           // the POST resolves, read the conversation directly and use the
           // latest assistant message.
@@ -1118,6 +1313,7 @@ export class AiService extends BaseService {
     return () => {
       cancelled = true
       clearFallback()
+      stopBackstop()
       stopStream()
     }
   }
