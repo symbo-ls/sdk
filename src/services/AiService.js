@@ -90,10 +90,18 @@ const ASSISTANT_FALLBACK_MS = 1000
 //     (10 min) after which a lost turn is reconciled into a stored error
 //     message on the next conversation read, plus one minute for that read.
 // Any turn frame on the stream (delta, message.created, tool.call_required,
-// tool.activity, …) proves the stream delivers for this turn and stops it.
+// tool.activity, …) proves the stream delivers for this turn NOW, so the
+// reads slow to every TURN_BACKSTOP_SLOW_MS — not off: the stream can still
+// reconnect to the other replica later in the same turn, with the bridge
+// down, and then only a read recovers the answer. A hidden tab skips its
+// reads (the next visible tick reads).
 export const TURN_BACKSTOP_FIRST_MS = 4000
 export const TURN_BACKSTOP_INTERVAL_MS = 5000
+export const TURN_BACKSTOP_SLOW_MS = 6 * TURN_BACKSTOP_INTERVAL_MS
 export const TURN_BACKSTOP_MAX_MS = 11 * 60 * 1000
+
+const documentHidden = () =>
+  typeof document !== 'undefined' && !!document && document.hidden === true
 
 // Stream events that prove the stream delivers THIS turn's frames.
 // `conversation.snapshot` / `conversation.heartbeat` are sent by the replica
@@ -754,6 +762,13 @@ export class AiService extends BaseService {
     // conversation read, and whether the backstop is over for this turn.
     let backstopTimer = null
     let backstopOver = false
+    // Bumped by every start/stop: a read in flight from an OLDER chain sees a
+    // different generation when it returns and schedules nothing — so a
+    // resume that restarts the backstop mid-read never runs two chains.
+    let backstopGen = 0
+    // Set by a turn frame on the stream: reads continue at the slow cadence.
+    let backstopSlow = false
+    let demoteBackstop = () => {}
     // This turn's user message as the 202 ack served it — bounds the read.
     let turnUserMessage = null
     // A cached conversation id can still go stale (deleted server-side, or
@@ -793,6 +808,7 @@ export class AiService extends BaseService {
     }
     const stopBackstop = () => {
       backstopOver = true
+      backstopGen += 1
       if (backstopTimer) {
         clearTimeout(backstopTimer)
         backstopTimer = null
@@ -961,32 +977,39 @@ export class AiService extends BaseService {
       stopBackstop()
       if (answered || cancelled) return
       backstopOver = false
+      backstopSlow = false
+      const gen = backstopGen
+      const live = () =>
+        gen === backstopGen && !backstopOver && !answered && !cancelled
       if (userMessage) turnUserMessage = userMessage
       const ackAt = Date.now()
       const userMessageId =
         (turnUserMessage && (turnUserMessage.id || turnUserMessage._id)) ||
         null
       const schedule = (ms) => {
-        if (backstopOver || answered || cancelled) return
+        if (!live()) return
+        if (backstopTimer) clearTimeout(backstopTimer)
         backstopTimer = setTimeout(tick, ms)
         // Never hold a Node process (tests, CLI) open for a background read.
         if (backstopTimer && typeof backstopTimer.unref === 'function')
           backstopTimer.unref()
       }
+      const nextMs = () =>
+        backstopSlow ? TURN_BACKSTOP_SLOW_MS : TURN_BACKSTOP_INTERVAL_MS
       const tick = async () => {
         backstopTimer = null
-        if (backstopOver || answered || cancelled) return
+        if (!live()) return
         if (Date.now() - ackAt > TURN_BACKSTOP_MAX_MS) {
           stopBackstop()
           return
         }
-        if (!clientToolPending) {
+        if (!clientToolPending && !documentHidden()) {
           try {
             const res = await this._requestExternal(
               `${base}/${conversationId}`,
               { method: 'GET', methodName: 'ai.getConversation' }
             )
-            if (backstopOver || answered || cancelled) return
+            if (!live()) return
             const env =
               res && typeof res === 'object' && 'data' in res ? res.data : res
             const { answer, pending } = turnOutcomeFromConversation(env, {
@@ -1004,6 +1027,7 @@ export class AiService extends BaseService {
             }
             if (pending) runClientTool(pending)
           } catch (err) {
+            if (!live()) return
             if (err && err.status === 404) {
               stopBackstop()
               return
@@ -1011,7 +1035,14 @@ export class AiService extends BaseService {
             /* a transient read failure: the next tick reads again */
           }
         }
-        schedule(TURN_BACKSTOP_INTERVAL_MS)
+        schedule(nextMs())
+      }
+      // A turn frame arrived: move a pending fast read to the slow cadence
+      // (a read in flight picks the slow cadence when it returns).
+      demoteBackstop = () => {
+        if (!live() || backstopSlow) return
+        backstopSlow = true
+        if (backstopTimer) schedule(TURN_BACKSTOP_SLOW_MS)
       }
       schedule(TURN_BACKSTOP_FIRST_MS)
     }
@@ -1078,9 +1109,10 @@ export class AiService extends BaseService {
       cancelStream = this._streamSSE(`${base}/${conversationId}/stream`, {
         onEvent: ({ event, data }) => {
           if (answered || cancelled) return
-          // The stream delivers THIS turn's frames — the backstop read is
-          // not needed (TURN_FRAME_EVENTS; snapshots/heartbeats prove nothing).
-          if (TURN_FRAME_EVENTS.has(event)) stopBackstop()
+          // The stream delivers THIS turn's frames now — the backstop slows
+          // to TURN_BACKSTOP_SLOW_MS (TURN_FRAME_EVENTS; snapshots and
+          // heartbeats prove nothing about the cross-replica bridge).
+          if (TURN_FRAME_EVENTS.has(event)) demoteBackstop()
           if (event === 'message.delta' && data?.message) {
             streamedAny = true
             onChunk?.(data.message)
