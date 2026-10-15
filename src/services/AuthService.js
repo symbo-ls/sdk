@@ -458,6 +458,46 @@ export class AuthService extends BaseService {
     }
   }
 
+  // Server CORE-AUTH-TAKEOVER-PATHS D9: a browser/plugin sign-in session
+  // (`/login?session=<id>`) is armed only by an explicit Continue. The step
+  // first reads what to show: when and from where the session was started,
+  // which client, and whether the device's code is required. No session
+  // needed (the facts are keyed by the unguessable session id).
+  async getSignInSessionInfo(sessionId) {
+    try {
+      const info = await this._request(
+        `/auth/session/info?session=${encodeURIComponent(sessionId)}`,
+        { method: 'GET', methodName: 'getSignInSessionInfo' }
+      )
+      return {
+        status: info?.status ?? null,
+        createdAt: info?.created_at ?? null,
+        requesterIp: info?.requester_ip ?? null,
+        client: info?.client ?? null,
+        codeRequired: !!info?.code_required
+      }
+    } catch (error) {
+      throw new Error(`Sign-in session lookup failed: ${error.message}`, { cause: error })
+    }
+  }
+
+  // D9: arm the sign-in session for the signed-in account (the Continue
+  // click). `userCode` is the code the requesting device shows; the server
+  // requires it when its flag is on (403 wrong, 410 after five misses, 404
+  // gone, 409 already used — the status rides on `cause`).
+  async activateSignInSession(sessionId, userCode) {
+    this._requireReady('activateSignInSession')
+    try {
+      return await this._request('/auth/session/activate', {
+        method: 'POST',
+        body: JSON.stringify(userCode ? { session_id: sessionId, user_code: userCode } : { session_id: sessionId }),
+        methodName: 'activateSignInSession'
+      })
+    } catch (error) {
+      throw new Error(`Sign-in session activation failed: ${error.message}`, { cause: error })
+    }
+  }
+
   async requestPasswordReset(email) {
     try {
       const response = await this._request('/auth/request-password-reset', {

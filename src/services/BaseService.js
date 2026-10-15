@@ -589,6 +589,7 @@ export class BaseService {
       'confirmRegistration',
       'previewRegisterConfirmation',
       'setInitialPassword',
+      'getSignInSessionInfo',
       'verifyEmail',
       'getPlans',
       'getPlan',

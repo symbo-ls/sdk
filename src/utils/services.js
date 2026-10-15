@@ -42,6 +42,8 @@ export const SERVICE_METHODS = {
   confirmRegistration: 'auth',
   previewRegisterConfirmation: 'auth',
   setInitialPassword: 'auth',
+  getSignInSessionInfo: 'auth',
+  activateSignInSession: 'auth',
   requestPasswordChange: 'auth',
   confirmPasswordChange: 'auth',
   getMe: 'auth',
