@@ -5,6 +5,7 @@ import {
   TURN_BACKSTOP_FIRST_MS,
   TURN_BACKSTOP_INTERVAL_MS,
   TURN_BACKSTOP_MAX_MS,
+  TURN_BACKSTOP_SLOW_MS,
   turnOutcomeFromConversation
 } from '../../AiService.js'
 
@@ -71,7 +72,7 @@ const wire = (t, { reads = [], payload = {}, callbacks = {} } = {}) => {
       gets.push(url)
       const next = reads.length > 1 ? reads.shift() : reads[0]
       if (next instanceof Error) throw next
-      const env = typeof next === 'function' ? next() : next
+      const env = typeof next === 'function' ? await next() : next
       return {
         success: true,
         data: env || { conversation: { id: 'conv-1' }, messages: [] }
@@ -184,12 +185,76 @@ test('accepted + the SSE frame arrives first: no read, no duplicate', async (t) 
   t.equal(w.gets.length, 0, 'the stream delivered: the backstop never read')
 })
 
-test('accepted + a live stream frame (delta) stops the backstop', async (t) => {
-  const w = wire(t)
+test('accepted + a live stream frame (delta) SLOWS the backstop; a later read still recovers the answer', async (t) => {
+  const w = wire(t, {
+    reads: [
+      { conversation: { id: 'conv-1' }, messages: [USER_MSG(), ANSWER()] }
+    ]
+  })
   await w.clock.tickAsync(10)
   w.emit({ event: 'message.delta', data: { message: 'There ' } })
-  await w.clock.tickAsync(TURN_BACKSTOP_INTERVAL_MS * 5)
-  t.equal(w.gets.length, 0, 'the stream proved live for this turn: no reads')
+  await w.clock.tickAsync(TURN_BACKSTOP_SLOW_MS - 100)
+  t.equal(
+    w.gets.length,
+    0,
+    'no read at the fast cadence once the stream delivered'
+  )
+  // The stream then reconnected to the other replica (bridge down): the
+  // answer frame never comes. The slow read recovers it.
+  await w.clock.tickAsync(200)
+  t.equal(w.gets.length, 1, 'one slow read')
+  t.equal(w.onDone.callCount, 1, 'the answer is recovered')
+  t.equal(w.onDone.firstCall.args[0].text, 'There are 4 open tickets.')
+})
+
+test('a resume acked (202) while a backstop read is in flight runs ONE chain, not two', async (t) => {
+  const pending = {
+    callId: 'call-5',
+    tool: 'openPage',
+    fn: 'openPage',
+    args: []
+  }
+  const slowEmpty = () =>
+    new Promise((resolve) =>
+      setTimeout(
+        () =>
+          resolve({ conversation: { id: 'conv-1' }, messages: [USER_MSG()] }),
+        3000
+      )
+    )
+  const w = wire(t, { reads: [slowEmpty] })
+  w.svc.submitToolResult.restore()
+  sinon.stub(w.svc, 'submitToolResult').resolves({ accepted: true })
+  await w.clock.tickAsync(TURN_BACKSTOP_FIRST_MS + 1000) // first read in flight (4 s → 7 s)
+  t.equal(w.gets.length, 1)
+  w.emit({ event: 'tool.call_required', data: { ...pending } }) // resume 202 → restart
+  await w.clock.tickAsync(60000)
+  // One chain from the restart at ~5 s: a read every 4 s + 3 s in flight,
+  // then every 5 s + 3 s → reads at 9,17,25,33,41,49,57,65 s, plus the first.
+  t.ok(w.gets.length <= 9, `one chain (${w.gets.length} reads in 65 s)`)
+  t.ok(w.gets.length >= 6, 'and it does keep reading')
+})
+
+test('a hidden tab skips its reads; the first visible tick reads', async (t) => {
+  const prev = global.document
+  global.document = { hidden: true }
+  t.teardown(() => {
+    if (prev === undefined) delete global.document
+    else global.document = prev
+  })
+  const w = wire(t, {
+    reads: [
+      { conversation: { id: 'conv-1' }, messages: [USER_MSG(), ANSWER()] }
+    ]
+  })
+  await w.clock.tickAsync(
+    TURN_BACKSTOP_FIRST_MS + TURN_BACKSTOP_INTERVAL_MS * 4
+  )
+  t.equal(w.gets.length, 0, 'no reads while hidden')
+  global.document.hidden = false
+  await w.clock.tickAsync(TURN_BACKSTOP_INTERVAL_MS + 5)
+  t.equal(w.gets.length, 1, 'read once visible')
+  t.equal(w.onDone.callCount, 1)
 })
 
 test('a heartbeat or snapshot frame does NOT count as the stream delivering', async (t) => {
