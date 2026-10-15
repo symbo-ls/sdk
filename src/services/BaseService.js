@@ -587,6 +587,7 @@ export class BaseService {
       'requestPasswordReset',
       'confirmPasswordReset',
       'confirmRegistration',
+      'getSignInSessionInfo',
       'verifyEmail',
       'getPlans',
       'getPlan',
