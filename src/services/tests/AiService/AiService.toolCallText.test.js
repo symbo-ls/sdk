@@ -35,7 +35,9 @@ const tick = async () => {
   await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
-const wireAcceptedTurn = (svc) => {
+// The turn is cancelled when its test ends: an accepted turn keeps a bounded
+// conversation-read backstop running (TURN_BACKSTOP_* in AiService.js).
+const wireAcceptedTurn = (svc, t = null) => {
   let capturedOnEvent = null
   sandbox.stub(svc, '_streamSSE').callsFake((url, { onEvent }) => {
     capturedOnEvent = onEvent
@@ -44,10 +46,11 @@ const wireAcceptedTurn = (svc) => {
   sandbox.stub(svc, '_requestExternal').resolves({ accepted: true })
   const onDone = sinon.spy()
   const onError = sinon.spy()
-  svc._streamWorkspaceTurn(
+  const cancel = svc._streamWorkspaceTurn(
     { projectId: 'proj-1', conversationId: 'conv-123', text: 'find my leads' },
     { onDone, onError }
   )
+  if (t) t.teardown(cancel)
   return { getOnEvent: () => capturedOnEvent, onDone, onError }
 }
 
@@ -105,7 +108,7 @@ test('isToolCallMessage: a tool_call part or metadata.kind tool_call marks a cal
 
 test('SSE: a tool-call message WITH text does not end the turn; the later final answer does', async (t) => {
   const svc = makeService()
-  const { getOnEvent, onDone, onError } = wireAcceptedTurn(svc)
+  const { getOnEvent, onDone, onError } = wireAcceptedTurn(svc, t)
   await tick()
   const onEvent = getOnEvent()
   t.equal(typeof onEvent, 'function', 'stream wired')
@@ -130,7 +133,7 @@ test('SSE: a tool-call message WITH text does not end the turn; the later final 
 
 test('reconnect snapshot: a call message with text is skipped; the final answer after it is taken', async (t) => {
   const svc = makeService()
-  const { getOnEvent, onDone } = wireAcceptedTurn(svc)
+  const { getOnEvent, onDone } = wireAcceptedTurn(svc, t)
   await tick()
   const onEvent = getOnEvent()
   const user = {
