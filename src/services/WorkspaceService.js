@@ -87,8 +87,14 @@ export class WorkspaceService extends BaseService {
    * (WorkspaceController.updateWorkspaceSettings) — the server deep-merges
    * each provided key into `Workspace.settings` via a per-key `$set`
    * (`settings.<key>`), so a UI write of ONE key never clobbers its
-   * siblings the way `updateWorkspace` (whole-doc PATCH /workspaces/:id →
-   * `$set` REPLACE of the whole `settings` object) would.
+   * siblings. `updateWorkspace` (PATCH /workspaces/:id) no longer replaces
+   * `settings`: a `settings` field in its body is sent through this same
+   * per-key writer. Mixed with displayName / slug / visibility, the body is
+   * split: the settings part first, the document fields only when it is
+   * accepted. A refused settings part writes nothing. When the settings
+   * landed but the document part failed, the response carries
+   * `settingsApplied: true`. A split success also returns this writer's
+   * answer under `settings`.
    *
    * `partialSettings` is a FLAT object of settings keys — only the keys you
    * pass are touched. Server whitelist:
@@ -106,9 +112,9 @@ export class WorkspaceService extends BaseService {
    * members who never chose one for themselves boot into. It is VALIDATED
    * against the shipped-language list: an unshipped or malformed code answers
    * 400 `{ error: 'invalid_language' }` and writes nothing at all (the whole
-   * request is refused, siblings included). `null` clears the default. The
-   * same gate guards the whole-bag `updateWorkspace({ settings })` replace,
-   * so there is no second door.
+   * request is refused, siblings included). `null` clears the default.
+   * `updateWorkspace({ settings })` goes through this same writer, so there
+   * is no second door.
    *
    * @param {string} workspaceId
    * @param {{ navbar?: any, apps?: any, home_default_panels?: any, designSystem?: any, workspaceModule?: any, language?: any, layoutDirection?: any, modules?: any }} partialSettings
