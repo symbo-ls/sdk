@@ -5,5 +5,13 @@ export { createAnalyzing, resolveNetworkCapture } from './client.js'
 // bundle and calls bootAnalyzing(cfg). Missing until 2026-08-14; the stub's
 // typeof guard silently dropped ALL published-site visitor analytics.
 export { bootAnalyzing } from './boot.js'
+// Page-side custom events on the public tracker — `window.SymbolsAnalytics`.
+export {
+  PAGE_HANDLE_NAME,
+  PAGE_EVENT_NAMES,
+  PAGE_EVENT_LIMITS,
+  sanitizePageEventData,
+  installPageHandle
+} from './pageEvents.js'
 export { LOG_TYPES, classifyEnvelope } from './classify.js'
 export { SDK_NAME, SDK_VERSION } from './meta.js'

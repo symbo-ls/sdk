@@ -18,6 +18,7 @@
 // page cannot lie about which project it is.
 
 import { createAnalyzing } from './client.js'
+import { installPageHandle } from './pageEvents.js'
 
 let _instance = null
 
@@ -116,6 +117,14 @@ export const bootAnalyzing = (cfg = {}) => {
         client.flush()
       } catch {}
     })
+  } catch {}
+
+  // Page-side custom events (window.SymbolsAnalytics — see pageEvents.js):
+  // installed AFTER the first page_view, so the calls the track.js stub
+  // queued before this bundle loaded land after it, in order, in the same
+  // session.
+  try {
+    installPageHandle(client)
   } catch {}
 
   return client
