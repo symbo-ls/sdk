@@ -357,11 +357,16 @@ export class StorefrontService extends BaseService {
   }
 
   // GET /core/storefront/:workspaceId/collections/cmsEntries?type=&slug= —
-  // PUBLIC. Published entries only, newest first: `{ id, type, title, slug,
-  // body, fields, seo, i18n, cover, updatedAt }`. `type` is the content
-  // type's slug; `slug` picks one entry (a page by its URL slug).
-  listStorefrontCmsEntries (workspaceId, { type, slug, limit, page } = {}) {
-    return this.listStorefrontCollection(workspaceId, 'cmsEntries', { type, slug, limit, page })
+  // PUBLIC. Published entries only, newest first (equal times by id):
+  // `{ id, type, title, slug, body, fields, seo, i18n, cover, updatedAt }`.
+  // `type` is the content type's slug; `slug` picks one entry (a page by its
+  // URL slug). `limit` up to 500 (one call per type). `omit: 'body'` drops
+  // `body` and `i18n.*.body` (a list page; any other value is a 400). `v` is
+  // a cache-buster the server ignores — the answer is `Cache-Control:
+  // public, no-cache` + a strong ETag, so a cached copy is always revalidated;
+  // change `v` to skip a copy you know is old (e.g. after an events frame).
+  listStorefrontCmsEntries (workspaceId, { type, slug, limit, page, omit, v } = {}) {
+    return this.listStorefrontCollection(workspaceId, 'cmsEntries', { type, slug, omit, v, limit, page })
   }
 
   // POST /core/storefront/:workspaceId/orders — place an order. A guest
