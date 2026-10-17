@@ -55,6 +55,19 @@ test('kits + CMS reads: shortcuts over the ONE /collections/:collection literal,
   done(t)
 })
 
+test('listStorefrontCmsEntries passes omit + v (a cache-buster the server ignores) and limit up to the server cap', async (t) => {
+  const { svc, call } = makeService()
+  await svc.listStorefrontCmsEntries(WS, { type: 'cocktail', limit: 500, omit: 'body', v: 1729 })
+  t.equal(call.getCall(0).args[0], 'listStorefrontCollection', 'same identity rule as every collection read')
+  t.equal(
+    call.getCall(0).args[1],
+    `/storefront/${WS}/collections/cmsEntries?type=cocktail&omit=body&v=1729&limit=500`
+  )
+  await svc.listStorefrontCmsEntries(WS, { slug: 'negroni' })
+  t.equal(call.getCall(1).args[1], `/storefront/${WS}/collections/cmsEntries?slug=negroni`, 'absent options stay off the URL')
+  done(t)
+})
+
 test('listStorefrontProducts / listStorefrontJobs keep their exact paths after the qs rename', async (t) => {
   const { svc, call } = makeService()
   await svc.listStorefrontProducts(WS, { limit: 300 })
