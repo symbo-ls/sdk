@@ -384,8 +384,10 @@ export class StorefrontService extends BaseService {
     )
   }
 
-  // GET /core/storefront/:workspaceId/orders/:id/status?key= — a guest's
-  // status read with the order's accessKey: `{ orderNumber, paymentStatus,
+  // GET /core/storefront/:workspaceId/orders/:id/status — a guest's status
+  // read with the order's accessKey in the `X-Storefront-Order-Key` header
+  // (never the URL: a query string lands in access logs), or the signed-in
+  // customer's own order with their token: `{ orderNumber, paymentStatus,
   // fulfilmentStatus, total, currency, paymentMode }` (nothing personal).
   getStorefrontOrderStatus (workspaceId, id, key, { customerToken } = {}) {
     if (!workspaceId) throw new Error('workspaceId is required')
@@ -393,15 +395,16 @@ export class StorefrontService extends BaseService {
     if (!key && !customerToken) throw new Error('key or customerToken is required')
     return this._call(
       'getStorefrontOrderStatus',
-      `/storefront/${encodeURIComponent(workspaceId)}/orders/${encodeURIComponent(id)}/status${qs({ key })}`,
-      { headers: _customerHeaders(customerToken) }
+      `/storefront/${encodeURIComponent(workspaceId)}/orders/${encodeURIComponent(id)}/status`,
+      { headers: _orderHeaders(key, customerToken) }
     )
   }
 
   // POST /core/storefront/:workspaceId/orders/:id/pay/test — Keepz TEST mode
-  // only (the workspace's payment mode is 'test'): `{ key?, result:
-  // 'success' | 'fail', method: 'apple' | 'google' | 'card' }`. No money
-  // moves; a success books the order paid with a KEEPZ-TEST reference.
+  // only (the workspace's payment mode is 'test'): `{ result: 'success' |
+  // 'fail', method: 'apple' | 'google' | 'card' }`, a guest's accessKey in
+  // the `X-Storefront-Order-Key` header. No money moves; a success books the
+  // order paid with a KEEPZ-TEST reference.
   payStorefrontOrderTest (workspaceId, id, { key, result, method } = {}, { customerToken } = {}) {
     if (!workspaceId) throw new Error('workspaceId is required')
     if (!id) throw new Error('id is required')
@@ -409,7 +412,7 @@ export class StorefrontService extends BaseService {
     return this._call(
       'payStorefrontOrderTest',
       `/storefront/${encodeURIComponent(workspaceId)}/orders/${encodeURIComponent(id)}/pay/test`,
-      { method: 'POST', body: { key, result, method }, headers: _customerHeaders(customerToken) }
+      { method: 'POST', body: { result, method }, headers: _orderHeaders(key, customerToken) }
     )
   }
 
@@ -724,6 +727,17 @@ export class StorefrontService extends BaseService {
 // SDK's platform session (see the class header).
 function _customerHeaders (customerToken) {
   return customerToken ? { Authorization: `Bearer ${customerToken}` } : undefined
+}
+
+// The guest order's accessKey rides `X-Storefront-Order-Key` (the server
+// reads it before the old `?key=` / body field, kept one release), next to a
+// storefront-customer token when there is one.
+export const STOREFRONT_ORDER_KEY_HEADER = 'X-Storefront-Order-Key'
+
+function _orderHeaders (key, customerToken) {
+  const headers = { ...(_customerHeaders(customerToken) || {}) }
+  if (key) headers[STOREFRONT_ORDER_KEY_HEADER] = String(key)
+  return Object.keys(headers).length ? headers : undefined
 }
 
 export const createStorefrontService = config => new StorefrontService(config)
