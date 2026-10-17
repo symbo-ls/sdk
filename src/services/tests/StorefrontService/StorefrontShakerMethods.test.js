@@ -87,19 +87,30 @@ test('placeStorefrontOrder: guest → NO Authorization header; signed-in → the
   done(t)
 })
 
-test('guest status + Keepz test pay', async (t) => {
+test('guest status + Keepz test pay: the order key rides X-Storefront-Order-Key, never the URL', async (t) => {
   const { svc, call } = makeService()
   await svc.getStorefrontOrderStatus(WS, 'o 1', 'key/1')
-  t.equal(call.firstCall.args[1], `/storefront/${WS}/orders/o%201/status?key=key%2F1`)
-  t.equal(call.firstCall.args[2].headers, undefined)
+  t.equal(call.firstCall.args[1], `/storefront/${WS}/orders/o%201/status`, 'no ?key= in the URL')
+  t.deepEqual(call.firstCall.args[2].headers, { 'X-Storefront-Order-Key': 'key/1' })
   t.throws(() => svc.getStorefrontOrderStatus(WS, 'o1'), /key or customerToken/)
 
+  await svc.getStorefrontOrderStatus(WS, 'o1', null, { customerToken: TOKEN })
+  t.deepEqual(
+    call.secondCall.args[2].headers,
+    { Authorization: `Bearer ${TOKEN}` },
+    'a customer reads its own order with its token only'
+  )
+
   await svc.payStorefrontOrderTest(WS, 'o1', { key: 'k', result: 'success', method: 'apple' })
-  const [name, path, init] = call.secondCall.args
+  const [name, path, init] = call.thirdCall.args
   t.equal(name, 'payStorefrontOrderTest')
   t.equal(path, `/storefront/${WS}/orders/o1/pay/test`)
   t.equal(init.method, 'POST')
-  t.deepEqual(init.body, { key: 'k', result: 'success', method: 'apple' })
+  t.deepEqual(init.body, { result: 'success', method: 'apple' }, 'the key is not in the body')
+  t.deepEqual(init.headers, { 'X-Storefront-Order-Key': 'k' })
+
+  await svc.payStorefrontOrderTest(WS, 'o1', { result: 'fail' }, { customerToken: TOKEN })
+  t.deepEqual(call.getCall(3).args[2].headers, { Authorization: `Bearer ${TOKEN}` })
   t.throws(() => svc.payStorefrontOrderTest(WS, 'o1', { result: 'maybe' }), /success' or 'fail/)
   done(t)
 })
