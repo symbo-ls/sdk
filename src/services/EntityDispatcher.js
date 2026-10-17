@@ -1629,7 +1629,12 @@ const ENTITY_ROUTES = {
       campaigns: 'campaigns',
       // Per-local-day series (addendum 2): `('analyzed', 'daily', { family,
       // tz, days })` — a bare filter like totals.
-      daily: 'daily'
+      daily: 'daily',
+      // Ordered visit funnel (Shaker program CONTRACT §8):
+      // `('analyzed', 'funnel', { family: 'projects', projectId, since,
+      // until, tz, steps: ['view_item', …], workspaceId })` — a bare filter
+      // like totals.
+      funnel: 'funnel'
     },
     argMap: {
       ingest: (a) => [a],
@@ -1650,7 +1655,8 @@ const ENTITY_ROUTES = {
       pages: (a) => [a?.filter ?? {}, a?.options ?? {}],
       referrers: (a) => [a?.filter ?? {}, a?.options ?? {}],
       campaigns: (a) => [a?.filter ?? {}, a?.options ?? {}],
-      daily: (a) => [a?.filter ?? a ?? {}]
+      daily: (a) => [a?.filter ?? a ?? {}],
+      funnel: (a) => [a?.filter ?? a ?? {}]
     }
   },
   'docs.documents': {
