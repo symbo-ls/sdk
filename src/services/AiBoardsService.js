@@ -88,7 +88,8 @@ import { BaseService } from './BaseService.js'
  *   onItem?: function({ id: string, index: number, item: BoardItem }): void,
  *   onDrop?: function(Object): void, shellWidgets?: Object[], modelMode?: string,
  *   capabilities?: { records?: number },
- *   mode?: ('dashboard'|'presentation'),
+ *   mode?: ('dashboard'|'presentation'|'fly'),
+ *   appCatalog?: Object[],
  *   onSlide?: function({ id: string, index: number, slide: Object }): void }} BoardStreamOptions
  */
 
@@ -99,8 +100,11 @@ const STREAM_CALLBACKS = ['onEvent', 'onStart', 'onHead', 'onItem', 'onDrop', 'o
 // behavior. A client feature-detects Presentation mode by `supportsMode` (or
 // `forwardedFields.generate.includes('mode')`): an older SDK has neither, and
 // it drops `mode`, so the client shows Presentation as unavailable.
+// `appCatalog` — the built-in packages' VIEWS a Fly page may place (the shell's
+// providers' declarations, the same list a chat turn sends as
+// `context.appCatalog`; the server keeps `system/<pkg>` ids only).
 export const AI_BOARDS_FORWARDED_FIELDS = Object.freeze({
-  generate: Object.freeze(['prompt', 'threadId', 'shellWidgets', 'modelMode', 'capabilities', 'mode']),
+  generate: Object.freeze(['prompt', 'threadId', 'shellWidgets', 'modelMode', 'capabilities', 'mode', 'appCatalog']),
   refine: Object.freeze(['prompt', 'boardId', 'spec', 'shellWidgets', 'modelMode', 'capabilities', 'mode'])
 })
 

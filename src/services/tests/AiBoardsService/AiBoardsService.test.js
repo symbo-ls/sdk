@@ -453,6 +453,21 @@ test('generate / refine carry `capabilities` (what this client renders); absent 
   t.end()
 })
 
+test('generate carries `appCatalog` (the built-in views a Fly page may place); refine never', async (t) => {
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves(DONE)
+  const appCatalog = [{ app: { id: 'system/tickets' }, views: [{ id: 'tickets-board', component: 'TicketsAnswerView' }] }]
+  await svc.generate({ prompt: 'my open tasks', mode: 'fly', appCatalog })
+  await svc.refine({ prompt: 'p', spec: SPEC, appCatalog })
+  await svc.generate({ prompt: 'p' })
+  t.deepEqual(stub.getCall(0).args[2].body, { prompt: 'my open tasks', mode: 'fly', appCatalog })
+  t.equal('appCatalog' in stub.getCall(1).args[2].body, false, 'a refine keeps its board')
+  t.equal('appCatalog' in stub.getCall(2).args[2].body, false, 'absent = not sent')
+  t.ok(svc.forwardedFields.generate.includes('appCatalog'), 'a client can feature-detect it')
+  sandbox.restore()
+  t.end()
+})
+
 // ─── Presentation mode: a DECK (server deck contract v1) ─────────────────────
 
 test('generate / refine carry `mode` (presentation = a deck); absent = not sent', async (t) => {
