@@ -768,6 +768,39 @@ export const SERVICE_METHODS = {
   // Storefront schema selection (owner|admin, platform-user session).
   getStorefrontSchema: 'storefront',
   setStorefrontSchema: 'storefront',
+  // Shaker program (CONTRACT §7): the shopper surface — anonymous or an
+  // explicit storefront-customer token, never the platform session (see
+  // BaseService._requiresInit) — plus the owner|admin checkout + payment
+  // settings on the platform-user session.
+  resolveStorefront: 'storefront',
+  listStorefrontBundles: 'storefront',
+  listStorefrontCmsTypes: 'storefront',
+  listStorefrontCmsEntries: 'storefront',
+  placeStorefrontOrder: 'storefront',
+  getStorefrontOrderStatus: 'storefront',
+  payStorefrontOrderTest: 'storefront',
+  listStorefrontOrders: 'storefront',
+  getStorefrontOrder: 'storefront',
+  getStorefrontCart: 'storefront',
+  replaceStorefrontCart: 'storefront',
+  clearStorefrontCart: 'storefront',
+  listStorefrontAddresses: 'storefront',
+  createStorefrontAddress: 'storefront',
+  updateStorefrontAddress: 'storefront',
+  deleteStorefrontAddress: 'storefront',
+  updateStorefrontCustomerMe: 'storefront',
+  changeStorefrontCustomerPassword: 'storefront',
+  deleteStorefrontCustomerAccount: 'storefront',
+  listStorefrontAppointments: 'storefront',
+  getStorefrontBalances: 'storefront',
+  listStorefrontLoyalty: 'storefront',
+  subscribeStorefrontEvents: 'storefront',
+  getStorefrontCheckout: 'storefront',
+  confirmStorefrontCashPayment: 'storefront',
+  getStorefrontCheckoutSettings: 'storefront',
+  setStorefrontCheckoutSettings: 'storefront',
+  getStorefrontPaymentSettings: 'storefront',
+  setStorefrontPaymentSettings: 'storefront',
 
   // External company-registry proxy (bellforge D2-1) — authenticated,
   // NOT workspace-scoped; rides the server's provider chain + 1h cache.
