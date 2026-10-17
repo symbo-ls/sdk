@@ -40,6 +40,24 @@ const _setSince = (params, filter) => {
   params.set('since', since instanceof Date ? since.toISOString() : String(since))
 }
 
+// `until` for the funnel window — same shapes as `since`: a Date, an ISO
+// instant or a bare 'YYYY-MM-DD' (the server reads a bare day in `tz` and
+// treats an END day as inclusive).
+const _setUntil = (params, filter) => {
+  const until = filter?.until
+  if (until == null || until === '') return
+  params.set('until', until instanceof Date ? until.toISOString() : String(until))
+}
+
+// `steps` for the funnel — an array of event names (joined with ',') or the
+// comma-separated string itself. The server validates the names (1..8
+// distinct plain names) and answers 400 invalid_steps otherwise.
+const _setSteps = (params, filter) => {
+  const steps = filter?.steps
+  if (steps == null || steps === '') return
+  params.set('steps', Array.isArray(steps) ? steps.map(String).join(',') : String(steps))
+}
+
 // First-touch UTM filters (CORE-ANALYZED-UTM-ATTRIBUTION-1) on listSessions
 // / totals / campaigns / listUsers: `filter.utmSource` / `utmMedium` /
 // `utmCampaign` → the same-
@@ -126,13 +144,19 @@ export class AnalyzedService extends BaseService {
     )
   }
 
-  // GET /core/analyzed/events?sessionId=&logType=&projectId=&family=&since=&order=&limit=&offset=
+  // GET /core/analyzed/events?sessionId=&logType=&message=&projectId=&family=&since=&order=&limit=&offset=
+  // `filter.message` — EXACT event message (≤ 64 chars), e.g. 'purchase' for
+  // the shop events window.SymbolsAnalytics.capture writes; their data rides
+  // each row's `payload.data`. Pair it with logType 'log', projectId and since.
   listEvents (filter = {}, options = {}) {
     const params = new URLSearchParams()
     _setWorkspace(params, filter, options)
     _setFamily(params, filter)
     if (filter.sessionId) params.set('sessionId', filter.sessionId)
     if (filter.logType) params.set('logType', filter.logType)
+    if (filter.message != null && filter.message !== '') {
+      params.set('message', String(filter.message))
+    }
     if (filter.projectId) params.set('projectId', filter.projectId)
     if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
     if (filter.since) params.set('since', filter.since)
@@ -349,5 +373,35 @@ export class AnalyzedService extends BaseService {
     if (options.offset != null) params.set('offset', String(options.offset))
     const qs = params.toString()
     return this._call('analyzed.campaigns', `/analyzed/campaigns${qs ? `?${qs}` : ''}`)
+  }
+
+  // GET /core/analyzed/funnel?family=&projectId=&excludeProjectId=&since=&until=&tz=&steps=
+  // Ordered visit funnel (Shaker program CONTRACT §8): the visits of the
+  // scope that STARTED in [since, until), per-step counts and the ordered
+  // walk over the `manual` events window.SymbolsAnalytics.capture writes.
+  //   filter.steps   — ['view_item', 'add_to_cart', 'begin_checkout',
+  //                    'purchase'] (array or comma string; required, 1..8)
+  //   filter.since / filter.until — Date | ISO instant | 'YYYY-MM-DD' (a bare
+  //                    day is local midnight in `tz`; a bare `until` day is
+  //                    inclusive). Default: the 30 days before now; ≤ 400 days.
+  //   filter.tz      — IANA zone (default UTC, echoed)
+  //   filter.family / projectId / excludeProjectId / workspaceId — as every read.
+  // Returns { sessions, steps: [{ name, sessions, events }],
+  //   ordered: [{ name, sessions }], tz, window: { since, until }, capped,
+  //   retention: { eventsDays, sessionsDays, eventsFrom }, partial } —
+  // `partial` = the window starts before the oldest retained event (events
+  // are kept 30 days, sessions 90).
+  funnel (filter = {}) {
+    const params = new URLSearchParams()
+    _setWorkspace(params, filter)
+    _setFamily(params, filter)
+    _setTz(params, filter)
+    if (filter.projectId) params.set('projectId', filter.projectId)
+    if (filter.excludeProjectId) params.set('excludeProjectId', filter.excludeProjectId)
+    _setSince(params, filter)
+    _setUntil(params, filter)
+    _setSteps(params, filter)
+    const qs = params.toString()
+    return this._call('analyzed.funnel', `/analyzed/funnel${qs ? `?${qs}` : ''}`)
   }
 }
