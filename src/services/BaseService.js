@@ -643,6 +643,36 @@ export class BaseService {
       // is a platform-user write and needs the session's bearer token.)
       'getStorefrontAuthProviders',
       'signInStorefrontCustomerWithOAuth',
+      // Storefront shopper surface added for the Shaker program (CONTRACT
+      // §7): host → identity, kits, CMS, guest/customer orders + status +
+      // Keepz test pay, cart, addresses, profile, the natali account reads.
+      // Anonymous, or a storefront-CUSTOMER token passed explicitly — never
+      // the SDK's platform session. (The settings/checkout + settings/
+      // payments owner writes are NOT here: they need the session's bearer.)
+      // The public events stream is anonymous through `_sseSubscribe`'s
+      // `anonymous` option, not through this set.
+      // (listStorefrontBundles / CmsTypes / CmsEntries delegate to
+      // listStorefrontCollection above and inherit its rule.)
+      'resolveStorefront',
+      'getStorefrontCheckout',
+      'placeStorefrontOrder',
+      'getStorefrontOrderStatus',
+      'payStorefrontOrderTest',
+      'listStorefrontOrders',
+      'getStorefrontOrder',
+      'getStorefrontCart',
+      'replaceStorefrontCart',
+      'clearStorefrontCart',
+      'listStorefrontAddresses',
+      'createStorefrontAddress',
+      'updateStorefrontAddress',
+      'deleteStorefrontAddress',
+      'updateStorefrontCustomerMe',
+      'changeStorefrontCustomerPassword',
+      'deleteStorefrontCustomerAccount',
+      'listStorefrontAppointments',
+      'getStorefrontBalances',
+      'listStorefrontLoyalty',
       // CRM lead-source web form (LeadSourceService.submitForm) — a visitor
       // on a published site submits a lead; the form key is the credential.
       'leadSources.submitForm'
@@ -726,6 +756,9 @@ export class BaseService {
   // historical tickets listeners are installed verbatim, so the tickets/docs
   // callers are byte-unchanged.
   //
+  // `opts.anonymous` (default false): never mint a stream ticket — for PUBLIC
+  // streams that take no identity (StorefrontService.subscribeStorefrontEvents).
+  //
   // `opts.flatParams` (default false): the tickets/docs server controllers
   // historically read `filter[key]` nested params; the meet stream controller
   // reads FLAT query params (`?roomId=…&tables=…`). Setting `flatParams: true`
@@ -741,6 +774,7 @@ export class BaseService {
     }
 
     const flatParams = opts?.flatParams === true
+    const anonymous = opts?.anonymous === true
     // Default event vocabulary = the historical tickets listeners. Kept here
     // (not inlined below) so the meet path can swap it out without touching
     // the connection/reconnect machinery.
@@ -819,8 +853,11 @@ export class BaseService {
       // ticket exactly once, so a reconnect must never reuse the last URL.
       // An unauthenticated session skips the mint (parity with the old
       // no-token URL: the server answers 401 and the backoff retries).
+      // `opts.anonymous` skips it ALWAYS: a public stream (the storefront's
+      // /events) has no identity, so even a signed-in SDK must not spend a
+      // ticket on it or put one in a public URL.
       let ticket = null
-      if (this._tokenManager?.getAccessToken?.()) {
+      if (!anonymous && this._tokenManager?.getAccessToken?.()) {
         try {
           ticket = await this._mintStreamTicket(streamWorkspace)
         } catch {
