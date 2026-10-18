@@ -468,6 +468,56 @@ test('generate carries `appCatalog` (the built-in views a Fly page may place); r
   t.end()
 })
 
+// A Fly ask's PAGE CONTEXT — what "this site / this page / this" means: the
+// composer's chosen scope (`aiScope`) and the parts the member pointed at
+// (`inspected`, Inspect & Ask). The server (ai-boards controller
+// pageContextOf → askScope.js pickers) reads it on a fly generate AND a fly
+// refine; absent → the page is composed exactly as without it.
+const PAGE_CONTEXT = {
+  aiScope: { kind: 'page', label: 'Pricing', chosen: true, route: '/sites/pricing', page: { route: '/sites/pricing', label: 'Pricing' } },
+  inspected: [{ id: 'sec-plans', title: 'Plans', kind: 'section', route: '/sites/pricing', text: 'Three plans: Free, Pro, Team' }]
+}
+
+test('generate / refine carry `context` (the Fly page context: aiScope + inspected); absent = not sent', async (t) => {
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves(DONE)
+  await svc.generate({ prompt: 'improve this site', mode: 'fly', context: PAGE_CONTEXT })
+  await svc.refine({ prompt: 'shorter', mode: 'fly', spec: SPEC, context: PAGE_CONTEXT })
+  await svc.generate({ prompt: 'p', mode: 'fly' })
+  t.deepEqual(stub.getCall(0).args[2].body, { prompt: 'improve this site', mode: 'fly', context: PAGE_CONTEXT })
+  t.deepEqual(stub.getCall(1).args[2].body, { prompt: 'shorter', spec: SPEC, mode: 'fly', context: PAGE_CONTEXT }, 'refine carries it too')
+  t.equal('context' in stub.getCall(2).args[2].body, false, 'absent = not sent')
+  t.ok(svc.forwardedFields.generate.includes('context'), 'a client can feature-detect it (generate)')
+  t.ok(svc.forwardedFields.refine.includes('context'), 'a client can feature-detect it (refine)')
+  sandbox.restore()
+  t.end()
+})
+
+test("a streamed Fly ask through sdk.execute('ai.boards', 'generate') carries `context` in the POST body", async (t) => {
+  // The shell's own call shape (assistantFly): execute + onEvent → the stream.
+  registerEntity('ai.boards', AI_BOARDS_ENTITY_ROUTE)
+  const svc = makeService()
+  sandbox.stub(svc, '_authHeader').resolves(null)
+  const fetchStub = sandbox.stub(globalThis, 'fetch').resolves(sseResponse(STREAM))
+  const execute = createEntityDispatcher({ getService: (name) => (name === 'aiBoards' ? svc : null) })
+  const result = await execute('ai.boards', 'generate', {
+    workspaceId: 'ws-1',
+    prompt: 'what does this section say?',
+    mode: 'fly',
+    context: PAGE_CONTEXT,
+    onEvent: () => {}
+  })
+  t.equal(fetchStub.firstCall.args[0], 'https://api.test/core/ai-boards/workspaces/ws-1/generate')
+  t.deepEqual(JSON.parse(fetchStub.firstCall.args[1].body), {
+    prompt: 'what does this section say?',
+    mode: 'fly',
+    context: PAGE_CONTEXT
+  })
+  t.deepEqual(result, DONE)
+  sandbox.restore()
+  t.end()
+})
+
 // ─── Presentation mode: a DECK (server deck contract v1) ─────────────────────
 
 test('generate / refine carry `mode` (presentation = a deck); absent = not sent', async (t) => {
@@ -517,11 +567,26 @@ test('the service says which fields it forwards: Presentation needs `mode` (supp
   t.ok(Array.isArray(fields?.generate) && fields.generate.includes('mode'), 'generate forwards mode')
   t.ok(Array.isArray(fields?.refine) && fields.refine.includes('mode'), 'refine forwards mode')
   t.ok(Object.isFrozen(fields) && Object.isFrozen(fields.generate), 'a read-only list')
-  // The marker IS the behavior: every listed generate field reaches the body.
+  t.ok(Object.isFrozen(fields.refine), 'a read-only refine list')
+  // The EXACT forwarded sets — a field added or dropped is a contract change.
+  t.deepEqual(
+    [...fields.generate],
+    ['prompt', 'threadId', 'shellWidgets', 'modelMode', 'capabilities', 'mode', 'appCatalog', 'context'],
+    'generate forwards exactly these fields'
+  )
+  t.deepEqual(
+    [...fields.refine],
+    ['prompt', 'boardId', 'spec', 'shellWidgets', 'modelMode', 'capabilities', 'mode', 'context'],
+    'refine forwards exactly these fields'
+  )
+  // The marker IS the behavior: every listed field reaches the body, and
+  // nothing else does.
   const stub = sandbox.stub(svc, '_call').resolves(DONE)
-  const args = Object.fromEntries(fields.generate.map((k) => [k, k === 'shellWidgets' ? [] : `v-${k}`]))
-  await svc.generate(args)
-  t.deepEqual(Object.keys(stub.firstCall.args[2].body).sort(), [...fields.generate].sort())
+  const argsOf = (keys) => Object.fromEntries(keys.map((k) => [k, k === 'shellWidgets' ? [] : `v-${k}`]))
+  await svc.generate({ ...argsOf(fields.generate), unlisted: 'dropped' })
+  await svc.refine({ ...argsOf(fields.refine), unlisted: 'dropped' })
+  t.deepEqual(Object.keys(stub.getCall(0).args[2].body).sort(), [...fields.generate].sort(), 'generate body = the generate list')
+  t.deepEqual(Object.keys(stub.getCall(1).args[2].body).sort(), [...fields.refine].sort(), 'refine body = the refine list')
   sandbox.restore()
   t.end()
 })

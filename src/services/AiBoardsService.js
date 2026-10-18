@@ -90,6 +90,7 @@ import { BaseService } from './BaseService.js'
  *   capabilities?: { records?: number },
  *   mode?: ('dashboard'|'presentation'|'fly'),
  *   appCatalog?: Object[],
+ *   context?: { aiScope?: Object, inspected?: Object[] },
  *   onSlide?: function({ id: string, index: number, slide: Object }): void }} BoardStreamOptions
  */
 
@@ -103,9 +104,14 @@ const STREAM_CALLBACKS = ['onEvent', 'onStart', 'onHead', 'onItem', 'onDrop', 'o
 // `appCatalog` — the built-in packages' VIEWS a Fly page may place (the shell's
 // providers' declarations, the same list a chat turn sends as
 // `context.appCatalog`; the server keeps `system/<pkg>` ids only).
+// `context` — a Fly ask's PAGE CONTEXT, `{ aiScope, inspected }`: what "this
+// site / this page / this" means (the composer's chosen scope, the parts the
+// member pointed at with Inspect & Ask). The server reads it on a fly
+// generate and a fly refine through the chat turn's own pickers; absent → the
+// page is composed exactly as without it, and an older server ignores it.
 export const AI_BOARDS_FORWARDED_FIELDS = Object.freeze({
-  generate: Object.freeze(['prompt', 'threadId', 'shellWidgets', 'modelMode', 'capabilities', 'mode', 'appCatalog']),
-  refine: Object.freeze(['prompt', 'boardId', 'spec', 'shellWidgets', 'modelMode', 'capabilities', 'mode'])
+  generate: Object.freeze(['prompt', 'threadId', 'shellWidgets', 'modelMode', 'capabilities', 'mode', 'appCatalog', 'context']),
+  refine: Object.freeze(['prompt', 'boardId', 'spec', 'shellWidgets', 'modelMode', 'capabilities', 'mode', 'context'])
 })
 
 // The body a generate/refine POST carries — everything but the callbacks,
