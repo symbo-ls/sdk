@@ -402,3 +402,71 @@ test('tickets.subscribe calls _sseSubscribe with /tickets/stream', t => {
 // ticketComments / ticketDependencies / realtime.subscribeTickets) were
 // dropped in Phase 4 — see SDK-TICKETS-BACKCOMPAT-DROP in tickets/sdk.md.
 // Callers route through sdk.tickets.* or sdk.execute('tickets', ...) now.
+
+// ─── cycle: every route carries the workspace (2026-10-19) ─────────────────
+// The server scopes EVERY /tickets/cycle read and write by `workspaceId`
+// (CycleController → authorizeWorkspaceScope; without it: 400
+// workspace_id_required). The cycle namespace sent none — not the active
+// workspace every other tickets call defaults to, not even an explicit one —
+// so the roadmap (tickets cycleStore: execute('tickets.cycle', 'list', {}))
+// and the Fly roadmap showed no cycles.
+
+test('tickets.cycle.list carries the active workspace; an explicit one wins; limit stays', async t => {
+  const svc = makeService()
+  svc._context = { activeWorkspaceId: 'ws-active' }
+  const stub = sandbox.stub(svc, '_call').resolves([])
+  await svc.cycle.list()
+  await svc.cycle.list({ workspaceId: 'ws-9', limit: 5 })
+  t.equal(stub.getCall(0).args[1], '/tickets/cycle?workspaceId=ws-active')
+  t.equal(stub.getCall(1).args[1], '/tickets/cycle?limit=5&workspaceId=ws-9')
+  sandbox.restore()
+  t.end()
+})
+
+test('every other tickets.cycle op carries ?workspaceId= (active, or the explicit one)', async t => {
+  const svc = makeService()
+  svc._context = { activeWorkspaceId: 'ws-active' }
+  const stub = sandbox.stub(svc, '_call').resolves({})
+  await svc.cycle.get('c1')
+  await svc.cycle.create({ name: 'Q4' })
+  await svc.cycle.update('c1', { name: 'Q4b' })
+  await svc.cycle.activate('c1')
+  await svc.cycle.archive('c1')
+  await svc.cycle.listTickets('c1')
+  await svc.cycle.addTicket('c1', 'TICKET-42')
+  await svc.cycle.removeTicket('c1', 'TICKET-42', { workspaceId: 'ws-2' })
+  t.deepEqual(stub.getCalls().map((c) => c.args[1]), [
+    '/tickets/cycle/c1?workspaceId=ws-active',
+    '/tickets/cycle?workspaceId=ws-active',
+    '/tickets/cycle/c1?workspaceId=ws-active',
+    '/tickets/cycle/c1/activate?workspaceId=ws-active',
+    '/tickets/cycle/c1/archive?workspaceId=ws-active',
+    '/tickets/cycle/c1/tickets?workspaceId=ws-active',
+    '/tickets/cycle/c1/tickets?workspaceId=ws-active',
+    '/tickets/cycle/c1/tickets/TICKET-42?workspaceId=ws-2'
+  ])
+  t.deepEqual(stub.getCall(1).args[2].body, { name: 'Q4' }, 'create body unchanged')
+  t.deepEqual(stub.getCall(6).args[2].body, { ticketId: 'TICKET-42' }, 'addTicket body unchanged')
+  sandbox.restore()
+  t.end()
+})
+
+test("sdk.execute('tickets.cycle', …) — the roadmap's own calls reach the server scoped", async t => {
+  const { createEntityDispatcher } = await import('../../EntityDispatcher.js')
+  const svc = makeService()
+  svc._context = { activeWorkspaceId: 'ws-active' }
+  const stub = sandbox.stub(svc, '_call').resolves([])
+  const execute = createEntityDispatcher({ getService: (name) => (name === 'tickets' ? svc : null) })
+  await execute('tickets.cycle', 'list', {}) // cycleStore.js
+  await execute('tickets.cycle', 'listTickets', { cycleId: 'c1' }) // cycleStore.js
+  await execute('tickets.cycle', 'listTickets', { cycleId: 'c1', workspaceId: 'ws-2' })
+  await execute('tickets.cycle', 'activate', { cycleId: 'c1', workspaceId: 'ws-2' })
+  t.deepEqual(stub.getCalls().map((c) => c.args[1]), [
+    '/tickets/cycle?workspaceId=ws-active',
+    '/tickets/cycle/c1/tickets?workspaceId=ws-active',
+    '/tickets/cycle/c1/tickets?workspaceId=ws-2',
+    '/tickets/cycle/c1/activate?workspaceId=ws-2'
+  ])
+  sandbox.restore()
+  t.end()
+})

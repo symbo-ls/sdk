@@ -550,61 +550,74 @@ export class TicketService extends BaseService {
   // require the caller to hold an ORG_MGMT_ROLES baseTier on the active
   // org (enforced server-side).
 
+  // `?workspaceId=` for the /tickets/cycle routes. The server scopes EVERY
+  // cycle read and write by it (CycleController → authorizeWorkspaceScope;
+  // without it: 400 workspace_id_required). An explicit id wins; otherwise
+  // the active workspace — the default every other tickets call carries.
+  _cycleQs (workspaceId) {
+    const wid = this._resolveWorkspaceId(workspaceId, { fallbackToStorage: true })
+    return wid ? `?workspaceId=${encodeURIComponent(wid)}` : ''
+  }
+
   cycle = {
     /**
-     * List cycles for the active org, newest active first, then
-     * planned/released/archived. Each row carries completion stats
-     * (ticketCount, doneCount, completionPct).
+     * List cycles for the workspace (explicit, else the active one), newest
+     * active first, then planned/released/archived. Each row carries
+     * completion stats (ticketCount, doneCount, completionPct).
      */
-    list: ({ limit } = {}) => {
-      const qs = limit ? `?limit=${encodeURIComponent(limit)}` : ''
+    list: ({ limit, workspaceId } = {}) => {
+      const params = new URLSearchParams()
+      if (limit) params.set('limit', String(limit))
+      const wid = this._resolveWorkspaceId(workspaceId, { fallbackToStorage: true })
+      if (wid) params.set('workspaceId', String(wid))
+      const qs = params.toString() ? `?${params.toString()}` : ''
       return this._call('tickets.cycle.list', `/tickets/cycle${qs}`)
     },
 
     /** Single cycle by id, with completion stats. */
-    get: (cycleId) =>
-      this._call('tickets.cycle.get', `/tickets/cycle/${encodeURIComponent(cycleId)}`),
+    get: (cycleId, { workspaceId } = {}) =>
+      this._call('tickets.cycle.get', `/tickets/cycle/${encodeURIComponent(cycleId)}${this._cycleQs(workspaceId)}`),
 
     /** Create a cycle. Payload: { name, slug?, description?, startsAt?, endsAt?, status? }. */
-    create: (payload = {}) =>
-      this._call('tickets.cycle.create', '/tickets/cycle', {
+    create: (payload = {}, { workspaceId } = {}) =>
+      this._call('tickets.cycle.create', `/tickets/cycle${this._cycleQs(workspaceId)}`, {
         method: 'POST',
         body: payload || {}
       }),
 
     /** Update cycle metadata. Payload accepts name/description/startsAt/endsAt/slug. */
-    update: (cycleId, payload = {}) =>
-      this._call('tickets.cycle.update', `/tickets/cycle/${encodeURIComponent(cycleId)}`, {
+    update: (cycleId, payload = {}, { workspaceId } = {}) =>
+      this._call('tickets.cycle.update', `/tickets/cycle/${encodeURIComponent(cycleId)}${this._cycleQs(workspaceId)}`, {
         method: 'PUT',
         body: payload || {}
       }),
 
     /** Promote cycle to `active`. Atomically demotes any other active cycle in the org. */
-    activate: (cycleId) =>
-      this._call('tickets.cycle.activate', `/tickets/cycle/${encodeURIComponent(cycleId)}/activate`, {
+    activate: (cycleId, { workspaceId } = {}) =>
+      this._call('tickets.cycle.activate', `/tickets/cycle/${encodeURIComponent(cycleId)}/activate${this._cycleQs(workspaceId)}`, {
         method: 'POST'
       }),
 
     /** Archive cycle. Tickets retain their cycleId so history is preserved. */
-    archive: (cycleId) =>
-      this._call('tickets.cycle.archive', `/tickets/cycle/${encodeURIComponent(cycleId)}/archive`, {
+    archive: (cycleId, { workspaceId } = {}) =>
+      this._call('tickets.cycle.archive', `/tickets/cycle/${encodeURIComponent(cycleId)}/archive${this._cycleQs(workspaceId)}`, {
         method: 'POST'
       }),
 
     /** List tickets attached to a cycle. */
-    listTickets: (cycleId) =>
-      this._call('tickets.cycle.tickets.list', `/tickets/cycle/${encodeURIComponent(cycleId)}/tickets`),
+    listTickets: (cycleId, { workspaceId } = {}) =>
+      this._call('tickets.cycle.tickets.list', `/tickets/cycle/${encodeURIComponent(cycleId)}/tickets${this._cycleQs(workspaceId)}`),
 
     /** Attach a ticket to the cycle. Pass the human ticketId (e.g. 'TICKET-42'). */
-    addTicket: (cycleId, ticketId) =>
-      this._call('tickets.cycle.tickets.add', `/tickets/cycle/${encodeURIComponent(cycleId)}/tickets`, {
+    addTicket: (cycleId, ticketId, { workspaceId } = {}) =>
+      this._call('tickets.cycle.tickets.add', `/tickets/cycle/${encodeURIComponent(cycleId)}/tickets${this._cycleQs(workspaceId)}`, {
         method: 'POST',
         body: { ticketId }
       }),
 
     /** Detach a ticket from the cycle. */
-    removeTicket: (cycleId, ticketId) =>
-      this._call('tickets.cycle.tickets.remove', `/tickets/cycle/${encodeURIComponent(cycleId)}/tickets/${encodeURIComponent(ticketId)}`, {
+    removeTicket: (cycleId, ticketId, { workspaceId } = {}) =>
+      this._call('tickets.cycle.tickets.remove', `/tickets/cycle/${encodeURIComponent(cycleId)}/tickets/${encodeURIComponent(ticketId)}${this._cycleQs(workspaceId)}`, {
         method: 'DELETE'
       })
   }

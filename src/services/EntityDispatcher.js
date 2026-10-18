@@ -545,16 +545,18 @@ const ENTITY_ROUTES = {
       addTicket: 'cycle.addTicket',
       removeTicket: 'cycle.removeTicket'
     },
+    // A caller's `workspaceId` rides as the trailing options bag; without one
+    // the service sends the active workspace (every cycle route needs it).
     argMap: {
       list: (a) => [a || {}],
-      get: (a) => [a?.cycleId ?? a?.id ?? a],
-      create: (a) => [a?.payload ?? a],
-      update: (a) => [a?.cycleId ?? a?.id, a?.payload ?? a],
-      activate: (a) => [a?.cycleId ?? a?.id ?? a],
-      archive: (a) => [a?.cycleId ?? a?.id ?? a],
-      listTickets: (a) => [a?.cycleId ?? a?.id ?? a],
-      addTicket: (a) => [a?.cycleId ?? a?.id, a?.ticketId],
-      removeTicket: (a) => [a?.cycleId ?? a?.id, a?.ticketId]
+      get: (a) => [a?.cycleId ?? a?.id ?? a, { workspaceId: a?.workspaceId }],
+      create: (a) => [a?.payload ?? a, { workspaceId: a?.workspaceId }],
+      update: (a) => [a?.cycleId ?? a?.id, a?.payload ?? a, { workspaceId: a?.workspaceId }],
+      activate: (a) => [a?.cycleId ?? a?.id ?? a, { workspaceId: a?.workspaceId }],
+      archive: (a) => [a?.cycleId ?? a?.id ?? a, { workspaceId: a?.workspaceId }],
+      listTickets: (a) => [a?.cycleId ?? a?.id ?? a, { workspaceId: a?.workspaceId }],
+      addTicket: (a) => [a?.cycleId ?? a?.id, a?.ticketId, { workspaceId: a?.workspaceId }],
+      removeTicket: (a) => [a?.cycleId ?? a?.id, a?.ticketId, { workspaceId: a?.workspaceId }]
     }
   },
 
