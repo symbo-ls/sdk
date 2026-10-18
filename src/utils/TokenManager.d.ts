@@ -13,7 +13,9 @@ export class TokenManager {
         onTokenRefresh: any;
         onTokenExpired: any;
         onTokenError: any;
-        reacquireSession: (() => Promise<{ access_token?: string; accessToken?: string; expires_at?: number; expires_in?: number } | null>) | null;
+        reacquireSession: ((opts?: { timeoutMs?: number; onNoSession?: () => void }) => Promise<{ access_token?: string; accessToken?: string; expires_at?: number; expires_in?: number } | null>) | null;
+        /** The wait handed to the reacquirer as `opts.timeoutMs` (default 8000 ms — a bridge answer is a full shell boot). */
+        reacquireTimeoutMs: number;
     };
     tokens: {
         accessToken: any;
@@ -72,7 +74,12 @@ export class TokenManager {
      * Never runs for a session that holds its own refresh token (the owner
      * signs out when the server refuses it).
      */
-    setSessionReacquirer(fn: (() => Promise<any>) | null): void;
+    /**
+     * The reacquirer gets `{ timeoutMs, onNoSession }`. Resolving null WITHOUT
+     * calling onNoSession is "no answer": a token that still lives is kept and
+     * the next call asks again; a real expiry or onNoSession() signs out once.
+     */
+    setSessionReacquirer(fn: ((opts?: { timeoutMs?: number; onNoSession?: () => void }) => Promise<any>) | null): void;
     hasSessionReacquirer(): boolean;
     reacquireSession(): Promise<string | null>;
     /**

@@ -295,3 +295,235 @@ describe('TokenManager session ownership mark and back-off', () => {
     assert.equal(asked, 1)
   })
 })
+
+// ── A SLOW BRIDGE (2026-10-19, live on canvas.dev) ────────────────────────
+// The bridge answer is a FULL shell boot in a hidden iframe. Measured on
+// canvas.dev under load: no answer inside the workspace helper's 4 s default,
+// so the expiry re-ask (60 s before expiry) failed, the SDK cleared a token
+// that still had up to 60 s of life, and the next call went out with no
+// bearer (401). Rules now:
+//   (a) a re-ask with NO answer (timeout, error, unusable reply) KEEPS a token
+//       that still lives; the next authenticated call asks again. Sign out
+//       only at REAL expiry, or on the owner's definite "no session" answer
+//       (the reacquirer calls opts.onNoSession) — once, never a loop;
+//   (b) the SDK hands the reacquirer the cold-boot budget, opts.timeoutMs
+//       (8 s by default), not the helper's 4 s.
+describe('TokenManager session reacquirer — slow bridge', () => {
+  beforeEach(() => {
+    local.clear()
+    mockFetch(revoked)
+  })
+  afterEach(() => {
+    delete globalThis.fetch
+    while (made.length) made.pop().destroy?.()
+  })
+
+  // The workspace helper's shape (sessionBridgeReacquire.js): it waits
+  // `timeoutMs` (4000 when the caller passes none), resolves the answer when
+  // the bridge replies inside that budget, else null; an explicit "no session"
+  // reply calls onNoSession. Time runs 100x faster here; the verdict is a
+  // comparison, not a timer race.
+  // Let a BACKGROUND re-ask (a token that still lives) settle.
+  const settle = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms))
+
+  const bridgeAnsweringAfter = (answerMs, answer, { onAsk } = {}) => ({ timeoutMs = 4000, onNoSession } = {}) => {
+    onAsk?.({ timeoutMs, onNoSession })
+    return new Promise((resolve) => {
+      if (answerMs <= timeoutMs) {
+        setTimeout(() => {
+          const value = typeof answer === 'function' ? answer({ onNoSession }) : answer
+          resolve(value)
+        }, answerMs / 100)
+      } else {
+        setTimeout(() => resolve(null), timeoutMs / 100)
+      }
+    })
+  }
+
+  test('(b) a bridge that answers after 6 s keeps the session (the SDK waits 8 s, not 4 s)', async () => {
+    seedAccessOnly('acc-old', Date.now() - 1000) // really expired: only an answer saves it
+    const tm = manager()
+    let expired = 0
+    tm.config.onTokenExpired = () => { expired++ }
+    const seen = []
+    tm.setSessionReacquirer(
+      bridgeAnsweringAfter(6000, { access_token: 'acc-new', expires_at: Date.now() + HOUR }, { onAsk: (o) => seen.push(o.timeoutMs) })
+    )
+    assert.equal(await tm.ensureValidToken(), 'acc-new')
+    assert.deepEqual(seen, [8000], 'the reacquirer is handed the 8 s cold-boot budget')
+    assert.equal(tm.hasTokens(), true)
+    assert.equal(local.getItem('symbols_access_token'), 'acc-new')
+    assert.equal(expired, 0)
+  })
+
+  test('(b) the budget is configurable (reacquireTimeoutMs)', async () => {
+    seedAccessOnly('acc-old', Date.now() - 1000)
+    const tm = manager()
+    tm.config.reacquireTimeoutMs = 12000
+    const seen = []
+    tm.setSessionReacquirer(bridgeAnsweringAfter(10000, { access_token: 'acc-new', expires_at: Date.now() + HOUR }, { onAsk: (o) => seen.push(o.timeoutMs) }))
+    assert.equal(await tm.ensureValidToken(), 'acc-new')
+    assert.deepEqual(seen, [12000])
+  })
+
+  test('(a) a failed re-ask with token life left KEEPS the token, and the next call asks again', async () => {
+    seedAccessOnly('acc-old', Date.now() + 30_000) // inside the 60 s buffer, still valid
+    const tm = manager()
+    let expired = 0
+    tm.config.onTokenExpired = () => { expired++ }
+    let asked = 0
+    let answer = null // first ask: no answer (a timeout)
+    tm.setSessionReacquirer(async () => {
+      asked++
+      return answer
+    })
+    assert.equal(await tm.ensureValidToken(), 'acc-old', 'the still-valid token goes out')
+    await settle()
+    assert.equal(asked, 1)
+    assert.equal(tm.hasTokens(), true)
+    assert.equal(tm.getAccessToken(), 'acc-old', 'no answer: the token is kept')
+    assert.equal(local.getItem('symbols_access_token'), 'acc-old', 'storage keeps it too')
+    assert.equal(expired, 0, 'no sign-out while the token lives')
+    // the next authenticated call retries — and adopts the answer this time
+    answer = { access_token: 'acc-new', expires_at: Date.now() + HOUR }
+    await tm.ensureValidToken()
+    await settle()
+    assert.equal(asked, 2, 'the next call asked again')
+    assert.equal(tm.getAccessToken(), 'acc-new', 'the retry adopted the answer')
+    assert.equal(await tm.ensureValidToken(), 'acc-new')
+    assert.equal(asked, 2, 'a fresh token asks nothing')
+    assert.equal(expired, 0)
+  })
+
+  // A request that WAITS on the bridge would hang here: the timeout turns that into a failure.
+  test('(a) while the token lives, a request never waits on the re-ask; one ask in flight at a time', { timeout: 2000 }, async () => {
+    seedAccessOnly('acc-old', Date.now() + 30_000)
+    const tm = manager()
+    let asked = 0
+    let answer
+    tm.setSessionReacquirer(() => {
+      asked++
+      return new Promise((resolve) => { answer = resolve }) // a bridge that has not answered yet
+    })
+    const tokens = []
+    for (let i = 0; i < 5; i++) tokens.push(await tm.ensureValidToken())
+    assert.deepEqual(tokens, ['acc-old', 'acc-old', 'acc-old', 'acc-old', 'acc-old'], 'no call waited')
+    assert.equal(asked, 1, 'one ask in flight, shared')
+    answer({ access_token: 'acc-new', expires_at: Date.now() + HOUR })
+    await settle()
+    assert.equal(tm.getAccessToken(), 'acc-new')
+  })
+
+  test('(a) a reacquirer that throws with token life left keeps the token too', async () => {
+    seedAccessOnly('acc-old', Date.now() + 30_000)
+    const tm = manager()
+    tm.setSessionReacquirer(async () => {
+      throw new Error('bridge timeout')
+    })
+    assert.equal(await tm.ensureValidToken(), 'acc-old')
+    await settle()
+    assert.equal(tm.hasTokens(), true)
+    assert.equal(tm.getAccessToken(), 'acc-old')
+  })
+
+  test('(a) a REAL expiry with no answer signs out ONCE — no loop, no second ask', async () => {
+    seedAccessOnly('acc-old', Date.now() - 1000)
+    const tm = manager()
+    let expired = 0
+    tm.config.onTokenExpired = () => { expired++ }
+    let asked = 0
+    tm.setSessionReacquirer(async () => {
+      asked++
+      return null
+    })
+    assert.equal(await tm.ensureValidToken(), null)
+    for (let i = 0; i < 5; i++) assert.equal(await tm.ensureValidToken(), null)
+    assert.equal(asked, 1, 'a signed-out manager never asks again')
+    assert.equal(expired, 1, 'one sign-out')
+    assert.equal(tm.hasTokens(), false)
+    assert.equal(local.getItem('symbols_access_token'), null)
+  })
+
+  test('(a) the token kept after a failed re-ask is signed out once it REALLY expires', async () => {
+    seedAccessOnly('acc-old', Date.now() + 30_000)
+    const tm = manager()
+    let expired = 0
+    tm.config.onTokenExpired = () => { expired++ }
+    let asked = 0
+    tm.setSessionReacquirer(async () => {
+      asked++
+      return null
+    })
+    assert.equal(await tm.ensureValidToken(), 'acc-old')
+    await settle()
+    tm.tokens.expiresAt = Date.now() - 1 // the minute ran out, still no answer
+    assert.equal(await tm.ensureValidToken(), null)
+    assert.equal(asked, 2)
+    assert.equal(expired, 1)
+    assert.equal(tm.hasTokens(), false)
+  })
+
+  test("(a) the owner's definite 'no session' answer signs out even with token life left", async () => {
+    seedAccessOnly('acc-old', Date.now() + 30_000)
+    const tm = manager()
+    let expired = 0
+    tm.config.onTokenExpired = () => { expired++ }
+    tm.setSessionReacquirer(bridgeAnsweringAfter(500, ({ onNoSession }) => {
+      onNoSession?.()
+      return null
+    }))
+    await tm.ensureValidToken()
+    await settle(20)
+    assert.equal(tm.hasTokens(), false, 'the borrowed session ended')
+    assert.equal(local.getItem('symbols_access_token'), null)
+    assert.equal(expired, 1, 'once')
+    assert.equal(await tm.ensureValidToken(), null, 'and stays signed out')
+    assert.equal(expired, 1)
+  })
+
+  test("(a) a REALLY expired token with the owner's 'no session' answer signs out once", async () => {
+    seedAccessOnly('acc-old', Date.now() - 1000)
+    const tm = manager()
+    let expired = 0
+    tm.config.onTokenExpired = () => { expired++ }
+    tm.setSessionReacquirer(async ({ onNoSession } = {}) => {
+      onNoSession?.()
+      return null
+    })
+    assert.equal(await tm.ensureValidToken(), null)
+    assert.equal(expired, 1)
+  })
+
+  test("(a) a 'no session' verdict for an OLD token never signs out a session that changed meanwhile", { timeout: 2000 }, async () => {
+    seedAccessOnly('acc-old', Date.now() + 30_000)
+    const tm = manager()
+    let expired = 0
+    tm.config.onTokenExpired = () => { expired++ }
+    let verdict
+    tm.setSessionReacquirer(({ onNoSession } = {}) => new Promise((resolve) => {
+      verdict = () => { onNoSession?.(); resolve(null) }
+    }))
+    await tm.ensureValidToken() // background ask for acc-old
+    tm.setTokens({ access_token: 'acc-own', refresh_token: 'ref-own', expires_in: 3600 }) // an own login meanwhile
+    verdict()
+    await settle()
+    assert.equal(tm.getAccessToken(), 'acc-own', 'the own login stays')
+    assert.equal(expired, 0)
+  })
+
+  test('D2 refined: a LONG-lived reacquired token that enters its last minute is asked for again', async () => {
+    seedAccessOnly('acc-old', Date.now() - 1000)
+    const tm = manager()
+    let asked = 0
+    tm.setSessionReacquirer(async () => {
+      asked++
+      return { access_token: `acc-${asked}`, expires_at: Date.now() + HOUR }
+    })
+    assert.equal(await tm.ensureValidToken(), 'acc-1')
+    tm.tokens.expiresAt = Date.now() + 30_000 // an hour later: inside the buffer
+    assert.equal(await tm.ensureValidToken(), 'acc-1', 'the still-valid token goes out')
+    await settle()
+    assert.equal(asked, 2, 'asked while the token still lives, not at real expiry')
+    assert.equal(tm.getAccessToken(), 'acc-2')
+  })
+})

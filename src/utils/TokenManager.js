@@ -57,6 +57,10 @@ export class TokenManager {
       onTokenError: options.onTokenError || null,
       // SESSION REACQUIRER — see setSessionReacquirer below. null = none.
       reacquireSession: typeof options.reacquireSession === 'function' ? options.reacquireSession : null,
+      // The wait the SDK hands the reacquirer (`opts.timeoutMs`): the bridge
+      // answer is a FULL owner-shell boot in a hidden iframe, so the expiry
+      // re-ask gets the cold-boot budget (8 s), not the helper's 4 s default.
+      reacquireTimeoutMs: 8000,
       ...options
     }
 
@@ -69,6 +73,7 @@ export class TokenManager {
 
     this.refreshPromise = null
     this._reacquirePromise = null
+    this._reacquiredShortLived = false
     this.refreshTimeout = null
     this.retryCount = 0
 
@@ -337,6 +342,18 @@ export class TokenManager {
    * expired and there is NO refresh token — an access-only session adopted
    * from the owner — instead of clearing that session.
    *
+   * It is called with `{ timeoutMs, onNoSession }`: `timeoutMs` is how long it
+   * may wait for the owner (config.reacquireTimeoutMs, 8 s — a bridge answer
+   * is a full shell boot in a hidden iframe); `onNoSession()` is how it reports
+   * the owner's DEFINITE "no session here". Resolving null without calling
+   * onNoSession means NO ANSWER (a timeout, an error): a token that still
+   * lives is kept and the next call asks again; only a REAL expiry or a
+   * definite "no session" signs this origin out (once — a signed-out manager
+   * never asks again). While the token still lives (inside the refresh
+   * buffer) the ask runs in the background and no request waits on it; only
+   * a really-expired token makes the call wait (up to timeoutMs). A
+   * reacquirer that ignores the argument still works.
+   *
    * It never runs for a session that holds its own refresh token: that
    * session OWNS the login. When the server refuses its refresh token on
    * purpose (revoked, suspended, sign-out-everywhere) it signs out; it must
@@ -359,19 +376,58 @@ export class TokenManager {
    * what it returns. Resolves the new access token, or null.
    */
   async reacquireSession () {
-    if (!this.hasSessionReacquirer()) return null
+    return (await this._reacquire()).token
+  }
+
+  // A re-ask that holds no request: one in flight at a time (concurrent
+  // callers share it). An answer is adopted as usual; NO answer keeps the
+  // token (the next call asks again); the owner's definite "no session" ends
+  // THIS borrowed session — unless it changed meanwhile (a new token, an own
+  // login).
+  _reacquireInBackground () {
+    if (this._reacquirePromise) return
+    const asked = this.tokens.accessToken
+    this._reacquire()
+      .then(({ token, noSession }) => {
+        if (token || !noSession) return
+        if (this.tokens.accessToken !== asked || this.hasRefreshToken()) return
+        this.clearTokens()
+        if (this.config.onTokenExpired) this.config.onTokenExpired()
+      })
+      .catch((error) => {
+        logger.warn('[TokenManager] background session re-ask failed:', error?.message || error)
+      })
+  }
+
+  // The re-ask with the owner's verdict: `{ token, noSession }`. `noSession`
+  // is true only when the reacquirer reported a DEFINITE "no session here"
+  // (opts.onNoSession); a timeout, an error or an unusable answer is no
+  // verdict at all (token null, noSession false).
+  async _reacquire () {
+    if (!this.hasSessionReacquirer()) return { token: null, noSession: false }
     if (this._reacquirePromise) return this._reacquirePromise
     this._reacquirePromise = (async () => {
+      let noSession = false
       let data = null
       try {
-        data = await this.config.reacquireSession()
+        data = await this.config.reacquireSession({
+          timeoutMs: this.config.reacquireTimeoutMs,
+          onNoSession: () => {
+            noSession = true
+          }
+        })
       } catch (error) {
         logger.warn('[TokenManager] session reacquirer failed:', error?.message || error)
-        return null
+        return { token: null, noSession }
       }
-      if (!this.adoptAccessToken(data)) return null
+      if (!this.adoptAccessToken(data)) return { token: null, noSession }
       this._reacquiredToken = this.tokens.accessToken
-      return this.getAccessToken()
+      // A handover that ARRIVED inside the refresh buffer (the owner's own
+      // token is about to run out too) is asked for once — see the D2
+      // back-off in ensureValidToken. A long-lived one is asked for again
+      // when IT enters the buffer, while it still lives.
+      this._reacquiredShortLived = !this.isAccessTokenValid()
+      return { token: this.getAccessToken(), noSession: false }
     })()
     try {
       return await this._reacquirePromise
@@ -570,15 +626,33 @@ export class TokenManager {
       // BACK-OFF (review D2): a handover with less than refreshBuffer left
       // reads as "expired" at once. Ask ONCE per token; then keep using it
       // until it has really expired, instead of one bridge load per call.
+      // Only a handover that ARRIVED short-lived: a long-lived one is asked
+      // for again when it enters the buffer, while it still lives.
       if (
         this._reacquiredToken &&
         this._reacquiredToken === this.tokens.accessToken &&
+        this._reacquiredShortLived &&
         this.isAccessTokenActuallyValid()
       ) {
         return this.getAccessToken()
       }
-      const reacquired = await this.reacquireSession()
-      if (reacquired) return reacquired
+      if (this.hasSessionReacquirer()) {
+        // NO ANSWER is not a sign-out (2026-10-19, live on canvas.dev: the
+        // bridge — a full shell boot in a hidden iframe — missed its budget
+        // and this branch cleared a token with up to 60 s of life, so the
+        // next call went out with no bearer). A token that still lives goes
+        // out NOW and the owner is asked in the BACKGROUND — a request never
+        // waits on a bridge load while its token works; a failed ask keeps
+        // the token and the next authenticated call asks again. Only a token
+        // that has REALLY expired waits for the owner here; the owner's
+        // definite "no session" signs out either way (once).
+        if (this.isAccessTokenActuallyValid()) {
+          this._reacquireInBackground()
+          return this.getAccessToken()
+        }
+        const { token } = await this._reacquire()
+        if (token) return token
+      }
       this.clearTokens()
       if (this.config.onTokenExpired) {
         this.config.onTokenExpired()
