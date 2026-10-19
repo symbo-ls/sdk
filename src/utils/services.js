@@ -631,6 +631,7 @@ export const SERVICE_METHODS = {
   meetGuestStatus: 'meet',
   meetGuestToken: 'meet',
   meetMuteParticipant: 'meet',
+  meetArchiveRooms: 'meet',
 
   // Calendar — workspace-scoped events against /core/calendar/* (auth).
   // Mongo-backed (the Supabase store was retired). Writes are owner/admin-gated.

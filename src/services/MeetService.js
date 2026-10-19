@@ -110,4 +110,20 @@ export class MeetService extends BaseService {
       body: { roomId, participantIdentity, trackSid, muted }
     })
   }
+  /**
+   * Archive or unarchive meet rooms.
+   * Authenticated — the server verifies the caller is the room creator.
+   *
+   * @param {object} args
+   * @param {string[]} args.roomIds
+   * @param {boolean} args.archived
+   * @returns {Promise<{ok: true}>}
+   */
+  meetArchiveRooms ({ roomIds, archived } = {}) {
+    if (!Array.isArray(roomIds)) throw new Error('roomIds must be an array')
+    return this._call('meetArchiveRooms', '/meet/archive', {
+      method: 'POST',
+      body: { roomIds, archived }
+    })
+  }
 }
