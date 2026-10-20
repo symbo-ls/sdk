@@ -39,4 +39,46 @@ Object.keys(negativeDataSet).forEach(key => {
 })
 // #endregion
 
+// #region Proxy Resolution
+test('meetArchiveRooms - top-level SDK proxy delegates to MeetService', t => {
+    t.equal(
+        typeof global.globalSdk.meetArchiveRooms,
+        'function',
+        'globalSdk.meetArchiveRooms method exists via SERVICE_METHODS proxy'
+    )
+
+    const meetService = global.globalSdk.getService('meet')
+    t.equal(
+        typeof meetService.meetArchiveRooms,
+        'function',
+        'MeetService instance has meetArchiveRooms method'
+    )
+    t.end()
+})
+// #endregion
+
+// #region Server Boundary Validation
+// Test skipped until PR to server repo with the endpoint
+// implementation is merged.
+test.skip('meetArchiveRooms - rejects empty roomIds array with 400', async t => {
+    try {
+        await global.globalSdk.meetArchiveRooms({
+            roomIds: [],
+            archived: true
+        })
+        t.fail('should have thrown error roomIds is an empty array')
+    } catch (err) {
+        t.equal(
+            err.message,
+            'roomIds must be a non-empty array',
+            'throws "roomIds must be a non-empty array" when roomIds is []'
+        )
+    }
+})
+// #endregion
+
+// #region Positive Tests
+
+// #endregion
+
 test.onFinish(() => process.exit(0))
