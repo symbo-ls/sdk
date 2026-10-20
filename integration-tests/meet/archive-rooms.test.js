@@ -78,7 +78,25 @@ test.skip('meetArchiveRooms - rejects empty roomIds array with 400', async t => 
 // #endregion
 
 // #region Positive Tests
+test.skip('meetArchiveRooms - archives rooms successfully', async t => {
+    const testRoomIds = ['room-test-id-1', 'room-test-id-2']
+    const res = await global.globalSdk.meetArchiveRooms({
+        roomIds: testRoomIds,
+        archived: true
+    })
+    t.ok(res, 'response is received')
+    t.equal(res.ok, true, 'returns { ok: true } when archiving rooms')
+})
 
+test.skip('meetArchiveRooms - unarchives rooms successfully', async t => {
+    const testRoomIds = ['room-test-id-1']
+    const res = await global.globalSdk.meetArchiveRooms({
+        roomIds: testRoomIds,
+        archived: false
+    })
+    t.ok(res, 'response is received')
+    t.equal(res.ok, true, 'returns { ok: true } when unarchiving rooms')
+})
 // #endregion
 
 test.onFinish(() => process.exit(0))
