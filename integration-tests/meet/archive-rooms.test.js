@@ -23,7 +23,6 @@ const negativeDataSet = {
 }
 Object.keys(negativeDataSet).forEach(key => {
     const dataSet = negativeDataSet[key]
-    console.log(`dataSet.title: ${ dataSet.title }`)
     test(`meetArchiveRooms - throws when roomIds is ${ dataSet.title }`, async t => {
         try {
             await global.globalSdk.meetArchiveRooms(dataSet.testParams)
@@ -58,9 +57,7 @@ test('meetArchiveRooms - top-level SDK proxy delegates to MeetService', t => {
 // #endregion
 
 // #region Server Boundary Validation
-// Test skipped until PR to server repo with the endpoint
-// implementation is merged.
-test.skip('meetArchiveRooms - rejects empty roomIds array with 400', async t => {
+test('meetArchiveRooms - rejects empty roomIds array with 400', async t => {
     try {
         await global.globalSdk.meetArchiveRooms({
             roomIds: [],
@@ -78,31 +75,32 @@ test.skip('meetArchiveRooms - rejects empty roomIds array with 400', async t => 
 // #endregion
 
 // #region Positive Tests
-// Tests skipped until PR to server repo with the endpoint
-// implementation is merged.
-test.skip('meetArchiveRooms - archives rooms successfully', async t => {
+test('meetArchiveRooms - archives rooms successfully', async t => {
     const testRoomIds = ['room-test-id-1', 'room-test-id-2']
     const res = await global.globalSdk.meetArchiveRooms({
         roomIds: testRoomIds,
         archived: true
     })
+
     t.ok(res, 'response is received')
     t.equal(res.ok, true, 'returns { ok: true } when archiving rooms')
 })
 
-test.skip('meetArchiveRooms - unarchives rooms successfully', async t => {
+test('meetArchiveRooms - unarchives rooms successfully', async t => {
     const testRoomIds = ['room-test-id-1']
     const res = await global.globalSdk.meetArchiveRooms({
         roomIds: testRoomIds,
         archived: false
     })
+
     t.ok(res, 'response is received')
     t.equal(res.ok, true, 'returns { ok: true } when unarchiving rooms')
 })
 // #endregion
 
-test.skip('meetArchiveRooms - calls via getService("meet")', async t => {
+test('meetArchiveRooms - calls via getService("meet")', async t => {
     const meetService = global.globalSdk.getService('meet')
+
     const res = await meetService.meetArchiveRooms({
         roomIds: ['room-test-id-direct'],
         archived: true
