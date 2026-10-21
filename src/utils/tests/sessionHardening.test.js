@@ -10,7 +10,7 @@
 //    it received (`sdk.adoptTokens(...)`) without touching Web Storage.
 //
 // Run: node --test src/utils/tests/sessionHardening.test.js
-import { test, beforeEach } from 'node:test'
+import { test, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 
 const makeStore = () => {
@@ -106,6 +106,14 @@ test('crossAppAuth: CONTROL — the jar sees a plain write', () => {
 
 const { SDK } = await import('../../index.js')
 const { getTokenManager } = await import('../TokenManager.js')
+
+// A manager holding a token with an expiry arms its refresh timer; destroy the
+// page-wide one after each test so node exits (same teardown as
+// sessionReacquirer.test.js).
+afterEach(() => {
+  globalThis.__SMBLS_TOKEN_MANAGER__?.destroy?.()
+  delete globalThis.__SMBLS_TOKEN_MANAGER__
+})
 
 test('SDK: tokenStorage memory + adoptTokens keep the session out of Web Storage', async () => {
   delete globalThis.__SMBLS_TOKEN_MANAGER__
