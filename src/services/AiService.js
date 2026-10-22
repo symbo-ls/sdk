@@ -44,7 +44,7 @@ const _abortErrorOf = (signal, cause) => {
 // Wire shape consumers depend on (preserved):
 //   stream(payload, { onChunk, onDone, onError }) → cancel()
 //   dispatch(payload, callbacks) → Promise<{ intent, text? | spec? }>
-//   completion(payload) → Promise<result>
+//   completion(payload) → Promise<{ text, usage, raw }>   — STATELESS
 //   meetAnalyze(payload) → Promise<result>
 
 const STORAGE_KEY_MODEL_MODE = 'symbols_ai_model_mode'
@@ -399,8 +399,15 @@ export class AiService extends BaseService {
   //   text:        the user's prompt
   //   context:     freeform JSON the caller surface adds (active route,
   //                selected ticket, calendar event, …)
-  //   messages?:   optional prior turn history for multi-turn surfaces
-  //   threadId?:   AppAssistant thread for persistence
+  //   attachments?: image attachments for this turn (ANSWER path)
+  //   model?:      upstream model id — BUILD turns only
+  //
+  // History is the member's conversation, resolved server-side: an ANSWER
+  // turn streams into it and a BUILD turn does not use one, so NEITHER path
+  // reads a caller `messages` / `threadId`. A caller that must supply its own
+  // transcript or system prompt wants `completion()` / `turn()` instead — see
+  // the note on `stream()`
+  // (CORE-SDK-AI-COMPLETION-DROPS-MESSAGES-AND-SYSTEM-OVERRIDE-1).
   //
   // callbacks (for the streamed text portion of an ANSWER intent):
   //   onChunk(deltaText)
@@ -662,11 +669,21 @@ export class AiService extends BaseService {
   // Unified streaming turn. Signature matches AiChatService.stream so
   // consumers can swap by changing `sdk.aiChat.stream` to `sdk.ai.stream`.
   //
-  // payload:
-  //   { content, messages?, threadId?, attachedCard?, systemPromptOverride?,
-  //     model?, context?, attachments? }
+  // payload — EXACTLY the fields this path reads, and nothing else:
+  //   { content | text, context?, attachments?, projectId?, targetAgentId? }
   // `attachments` — image attachments for this turn; see the POST body in
   // _streamWorkspaceTurn for the accepted shapes and the server-side caps.
+  //
+  // A streamed turn is a turn IN the member's persistent conversation, so the
+  // thread itself is the history and the agent's own system instruction is
+  // resolved server-side. `messages`, `systemPromptOverride`, `threadId`,
+  // `attachedCard` and `model` therefore have no meaning here — this list
+  // once named them and three surfaces sent them, which posted an empty user
+  // turn with no system instruction
+  // (CORE-SDK-AI-COMPLETION-DROPS-MESSAGES-AND-SYSTEM-OVERRIDE-1). A caller
+  // that needs its own transcript or system prompt wants a STATELESS turn:
+  // `completion()` / `turn()`. Do not re-add a field to this list that the
+  // POST body below does not read.
   // callbacks:
   //   onChunk(deltaText), onDone({ text, … }), onError(err)
   // returns: cancel() — abort the in-flight turn
@@ -1830,23 +1847,31 @@ export class AiService extends BaseService {
 
   // ==================== COMPLETION ====================
 
-  // Non-streaming turn — collects the stream into a single promise.
-  // Mirrors AiChatService.completion shape so consumers swap cleanly.
-  completion(payload = {}) {
-    return new Promise((resolve, reject) => {
-      let buffer = ''
-      let finalPayload = null
-      this.stream(payload, {
-        onChunk: (delta) => {
-          buffer += delta
-        },
-        onDone: (payload) => {
-          finalPayload = payload
-          resolve(finalPayload || { text: buffer })
-        },
-        onError: (err) => reject(err)
-      })
-    })
+  // Non-streaming, STATELESS one-shot turn. Mirrors AiChatService.completion's
+  // payload and its `{ text, … }` return so consumers swap cleanly:
+  //   { content | messages:[{role,content}], systemPromptOverride?, system?,
+  //     systemRef?, modelMode?, allowTools? } → { text, usage, raw }
+  // `systemPromptOverride` is AiChatService's name for the per-turn system
+  // instruction; it is accepted here under that name (and under `system`)
+  // because that is the payload every consumer of this method already sends.
+  //
+  // It delegates to `turn()` — the ephemeral /turn route — and NOT to
+  // `stream()`. stream() posts into the member's PERSISTENT workspace
+  // conversation and composes its body from `content` alone, so `messages`
+  // and `systemPromptOverride` were read nowhere on that path: every
+  // documented caller posted an EMPTY user turn with no system instruction.
+  // Measured on dev 2026-10-22 — HTTP_400 on a fresh thread, a freewheeling
+  // answer on a thread with history, and an error row left in the member's
+  // own visible thread either way
+  // (CORE-SDK-AI-COMPLETION-DROPS-MESSAGES-AND-SYSTEM-OVERRIDE-1). A
+  // field-synthesis or starter-generation turn is also not conversation
+  // history, so the ephemeral route is the right shape for it regardless:
+  // nothing is persisted and the member's thread stays theirs. Provider-mode
+  // routing — the reason these callers moved off `sdk.aiChat.completion` —
+  // is preserved: `turn()` sends `modelMode`.
+  completion(payload = {}, opts = {}) {
+    const system = payload.systemPromptOverride || payload.system
+    return this.turn({ ...payload, ...(system ? { system } : {}) }, opts)
   }
 
   // ==================== MEET ANALYZE ====================
