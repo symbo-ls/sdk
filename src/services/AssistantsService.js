@@ -39,7 +39,10 @@ export class AssistantsService extends BaseService {
   }
 
   async _call (methodName, path, init = {}) {
-    this._requireAuth()
+    // Same gate as every other service: a ready (initialised) SDK. The token
+    // itself is attached by _requestExternal through the TokenManager —
+    // BaseService._requireAuth calls getAuthToken, which only AuthService has.
+    this._requireReady(methodName)
     try {
       return await this._requestExternal(this._base() + path, {
         ...init,

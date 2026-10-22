@@ -6,7 +6,10 @@ import { AssistantsService, ASSISTANTS_ENTITY_ROUTE } from '../../AssistantsServ
 const make = () => {
   const s = new AssistantsService({ options: { assistantsApiUrl: 'https://fly-control.example/' } })
   const seen = []
-  s.getAuthToken = () => 'tok'
+  // The real base class: a ready service, no hand-made getAuthToken (only
+  // AuthService has one — a stub here hid "this.getAuthToken is not a
+  // function" on dev 2026-10-22). _requestExternal attaches the token itself.
+  s._setReady()
   s._requestExternal = async (url, init) => { seen.push({ url, init }); return { ok: true } }
   return { s, seen }
 }
@@ -39,4 +42,16 @@ test('a bad id is refused before any request; the error body names the message',
   s._requestExternal = async () => { const e = new Error('[object Object]', { cause: { error: { code: 'conflict', message: 'Someone changed it.' } } }); e.status = 409; throw e }
   await assert.rejects(() => s.list(), (e) => e.status === 409 && e.message === 'Someone changed it.' && e.cause.error.code === 'conflict')
   t.pass('ok')
+})
+
+test('the service runs on the base class alone (no getAuthToken) and refuses before init', async (t) => {
+  const { s } = make()
+  assert.equal(typeof s.getAuthToken, 'undefined', 'no stubbed token getter')
+  const r = await s.list()
+  assert.deepEqual(r, { ok: true })
+  const cold = new AssistantsService({ options: { assistantsApiUrl: 'https://fly-control.example/' } })
+  cold._requestExternal = async () => ({ ok: true })
+  await assert.rejects(() => cold.list(), /not initialized/)
+  t.pass('ready service calls through; a cold one refuses')
+  t.end()
 })
