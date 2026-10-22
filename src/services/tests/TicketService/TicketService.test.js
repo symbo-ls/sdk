@@ -318,6 +318,31 @@ test('tickets.comments.list GETs /tickets/:ticketId/comments', async t => {
   t.end()
 })
 
+test('tickets.comments.list puts paging keys in the query next to workspaceId', async t => {
+  t.plan(1)
+  const svc = makeService()
+  sandbox.stub(svc, '_workspaceScope').returns('ws-1')
+  const stub = sandbox.stub(svc, '_call').resolves({ data: [] })
+  await svc.comments.list('tid-3', { limit: 20, skip: 40, sortBy: 'createdAt', sortDir: 'desc', includeCount: true })
+  t.equal(
+    stub.firstCall.args[1],
+    '/tickets/tid-3/comments?workspaceId=ws-1&limit=20&skip=40&sortBy=createdAt&sortDir=desc&includeCount=true',
+    'path'
+  )
+  sandbox.restore()
+  t.end()
+})
+
+test('tickets.comments.list drops keys the route does not read', async t => {
+  t.plan(1)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves([])
+  await svc.comments.list('tid-3', { limit: 0, offset: 10, order: 'asc', single: undefined })
+  t.equal(stub.firstCall.args[1], '/tickets/tid-3/comments?limit=0', 'only limit survives; limit 0 kept as a count read')
+  sandbox.restore()
+  t.end()
+})
+
 test('tickets.comments.create POSTs to /tickets/:ticketId/comments', async t => {
   t.plan(3)
   const svc = makeService()
