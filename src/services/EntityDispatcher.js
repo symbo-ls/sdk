@@ -40,6 +40,8 @@
 
 // `ai.boards` — the route object lives with its service (AiBoardsService.js).
 import { AI_BOARDS_ENTITY_ROUTE } from './AiBoardsService.js'
+// `assistants` — the route object lives with its service (AssistantsService.js).
+import { ASSISTANTS_ENTITY_ROUTE } from './AssistantsService.js'
 
 // Common arg adapters reused across routes. Pulling args out of well-known
 // shapes keeps individual routes terse — most CRUD entities follow the same
@@ -2241,6 +2243,7 @@ const ENTITY_ROUTES = {
   // object lives with its service (AiBoardsService.js) so the op → method map
   // and the service it names cannot drift apart.
   'ai.boards': AI_BOARDS_ENTITY_ROUTE,
+  assistants: ASSISTANTS_ENTITY_ROUTE,
   // AI-created home widgets (tickets/opus.md "Per-workspace AI-CREATED
   // widgets"). Same explicit-workspace pin as homeDashboardPrefs above — the
   // home board is workspace-scoped and its reads must not follow a claim that

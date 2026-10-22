@@ -6,6 +6,7 @@ import { TicketService } from './TicketService.js'
 // /core/fleet/* — the fleet's first-class collections (runs/metrics/events +
 // per-node config), workspace-scoped (CORE-FLEET-COLLECTIONS-API-1). See FleetService.js.
 import { FleetService } from './FleetService.js'
+import { AssistantsService } from './AssistantsService.js'
 // /core/ai-boards/* — `ai.boards`, the assistant's Page mode (generated
 // boards from the installed apps). See AiBoardsService.js.
 import { AiBoardsService } from './AiBoardsService.js'
@@ -229,6 +230,9 @@ export const createTicketService = (config) =>
 export const createFleetService = (config) =>
   createService(FleetService, config)
 
+export const createAssistantsService = (config) =>
+  createService(AssistantsService, config)
+
 export const createAiBoardsService = (config) =>
   createService(AiBoardsService, config)
 
@@ -425,6 +429,7 @@ export {
   DocService,
   TicketService,
   FleetService,
+  AssistantsService,
   AiBoardsService,
   AnalyzedService,
   ResourceLinkService,

@@ -29,6 +29,7 @@ import {
   createShareLinkService,
   createTicketService,
   createFleetService,
+  createAssistantsService,
   createAiBoardsService,
   createAnalyzedService,
   createProposedActionService,
@@ -378,6 +379,16 @@ export class SDK {
       this._initService(
         'fleet',
         createFleetService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      // fly-control /admin/assistants/* — the site assistants of the user's
+      // projects. Reached via sdk.execute('assistants', op, args). See
+      // AssistantsService.js.
+      this._initService(
+        'assistants',
+        createAssistantsService({
           context: this._context,
           options: this._options
         })
@@ -1193,6 +1204,7 @@ export {
   createShareLinkService,
   createTicketService,
   createFleetService,
+  createAssistantsService,
   createAiBoardsService,
   createAnalyzedService,
   createProposedActionService,

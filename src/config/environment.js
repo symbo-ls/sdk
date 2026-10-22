@@ -28,6 +28,10 @@ const CONFIG = {
     // configured in Console (Credentials → this client) per env.
     googleClientId:
       '93720420804-eaafvil4gpj2mnpqpo1he5el0ph6ekhc.apps.googleusercontent.com',
+    // The site assistants' admin API (AssistantsService.js; the Fly repo's
+    // fly-control Worker). One address for every channel: it picks the
+    // Symbols environment from the calling origin.
+    assistantsApiUrl: 'https://fly-control.symbols.app',
     // Feature toggles that apply across all environments by default
     features: {
       newUserOnboarding: true,
@@ -188,6 +192,12 @@ export const getConfig = () => {
       // routed transport wins.
       grafanaUrl: process.env.SYMBOLS_APP_GRAFANA_URL || null,
       dnsWorkerUrl: process.env.SYMBOLS_DNS_WORKER_URL || envConfig.dnsWorkerUrl,
+      // the site assistants' admin API (AssistantsService): fly-control picks
+      // the Symbols environment from the calling origin, so one address serves
+      // every channel
+      assistantsApiUrl:
+        process.env.SYMBOLS_ASSISTANTS_API_URL ||
+        envConfig.assistantsApiUrl,
       dnsApiKey: process.env.SYMBOLS_DNS_API_KEY || '',
       // Typesense docs search: SDK calls the server proxy at
       // ${apiUrl}/search/docs/multi_search. Server holds TYPESENSE_API_KEY +
