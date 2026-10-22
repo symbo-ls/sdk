@@ -4,9 +4,10 @@ import { BaseService } from './BaseService.js'
 // server's generic, opt-in ANONYMOUS records surface:
 //   /core/public/:scope/collections/:key/*
 //
-// `scope` is a workspace id OR an organization slug (e.g. 'ventures'); a
-// slug resolves server-side to that org's hq workspace, so a published site
-// can address its data by its owner slug and carry no hardcoded id.
+// `scope` is a workspace id, an organization slug (e.g. 'ventures' — resolves
+// server-side to that org's hq workspace), or an '<org-slug>/<workspace-slug>'
+// handle for a named, non-hq workspace — so a published site can address its
+// data by slug and carry no hardcoded id.
 //
 // A workspace owner opts a RecordCollection in by setting its `public` block
 // (sdk.getService('recordCollections').update(id, { public: {...} })):
@@ -63,7 +64,7 @@ export class PublicCollectionService extends BaseService {
   }
 
   // GET /core/public/:scope/collections/:key/:idOrSlug
-  // One row by id or data.slug — 404 unless it matches the read filter.
+  // One row by id, data.slug or data.key — 404 unless it matches the read filter.
   getPublicRecord (scope, key, idOrSlug) {
     _need(scope, 'scope')
     _need(key, 'key')
