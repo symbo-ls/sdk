@@ -422,6 +422,23 @@ export class WorkspaceProjectService extends BaseService {
           body: { muted }
         }
       ),
+    // "Is typing" (CHAT-TYPING-1). A hint, never data: the server checks the
+    // caller may open the channel, stamps the row from the verified token and
+    // relays it on the chat stream (subscribeChatSse → cb('chat.typing',
+    // { eventType: 'TYPING', new: row })). `state` is 'start' — re-sent about
+    // every 3 s while the person types; the server drops a repeat inside 2 s —
+    // or 'stop'. `threadParentId` scopes it to a thread's reply box.
+    typing: (channelId, { state = 'start', threadParentId } = {}) =>
+      this._ws(
+        'chat.typing',
+        `/chat/channels/${encodeURIComponent(channelId)}/typing`,
+        {
+          method: 'POST',
+          body: threadParentId
+            ? { state, threadParentId }
+            : { state }
+        }
+      ),
 
     // workspaceId (options.workspaceId, defaulting to activeWorkspaceId) is
     // sent as a query param — NOT folded into the POST body — so the
@@ -1800,6 +1817,7 @@ export class WorkspaceProjectService extends BaseService {
     //   chat.channel.*       → cb('chat.channels',  { eventType, new|old })          (no _kind)
     //   chat.member.*        → cb('chat.channels',  { eventType, new|old, _kind:'member' })
     //   chat.mention.insert  → cb('chat.mentions',  { eventType:'INSERT', new: row })
+    //   chat.typing          → cb('chat.typing',    { eventType:'TYPING', new: row })
     //   chat.snapshot        → cb('chat.snapshot',  { channels, members, mentionsUnread })
     // The `kind` mirrors the provider's chat op vocabulary so a consumer can
     // route by op; the `payload` is the Supabase-style envelope so every
@@ -1894,6 +1912,13 @@ export class WorkspaceProjectService extends BaseService {
         {
           name: 'chat.mention.insert',
           frame: entityFrame('chat.mentions', 'INSERT', 'mention')
+        },
+
+        // "is typing" hints (CHAT-TYPING-1) — masked server-side like a
+        // message; the optional channel filter applies too.
+        {
+          name: 'chat.typing',
+          frame: entityFrame('chat.typing', 'TYPING', 'typing')
         },
 
         // post-header handler error: no consumer branch — swallow.

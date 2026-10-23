@@ -1792,7 +1792,9 @@ const ENTITY_ROUTES = {
       list: 'chat.listChannels',
       create: 'chat.createChannel',
       update: 'chat.updateChannel',
-      remove: 'chat.removeChannel'
+      remove: 'chat.removeChannel',
+      // "is typing" hint (CHAT-TYPING-1) — POST /chat/channels/:id/typing.
+      typing: 'chat.typing'
     },
     argMap: {
       // workspaceId is optional — WorkspaceProjectService.chat.listChannels
@@ -1800,7 +1802,11 @@ const ENTITY_ROUTES = {
       list: (a) => [a?.workspaceId],
       create: argMaps.payload,
       update: argMaps.idPayload,
-      remove: argMaps.id
+      remove: argMaps.id,
+      typing: (a) => [
+        a?.channelId,
+        { state: a?.state, threadParentId: a?.threadParentId }
+      ]
     }
   },
   'workspaceProject.chat.members': {
