@@ -61,6 +61,10 @@ const _retryDelay = (attempt) =>
 // failures for long. Override per-call via options.maxRetries.
 const DEFAULT_MAX_RETRIES = 3
 
+// The methods that never carry a body (fetch() throws on a body for either),
+// so `_request` gives them no Content-Type — see the note there.
+const _READ_METHODS = new Set(['GET', 'HEAD'])
+
 const _sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const _wrapRequestError = (error, url) => {
@@ -321,11 +325,23 @@ export class BaseService {
   // Shared HTTP request method
   async _request (endpoint, options = {}) {
     const url = `${this._apiUrl}/core${endpoint}`
+    const method = String(options.method || 'GET').toUpperCase()
 
     const defaultHeaders = {}
 
-    // Only set Content-Type for JSON requests, not for FormData
-    if (!(options.body instanceof FormData)) {
+    // Content-Type describes a BODY, so a read (GET / HEAD — fetch() refuses a
+    // body on either) sends none. On a cross-origin read it is not
+    // CORS-safelisted either: `application/json` there turns every storefront
+    // read into OPTIONS + GET, and the API answers preflights with
+    // Access-Control-Max-Age: 1, so the browser asks again on every call
+    // (SDK-CONTENT-TYPE-ON-BODILESS-GET-FORCES-PREFLIGHT-1). FormData is left
+    // to the runtime, which writes the multipart boundary. A bodiless
+    // mutation keeps application/json on purpose: PUT / PATCH / DELETE and
+    // every signed-in call are preflighted anyway (method, Authorization),
+    // and the header keeps the server's JSON parser giving it
+    // `req.body = {}`. A caller's own Content-Type wins (options.headers is
+    // spread last).
+    if (!_READ_METHODS.has(method) && !(options.body instanceof FormData)) {
       defaultHeaders['Content-Type'] = 'application/json'
     }
 
@@ -349,7 +365,6 @@ export class BaseService {
       }
     }
 
-    const method = String(options.method || 'GET').toUpperCase()
     const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES
     const runFetch = async () => {
       for (let attempt = 0; ; attempt++) {
