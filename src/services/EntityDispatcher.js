@@ -123,6 +123,12 @@ const growthFunnelArgs = (a) => {
   return [rest]
 }
 
+// The workspace activation read takes the workspace id — `workspaceId` (the
+// app's name), `id`, or the bare value.
+const growthActivationArgs = (a) => [
+  a && typeof a === 'object' && !Array.isArray(a) ? a.workspaceId ?? a.id : a
+]
+
 const CRUD_ARG_MAP = {
   list: argMaps.filterOptions,
   get: argMaps.id,
@@ -1702,12 +1708,19 @@ const ENTITY_ROUTES = {
   //   sdk.execute('growth', 'funnel', { since, until, tz, groupBy, … })
   //   sdk.execute('growth', 'accounts', { stage: 'stalled', limit, offset })
   // or declaratively `fetch: { from: 'growth.funnel' | 'growth.accounts' }`.
+  // The workspace first-run checklist (any member of the workspace) reads
+  //   sdk.execute('growth', 'activation', { workspaceId })
+  // or `fetch: { from: 'growth.activation', params: { workspaceId } }`.
   // The funnel read takes ONE filter bag (the server owns its vocabulary, so
   // a flat bag passes whole); accounts splits paging off like every list.
   growth: {
     service: 'growth',
-    methods: { funnel: 'funnel', accounts: 'accounts' },
-    argMap: { funnel: growthFunnelArgs, accounts: argMaps.filterOptions }
+    methods: { funnel: 'funnel', accounts: 'accounts', activation: 'activation' },
+    argMap: {
+      funnel: growthFunnelArgs,
+      accounts: argMaps.filterOptions,
+      activation: growthActivationArgs
+    }
   },
   'growth.funnel': {
     service: 'growth',
@@ -1718,6 +1731,11 @@ const ENTITY_ROUTES = {
     service: 'growth',
     methods: { list: 'accounts' },
     argMap: { list: argMaps.filterOptions }
+  },
+  'growth.activation': {
+    service: 'growth',
+    methods: { get: 'activation' },
+    argMap: { get: growthActivationArgs }
   },
   'docs.documents': {
     service: 'docs',

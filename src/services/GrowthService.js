@@ -15,6 +15,12 @@ import { BaseService } from './BaseService.js'
 // Both are SYSTEM-ORG ONLY on the server (requireSymbolsSystemOrg); any other
 // caller gets the server's refusal, which _call throws with its message.
 //
+// And one read for a workspace's OWN members (fly docs/FUNNEL.md §4 G5, the
+// first-run checklist): GET /core/workspaces/:workspaceId/activation — the
+// workspace's progress on the activation rule (the same rule as the funnel's
+// F8: a teammate invited, 5+ records, the website published, 3+ AI asks —
+// within 7 days of the workspace's creation). Any member may read it.
+//
 // The server owns the query vocabulary (window, grouping, stage filters,
 // paging), so this service adds no params of its own and drops none it does
 // not know: every own field of the filter bag whose key looks like an
@@ -25,9 +31,10 @@ import { BaseService } from './BaseService.js'
 // it in `tz`, like AnalyzedService.funnel).
 //
 // Reached as sdk.getService('growth').funnel(filter) /
-// .accounts(filter, options), or sdk.execute('growth', 'funnel' | 'accounts',
-// args) and the declarative entities 'growth.funnel' / 'growth.accounts'
-// (EntityDispatcher).
+// .accounts(filter, options) / .activation(workspaceId), or
+// sdk.execute('growth', 'funnel' | 'accounts' | 'activation', args) and the
+// declarative entities 'growth.funnel' / 'growth.accounts' /
+// 'growth.activation' (EntityDispatcher).
 
 const PARAM_KEY_RE = /^[A-Za-z][A-Za-z0-9_]{0,39}$/
 const PAGING_KEYS = ['limit', 'offset', 'order', 'sort']
@@ -77,6 +84,16 @@ export class GrowthService extends BaseService {
     }
     const qs = params.toString()
     return this._call('growth.accounts', `/growth/accounts${qs ? `?${qs}` : ''}`)
+  }
+
+  // GET /core/workspaces/:workspaceId/activation →
+  //   { workspaceId, since, windowEndsAt, steps: { invited, records: { count,
+  //     needed }, sitePublished, aiAsks: { count, needed } }, activated,
+  //     activatedAt, activatedBy, activationDays }
+  activation (workspaceId) {
+    const id = workspaceId === null || workspaceId === undefined ? '' : String(workspaceId).trim()
+    if (!id) return Promise.reject(new Error('growth.activation: workspaceId is required'))
+    return this._call('growth.activation', `/workspaces/${encodeURIComponent(id)}/activation`)
   }
 }
 

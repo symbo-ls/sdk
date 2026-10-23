@@ -165,3 +165,39 @@ test('the SDK registers the growth service: sdk.getService("growth") is a Growth
   sandbox.restore()
   t.end()
 })
+
+// ── activation — the workspace first-run checklist (fly docs/FUNNEL.md §4 G5) ──
+
+test('activation: GET /workspaces/:id/activation, the id encoded; no id → a rejection, no request', async (t) => {
+  const { svc, stub } = stubbed()
+  await svc.activation('69e5911201b0ef47b675463f')
+  t.equal(stub.firstCall.args[0], 'growth.activation', 'method name')
+  t.equal(urlOf(stub), '/workspaces/69e5911201b0ef47b675463f/activation', 'literal path')
+  t.equal(stub.firstCall.args[2], undefined, 'a GET — no body')
+  await svc.activation(' a/b ')
+  t.equal(urlOf(stub, 1), '/workspaces/a%2Fb/activation', 'trimmed and encoded — never a path break-out')
+  for (const bad of [undefined, null, '', '   ']) {
+    try {
+      await svc.activation(bad)
+      t.fail('should reject')
+    } catch (err) {
+      t.match(err.message, /workspaceId is required/)
+    }
+  }
+  t.equal(stub.callCount, 2, 'a missing id never reaches the wire')
+  sandbox.restore()
+  t.end()
+})
+
+test('sdk.execute: growth/activation and growth.activation get resolve GrowthService.activation', async (t) => {
+  const calls = []
+  const execute = createEntityDispatcher(makeSdk(calls))
+  await execute('growth', 'activation', { workspaceId: 'w1' })
+  await execute('growth.activation', 'get', { id: 'w2' })
+  await execute('growth.activation', 'get', 'w3')
+  t.deepEqual(calls[0], { service: 'growth', method: 'activation', args: ['w1'] })
+  t.deepEqual(calls[1], { service: 'growth', method: 'activation', args: ['w2'] })
+  t.deepEqual(calls[2], { service: 'growth', method: 'activation', args: ['w3'] })
+  t.end()
+})
+
