@@ -58,6 +58,32 @@ const DEFAULT_TRACKING_OPTIONS = {
   kind: null
 }
 
+// Analytics identity is an ALLOWLIST (fly docs/FUNNEL.md §2 "Privacy" + §4
+// G2): the user id and the plan — never the e-mail, the name, the username
+// or the whole user object — and the id never falls back to the e-mail (it
+// used to: `userId: user.id || user.email`, `traits: user`). The id is the
+// first of `id` / `_id` / `userId` that is set; a string or finite number,
+// ≤ 128 chars, no '@', no whitespace — anything else → no identity (the
+// session stays anonymous). `plan` is a trimmed string ≤ 64 chars, never
+// e-mail-shaped. The @symbo.ls/analyzing client applies the same rule again
+// in identify(); this copy keeps the SDK safe on any analyzing version a
+// consumer resolves. Returns `{ id, plan? }` or null.
+const TRACKING_USER_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/
+const TRACKING_PLAN_MAX_LEN = 64
+
+const pickTrackingIdentity = (user) => {
+  if (!user || typeof user !== 'object' || Array.isArray(user)) return null
+  const raw = [user.id, user._id, user.userId].find(
+    (v) => v !== undefined && v !== null && v !== ''
+  )
+  const id = typeof raw === 'number' && Number.isFinite(raw) ? String(raw) : raw
+  if (typeof id !== 'string' || !TRACKING_USER_ID_RE.test(id)) return null
+  const plan = typeof user.plan === 'string' ? user.plan.trim() : ''
+  return plan && plan.length <= TRACKING_PLAN_MAX_LEN && !plan.includes('@')
+    ? { id, plan }
+    : { id }
+}
+
 const sanitizeAttributes = (value) => {
   if (!value || typeof value !== 'object') {
     return {}
@@ -117,12 +143,15 @@ const buildAnalyzingShim = (analyzing) => {
         analyzing.setContext('view', view || null)
       },
 
+      // The allowlist again (a caller may reach the shim directly through
+      // getClient().api.setUser): the user id + plan, or anonymous.
       setUser: (user) => {
+        const identity = pickTrackingIdentity(user)
         analyzing.identify(
-          user
+          identity
             ? {
-                userId: user.id || user.email || null,
-                traits: user
+                userId: identity.id,
+                traits: identity.plan ? { plan: identity.plan } : {}
               }
             : null
         )
@@ -486,7 +515,10 @@ export class TrackingService extends BaseService {
       throw new Error('User must be an object')
     }
 
-    const userData = sanitizeAttributes(user)
+    // Pick the allowlist BEFORE anything is queued, so the whole user object
+    // is never held or sent: `{ id, plan? }`, or null → anonymous (a user
+    // without a usable id is never identified by the e-mail instead).
+    const userData = pickTrackingIdentity(user)
     const queueConfigured =
       options && typeof options === 'object' && Object.hasOwn(options, 'queue')
 
