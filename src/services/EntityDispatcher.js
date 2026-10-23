@@ -111,6 +111,18 @@ const argMaps = {
   ]
 }
 
+// The growth funnel read (GrowthService.funnel) takes ONE filter bag whose
+// vocabulary the server owns: an explicit `filter` / `params` pack wins;
+// otherwise the flat args minus the pack keys are the filter — `limit` and
+// friends included, since the funnel has no separate paging options.
+const growthFunnelArgs = (a) => {
+  const bag = a && typeof a === 'object' && !Array.isArray(a) ? a : {}
+  if (bag.filter && typeof bag.filter === 'object') return [bag.filter]
+  if (bag.params && typeof bag.params === 'object') return [bag.params]
+  const { filter, params, options, ...rest } = bag
+  return [rest]
+}
+
 const CRUD_ARG_MAP = {
   list: argMaps.filterOptions,
   get: argMaps.id,
@@ -1683,6 +1695,29 @@ const ENTITY_ROUTES = {
       daily: (a) => [a?.filter ?? a ?? {}],
       funnel: (a) => [a?.filter ?? a ?? {}]
     }
+  },
+  // ─── Growth (GrowthService — the Symbols sign-up funnel) ───────────────────
+  // /core/growth/* on the main API server, system-org only (fly
+  // docs/FUNNEL.md §3). The Growth app (system/growth-app) reads:
+  //   sdk.execute('growth', 'funnel', { since, until, tz, groupBy, … })
+  //   sdk.execute('growth', 'accounts', { stage: 'stalled', limit, offset })
+  // or declaratively `fetch: { from: 'growth.funnel' | 'growth.accounts' }`.
+  // The funnel read takes ONE filter bag (the server owns its vocabulary, so
+  // a flat bag passes whole); accounts splits paging off like every list.
+  growth: {
+    service: 'growth',
+    methods: { funnel: 'funnel', accounts: 'accounts' },
+    argMap: { funnel: growthFunnelArgs, accounts: argMaps.filterOptions }
+  },
+  'growth.funnel': {
+    service: 'growth',
+    methods: { list: 'funnel', get: 'funnel' },
+    argMap: { list: growthFunnelArgs, get: growthFunnelArgs }
+  },
+  'growth.accounts': {
+    service: 'growth',
+    methods: { list: 'accounts' },
+    argMap: { list: argMaps.filterOptions }
   },
   'docs.documents': {
     service: 'docs',

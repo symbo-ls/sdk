@@ -32,6 +32,7 @@ import {
   createAssistantsService,
   createAiBoardsService,
   createAnalyzedService,
+  createGrowthService,
   createProposedActionService,
   createWorkflowService,
   createFieldDefService,
@@ -406,6 +407,17 @@ export class SDK {
       this._initService(
         'analyzed',
         createAnalyzedService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      // /core/growth/* — the Symbols sign-up funnel + accounts for the
+      // Growth app (system org only). Reached via sdk.execute('growth', op,
+      // args) or the 'growth.funnel' / 'growth.accounts' entities. See
+      // GrowthService.js.
+      this._initService(
+        'growth',
+        createGrowthService({
           context: this._context,
           options: this._options
         })
@@ -1207,6 +1219,7 @@ export {
   createAssistantsService,
   createAiBoardsService,
   createAnalyzedService,
+  createGrowthService,
   createProposedActionService,
   createWorkflowService,
   createFieldDefService,

@@ -11,6 +11,9 @@ import { AssistantsService } from './AssistantsService.js'
 // boards from the installed apps). See AiBoardsService.js.
 import { AiBoardsService } from './AiBoardsService.js'
 import { AnalyzedService } from './AnalyzedService.js'
+// /core/growth/* — the Symbols sign-up funnel + accounts for the Growth app
+// (system org only; fly docs/FUNNEL.md §3). See GrowthService.js.
+import { GrowthService } from './GrowthService.js'
 import { ResourceLinkService } from './ResourceLinkService.js'
 import { ShareLinkService } from './ShareLinkService.js'
 import { CollabService } from './CollabService.js'
@@ -239,6 +242,9 @@ export const createAiBoardsService = (config) =>
 export const createAnalyzedService = (config) =>
   createService(AnalyzedService, config)
 
+export const createGrowthService = (config) =>
+  createService(GrowthService, config)
+
 export const createResourceLinkService = (config) =>
   createService(ResourceLinkService, config)
 
@@ -432,6 +438,7 @@ export {
   AssistantsService,
   AiBoardsService,
   AnalyzedService,
+  GrowthService,
   ResourceLinkService,
   ShareLinkService,
   AllocationRuleService,
