@@ -12,8 +12,54 @@ import {
 // implementations are kept in sync — see classify.js header.
 import { classifyEnvelope as classifyEvent } from './classify.js'
 import { SDK_NAME, SDK_VERSION } from './meta.js'
+import { isPersonalKey, looksLikeEmail, isUserId } from './privacy.js'
 
 const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefined'
+
+// ── Identity allowlist ──────────────────────────────────────────────────
+// fly docs/FUNNEL.md §2 "Privacy" (binding) + §4 G2: identify() carries the
+// user id and these traits ONLY — never the e-mail, the name, the username
+// or the whole user object — and an e-mail is never a user id. The traits
+// ride EVERY envelope (`traits`), so this is the whole personal-data surface
+// of a signed-in session. Names / e-mails a dashboard shows come from the
+// server's own user record, keyed by the id.
+export const IDENTITY_TRAIT_KEYS = Object.freeze(['plan'])
+const IDENTITY_TRAIT_MAX_LEN = 64
+
+/**
+ * `{ userId, traits }` from an identify() input — a user id string, or
+ * `{ userId | id, traits? }` — or null when there is no usable user id
+ * (missing, empty, an e-mail, whitespace, > 128 chars). `traits` keeps
+ * IDENTITY_TRAIT_KEYS only: trimmed strings ≤ 64 chars, never e-mail-shaped.
+ * Pure; exported for direct unit testing.
+ */
+export const sanitizeIdentity = (input) => {
+  if (input == null) return null
+  let rawId
+  let rawTraits = null
+  if (typeof input === 'string' || typeof input === 'number') {
+    rawId = input
+  } else if (typeof input === 'object' && !Array.isArray(input)) {
+    rawId = [input.userId, input.id].find((v) => v !== undefined && v !== null && v !== '')
+    if (input.traits && typeof input.traits === 'object' && !Array.isArray(input.traits)) {
+      rawTraits = input.traits
+    }
+  } else {
+    return null
+  }
+  const userId =
+    typeof rawId === 'number' && Number.isFinite(rawId) ? String(rawId) : rawId
+  if (!isUserId(userId)) return null
+  const traits = {}
+  for (const key of IDENTITY_TRAIT_KEYS) {
+    const value = rawTraits?.[key]
+    if (typeof value !== 'string') continue
+    const clean = value.trim()
+    if (!clean || clean.length > IDENTITY_TRAIT_MAX_LEN || looksLikeEmail(clean)) continue
+    traits[key] = clean
+  }
+  return { userId, traits }
+}
 
 /**
  * createAnalyzing — build an observability client that pipes the
@@ -104,13 +150,16 @@ const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefine
  *   - captureError(err, data?)
  *   - captureMessage(msg, level?, data?)
  *   - addMeasurement(name, value, unit?)
- *   - identify({ userId, traits? })
- *   - setContext(key, value)
+ *   - identify({ userId, traits? })  the user id + IDENTITY_TRAIT_KEYS
+ *                                    (`plan`) only — see sanitizeIdentity
+ *   - setContext(key, value)         personal-data keys / e-mail values
+ *                                    refused
  *   - setTag(key, value)
  *   - setNetworkCapture(enabled)
  *   - flush()
  *   - shutdown()
  *   - sessionId
+ *   - visitorId                      this page's `smbls_vid`, or null
  */
 
 /**
@@ -985,19 +1034,23 @@ export const createAnalyzing = (opts = {}) => {
     return keys.map((k) => `${k}=${String(traits[k])}`).join('|')
   }
 
+  // The allowlist (sanitizeIdentity) runs FIRST: an input without a usable
+  // user id — sign-out, a missing id, or an e-mail where the id should be —
+  // leaves the session anonymous (no user, no traits, no identify event). It
+  // never falls back to the e-mail and never keeps the previous user.
   const identify = (input) => {
-    if (input == null) {
+    const identity = sanitizeIdentity(input)
+    if (!identity) {
       contextStore.user = null
       contextStore.traits = {}
       _lastIdentitySig = null
       return
     }
-    const userId = typeof input === 'string' ? input : input.userId || input.id || null
-    const traits = typeof input === 'object' ? (input.traits || {}) : {}
-    const sig = `${userId || ''}|${_stableTraitsSig(traits)}`
+    const { userId, traits } = identity
+    const sig = `${userId}|${_stableTraitsSig(traits)}`
     if (sig === _lastIdentitySig) return
     _lastIdentitySig = sig
-    contextStore.user = userId ? { id: userId } : null
+    contextStore.user = { id: userId }
     contextStore.traits = { ...traits }
     emit(makeEvent('identify', 'info', {
       hook: 'sdk.identify',
@@ -1006,13 +1059,17 @@ export const createAnalyzing = (opts = {}) => {
     }))
   }
 
+  // setContext writes into the same `traits` bag identify() fills (and every
+  // envelope carries), so the personal-data rule holds here too: a
+  // personal-data key or an e-mail-shaped string value is refused.
   const setContext = (key, value) => {
     if (!key) return
     if (value === undefined) {
       delete contextStore.traits[key]
-    } else {
-      contextStore.traits[key] = value
+      return
     }
+    if (isPersonalKey(key) || looksLikeEmail(value)) return
+    contextStore.traits[key] = value
   }
 
   const setTag = (key, value) => {
@@ -1082,67 +1139,13 @@ export const createAnalyzing = (opts = {}) => {
     })
   }
 
-  // Public-mode auto-identify from tenant Supabase auth (the canonical
-  // `@symbo.ls/db` adapter every hosted project uses). Detects sign-in by
-  // reading any `sb-*-auth-token` localStorage entry, parses the user
-  // object out of the Supabase session blob, and calls identify({ userId,
-  // traits: { email } }) so the by-user /logs view attributes visitor
-  // events to a real user instead of bucketing them as Anonymous.
-  //
-  // Targeted to the Symbols-first-party auth path (db.adapter = 'supabase'
-  // with the standard storageKey shape) — does NOT crawl every tenant's
-  // ad-hoc auth scheme. Safe by construction: if the project doesn't use
-  // Supabase auth, no detection happens and existing identify() calls from
-  // the tenant project (or workspace dogfood via identifyFromSdk) still
-  // take precedence — _lastIdentitySig dedup makes re-identify a no-op.
-  //
-  // Watches `storage` events so signing in / out mid-session retroactively
-  // attributes the rest of the session correctly. Sign-out (token cleared)
-  // calls identify(null) to reset.
-  if (mode === 'public' && typeof window !== 'undefined') {
-    const _detectSupabaseIdentity = () => {
-      try {
-        if (typeof localStorage === 'undefined') return null
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i)
-          if (!key || !/^sb-.*-auth-token$/.test(key)) continue
-          const raw = localStorage.getItem(key)
-          if (!raw) continue
-          const parsed = JSON.parse(raw)
-          // Supabase session shape: { access_token, refresh_token, user: { id, email, ... } }
-          // Older clients sometimes serialize as a 4-tuple array — accept both.
-          const user = parsed?.user || (Array.isArray(parsed) && parsed[5])
-          if (user?.id) return { userId: user.id, email: user.email || null }
-        }
-      } catch {
-        /* tenant auth shape we don't recognize — skip silently */
-      }
-      return null
-    }
-
-    const _applyDetected = () => {
-      const detected = _detectSupabaseIdentity()
-      if (detected) {
-        identify({
-          userId: detected.userId,
-          traits: detected.email ? { email: detected.email } : {}
-        })
-      } else if (contextStore.user) {
-        // Token cleared mid-session → sign-out. Reset identity so the rest
-        // of the session attributes to Anonymous correctly.
-        identify(null)
-      }
-    }
-
-    try { _applyDetected() } catch { /* never block boot on auth detect */ }
-
-    const _onStorage = (e) => {
-      if (!e?.key || !/^sb-.*-auth-token$/.test(e.key)) return
-      try { _applyDetected() } catch {}
-    }
-    window.addEventListener('storage', _onStorage, { passive: true })
-    state.__teardown.push(() => window.removeEventListener('storage', _onStorage))
-  }
+  // Public mode identifies NOBODY on its own. It used to scan localStorage
+  // for a tenant's `sb-*-auth-token` (a published site's own Supabase login)
+  // and send that user's id and e-mail as analytics identity — a site's own
+  // sign-in leaking into Symbols' analytics (removed 2026-10-24, fly
+  // docs/FUNNEL.md §4 G2). A public visitor is its visitor id (`smbls_vid`)
+  // only; identity comes solely from an explicit identify() by the platform's
+  // own code, and carries the user id only (see sanitizeIdentity).
 
   return {
     plugin: analyzePlugin,
@@ -1166,7 +1169,19 @@ export const createAnalyzing = (opts = {}) => {
     startNewSession,
     // Live: reflects the id in force AFTER a startNewSession() (the boot id
     // until then).
-    get sessionId () { return currentSessionId }
+    get sessionId () { return currentSessionId },
+    // This page's visitor id (`smbls_vid`, per origin) — the id stamped as
+    // `page.visitor.id` on every envelope — or null when visitor identity is
+    // off (`visitor: false`) or storage is unavailable. Read-only. The public
+    // page handle exposes it as `SymbolsAnalytics.visitorId` (pageEvents.js).
+    get visitorId () {
+      try {
+        const id = visitorStore?.visitor()?.id
+        return typeof id === 'string' && id ? id : null
+      } catch {
+        return null
+      }
+    }
   }
 }
 

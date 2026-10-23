@@ -91,7 +91,7 @@ test('capture: (name, data) and the client shape (level, name, data); level alwa
   const h = installPageHandle(client, { win })
   assert.equal(win.SymbolsAnalytics, h)
   assert.ok(Object.isFrozen(h))
-  assert.equal(h.version, 1)
+  assert.equal(h.version, 2)
   assert.equal(h.capture('view_item', { productId: 'p1', price: 70, currency: 'GEL' }), true)
   assert.equal(h.capture('info', 'add_to_cart', { productId: 'p1', quantity: 2 }), true)
   assert.equal(h.capture('error', 'purchase', { orderNumber: 'SH-1', total: 140 }), true)
@@ -218,7 +218,7 @@ test('bootAnalyzing installs window.SymbolsAnalytics and drains the stub queue i
   const client = bootAnalyzing({ projectId: 'shaker.ge', projectEnv: 'production' })
   const h = globalThis.window.SymbolsAnalytics
   assert.equal(typeof h.capture, 'function')
-  assert.equal(h.version, 1)
+  assert.equal(h.version, 2)
   assert.equal(Array.isArray(h.q), false, 'the stub queue object is gone')
   const seen = []
   const original = client.capture
