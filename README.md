@@ -127,6 +127,18 @@ await auth.requestPasswordChange()
 await auth.confirmPasswordChange(currentPassword, newPassword, code)
 ```
 
+**Sign-up intent.** `register` and `updateMe` forward their body verbatim; the
+server validates the intent. An e-mail sign-up carries it on the register
+body; a Google / GitHub sign-up sends it once after sign-in through
+`updateMe` (the OAuth routes read no intent). `acquisition.visitor` is the
+page's analytics visitor id (`window.SymbolsAnalytics.visitorId`) — the one
+stitch from an anonymous visitor to the account.
+
+```javascript
+await auth.register({ email, password, name, preset, acquisition: { visitor, source, campaign, plan } })
+await sdk.updateMe({ signupIntent: { preset, acquisition: { visitor, source, campaign, plan } } })
+```
+
 **User Data:**
 
 ```javascript
@@ -583,7 +595,10 @@ tracking.logError(message)
 tracking.addBreadcrumb('Open modal', { id: 'planLimits' })
 
 // User & Session
-tracking.setUser({ id: 'u_123', role: 'admin' })
+// setUser sends an ALLOWLIST: the user id (id | _id | userId) and `plan`.
+// Never the e-mail, name, username or the rest of the user object; a user
+// without an id (or with an e-mail as its id) stays anonymous.
+tracking.setUser({ id: 'u_123', plan: 'pro' })
 tracking.clearUser()
 tracking.setSession(session)
 tracking.clearSession()
@@ -617,6 +632,28 @@ const sdk = new SDK({
 ```
 
 Tracking is automatically disabled on localhost and in non-browser environments.
+
+### Growth Service
+
+The Symbols sign-up funnel (landing → Fly → workspace) for the Growth app.
+Both reads are **system-org only** on the server; any other caller gets the
+server's refusal as a thrown error. The server owns the query vocabulary:
+every scalar field of the filter goes out as a query param (a `Date` as ISO,
+an array joined with `,`), nothing is added or renamed.
+
+```javascript
+const growth = sdk.getService('growth')
+
+// GET /core/growth/funnel — stage counts, step conversion, drop-off
+await growth.funnel({ since: '2026-10-01', until: '2026-10-24', tz: 'Asia/Tbilisi', groupBy: 'source' })
+
+// GET /core/growth/accounts — per-account stage; the stalled list
+await growth.accounts({ stage: 'stalled' }, { limit: 50, offset: 0 })
+
+// Same reads through the dispatcher / declarative fetch
+await sdk.execute('growth', 'funnel', { since: '2026-10-01' })
+await sdk.execute('growth.accounts', 'list', { stage: 'stalled', limit: 50 })
+```
 
 ### Waitlist Service
 
