@@ -2226,10 +2226,22 @@ const ENTITY_ROUTES = {
   // workspaceDashboardDefaults} route unconditionally to the Mongo
   // /core/prefs routes; the dispatcher's update→upsert mapping + payload
   // argMap are unchanged.
+  // `patch` is the PER-PATH merge writer (CORE-USERPREFS-PATCH-PER-PATH-1) and
+  // is the one to reach for: `update` REPLACES the whole record, so two tabs of
+  // one person destroy each other's edits to other keys. It takes the patch
+  // itself (`{ set, unset }`), packed or flat, same as `update` takes a payload.
   'workspaceProject.userPreferences': {
     service: 'workspaceProject',
-    methods: { get: 'userPreferences.get', update: 'userPreferences.upsert' },
-    argMap: { get: () => [], update: argMaps.payload }
+    methods: {
+      get: 'userPreferences.get',
+      update: 'userPreferences.upsert',
+      patch: 'userPreferences.patch'
+    },
+    argMap: {
+      get: () => [],
+      update: argMaps.payload,
+      patch: (a) => [a?.patch ?? a?.payload ?? a?.data ?? a]
+    }
   },
   'workspaceProject.homeDashboardPrefs': {
     service: 'workspaceProject',

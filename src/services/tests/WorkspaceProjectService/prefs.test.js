@@ -98,3 +98,84 @@ test('workspaceDashboardDefaults.{get,upsert} route to /core/prefs/workspace-def
   sandbox.restore()
   t.end()
 })
+
+// ─── userPreferences.patch — the per-path writer (CORE-USERPREFS-PATCH-PER-PATH-1)
+//
+// `upsert` PUTs the WHOLE record, so two tabs of one person race on the whole
+// document and the loser's edits to other keys are destroyed. `patch` names only
+// the paths it writes. The SDK's job here is narrow and all of it is asserted
+// below: PATCH, the `{ patch }` envelope, the body it sends VERBATIM, and the
+// `{ prefs }` envelope unwrapped back to the merged record.
+//
+// The body must carry NO DOTTED KEY. The server's mongoSanitize deletes every
+// body key holding a '.' or a leading '$', so a dotted key would be gone before
+// the handler ran and the write would silently do nothing. Paths therefore ride
+// as segment ARRAYS — values, which the sanitizer never inspects — and the
+// server joins them. The last case below is the regression guard for that.
+
+test('userPreferences.patch PATCHes { patch } to /core/prefs/user', async (t) => {
+  t.plan(5)
+  const svc = makeService()
+  const reqStub = sandbox
+    .stub(svc, '_request')
+    .resolves({ prefs: { user_id: 'u', themeMode: 'dark', email_digest: 'daily' } })
+  const out = await svc.userPreferences.patch({ set: { themeMode: 'dark' } })
+  const [endpoint, opts] = reqStub.firstCall.args
+  t.equal(endpoint, '/prefs/user', 'PATCH /core/prefs/user')
+  t.equal(opts.method, 'PATCH', 'PATCH, not PUT — PUT still replaces the whole record')
+  t.equal(opts.methodName, 'userPreferences.patch', 'its own method name')
+  t.deepEqual(JSON.parse(opts.body), { patch: { set: { themeMode: 'dark' } } }, 'patch wrapped')
+  t.deepEqual(
+    out,
+    { user_id: 'u', themeMode: 'dark', email_digest: 'daily' },
+    '{ prefs } unwrapped to the MERGED record — a key the patch never named is carried'
+  )
+  sandbox.restore()
+  t.end()
+})
+
+test('userPreferences.patch sends a deep path as segments, with no dotted key', async (t) => {
+  t.plan(3)
+  const svc = makeService()
+  const reqStub = sandbox.stub(svc, '_request').resolves({ prefs: {} })
+  const ws = '6a3adba656e557ea101d62b9'
+  await svc.userPreferences.patch({
+    set: [{ path: ['modulePrefs', ws, 'crm', 'adjustOpen'], value: true }],
+    unset: [['navbar_tabs', ws], 'homeWelcomeDismissed']
+  })
+  const body = reqStub.firstCall.args[1].body
+  t.deepEqual(
+    JSON.parse(body),
+    {
+      patch: {
+        set: [{ path: ['modulePrefs', ws, 'crm', 'adjustOpen'], value: true }],
+        unset: [['navbar_tabs', ws], 'homeWelcomeDismissed']
+      }
+    },
+    'the body is passed through verbatim — the SDK never rewrites a path'
+  )
+  // The regression guard: every KEY in the serialized body is dot-free and
+  // $-free, so nothing the server sanitizer deletes is ever on the wire.
+  const keys = []
+  const walk = (v) => {
+    if (Array.isArray(v)) return v.forEach(walk)
+    if (v && typeof v === 'object')
+      Object.entries(v).forEach(([k, val]) => {
+        keys.push(k)
+        walk(val)
+      })
+  }
+  walk(JSON.parse(body))
+  t.equal(
+    keys.filter((k) => k.includes('.')).length,
+    0,
+    'no body KEY carries a dot — the sanitizer would delete it'
+  )
+  t.equal(
+    keys.filter((k) => k.startsWith('$')).length,
+    0,
+    'no body KEY starts with $ — the sanitizer would delete it'
+  )
+  sandbox.restore()
+  t.end()
+})

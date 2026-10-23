@@ -1265,6 +1265,37 @@ export class WorkspaceProjectService extends BaseService {
         method: 'PUT',
         body: JSON.stringify({ payload }),
         methodName: 'userPreferences.upsert'
+      }).then((r) => r?.prefs ?? r),
+
+    // PER-PATH MERGE — the race-free writer. `upsert` REPLACES the whole
+    // record, so two tabs of one person race on the whole document: each reads
+    // its own copy, changes one key, PUTs everything, and the last PUT wins —
+    // the other tab's edits to OTHER keys are gone. `patch` names only the
+    // paths it writes, so the server merges and both tabs land.
+    //
+    // A path is an ARRAY OF SEGMENTS, never a dotted string: the server's body
+    // sanitizer deletes every body key holding a '.' or a leading '$', so a
+    // dotted key never reaches the handler and the write would silently do
+    // nothing. The server joins the segments itself.
+    //
+    //   set, object form — each key is ONE top-level preference key:
+    //     patch({ set: { themeMode: 'dark', slotSheetWidth: 72 } })
+    //   set, array form — any depth:
+    //     patch({ set: [{ path: ['modulePrefs', wsId, mod, 'adjustOpen'], value: true }] })
+    //   unset — an array of paths; a bare string is a one-segment path:
+    //     patch({ unset: [['navbar_tabs', wsId], 'homeWelcomeDismissed'] })
+    //
+    // Resolves to the merged record (the `{ prefs }` envelope unwrapped), same
+    // shape `get`/`upsert` return. A refused patch rejects with the server's
+    // own code: invalid_patch / invalid_pref_path / reserved_pref_key /
+    // conflicting_pref_paths / pref_path_too_deep / too_many_pref_paths /
+    // empty_patch (400), or pref_path_not_viable (409 — a stored non-object
+    // value sits in the way of a named path).
+    patch: (patch) =>
+      this._request('/prefs/user', {
+        method: 'PATCH',
+        body: JSON.stringify({ patch }),
+        methodName: 'userPreferences.patch'
       }).then((r) => r?.prefs ?? r)
   }
 
