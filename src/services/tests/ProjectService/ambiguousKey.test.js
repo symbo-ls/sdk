@@ -54,7 +54,15 @@ for (const [name, call] of [
   ['getProjectDataByKey', (svc) => svc.getProjectDataByKey('fly')],
   ['getProjectComponentsByKey', (svc) => svc.getProjectComponentsByKey('fly')],
   ['getProjectFunctionsByKey', (svc) => svc.getProjectFunctionsByKey('fly')],
-  ['getProjectPagesByKey', (svc) => svc.getProjectPagesByKey('fly')]
+  ['getProjectPagesByKey', (svc) => svc.getProjectPagesByKey('fly')],
+  // The public reads (server: the public by-key routes answer the same 409
+  // once features.ambiguousKeyRefusal is ON). They returned null / threw a
+  // plain "Failed to …" for it.
+  ['getPublicProjectDataByKey', (svc) => svc.getPublicProjectDataByKey('fly', { envKey: 'production' })],
+  [
+    'unlockPublicProjectDataByKey',
+    (svc) => svc.unlockPublicProjectDataByKey('fly', { envKey: 'production', password: 'h' })
+  ]
 ]) {
   test(`${name} — a shared bare key throws the structured ambiguous_key error`, async (t) => {
     const svc = makeService()

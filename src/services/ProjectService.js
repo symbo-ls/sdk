@@ -329,6 +329,10 @@ export class ProjectService extends BaseService {
       // status isn't attached anywhere — so we route by body.error.
       const body = _readErrorBody(error)
       const errCode = body?.error
+      // A bare key held by several projects: the structured 409 with the
+      // candidates (pass { owner, key }) — never "no public data".
+      const ambiguous = ambiguousKeyError(error, keyOrSpec)
+      if (ambiguous) throw ambiguous
       if (errCode === 'password_required') {
         const e = new Error(body.message || 'Project is password-protected')
         e.code = 'password_required'
@@ -414,6 +418,8 @@ export class ProjectService extends BaseService {
       // `not_password_protected` (400) and `project_unavailable` (404: no
       // such project for this caller, private or missing) for the states the
       // caller handles. Anything else is infrastructure — re-throw.
+      const ambiguous = ambiguousKeyError(error, keyOrSpec)
+      if (ambiguous) throw ambiguous
       const body = _readErrorBody(error)
       const errCode = body?.error
       if (
