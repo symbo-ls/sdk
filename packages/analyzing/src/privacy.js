@@ -1,7 +1,9 @@
 'use strict'
 
-// Personal-data rules shared by the public page API (pageEvents.js) and the
-// client's identity surface (client.js — identify / setContext).
+// Personal-data rules shared by the public page API (pageEvents.js), the
+// client's identity surface (client.js — identify / setContext) and the URLs
+// every envelope carries (client.js — the landing, the page block, event
+// URLs; boot.js — the page_view).
 //
 // The Symbols sign-up funnel contract (fly docs/FUNNEL.md §2 "Privacy",
 // binding): events and identity carry no e-mail, name, phone, IP or free
@@ -38,3 +40,15 @@ export const USER_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/
 
 export const isUserId = (value) =>
   typeof value === 'string' && USER_ID_RE.test(value)
+
+// A URL without its fragment — '#' and everything after it. The browser
+// never sends the fragment to a server, so pages keep private state there:
+// the symbols.app landing hands over to Fly with `#idea=<free text>&
+// company=<name>`, an auth redirect lands with `#access_token=…`. No URL in
+// an envelope keeps it; the path and the query stay as they are. A
+// non-string is returned unchanged. Pure, never throws.
+export const stripUrlFragment = (value) => {
+  if (typeof value !== 'string') return value
+  const i = value.indexOf('#')
+  return i === -1 ? value : value.slice(0, i)
+}

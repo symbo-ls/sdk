@@ -19,16 +19,20 @@
 
 import { createAnalyzing } from './client.js'
 import { installPageHandle } from './pageEvents.js'
+import { stripUrlFragment } from './privacy.js'
 
 let _instance = null
 
+// The page_view payload. `path` is pathname + search — the fragment is
+// never read. A referrer has no fragment by spec; it goes through
+// stripUrlFragment anyway, like every other URL of the envelope.
 const _pageData = () => {
   try {
     return {
       path: location.pathname + location.search,
       title: (typeof document !== 'undefined' && document.title) || undefined,
       referrer:
-        (typeof document !== 'undefined' && document.referrer) || undefined
+        (typeof document !== 'undefined' && stripUrlFragment(document.referrer)) || undefined
     }
   } catch {
     return {}

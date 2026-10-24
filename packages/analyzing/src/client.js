@@ -12,7 +12,7 @@ import {
 // implementations are kept in sync — see classify.js header.
 import { classifyEnvelope as classifyEvent } from './classify.js'
 import { SDK_NAME, SDK_VERSION } from './meta.js'
-import { isPersonalKey, looksLikeEmail, isUserId } from './privacy.js'
+import { isPersonalKey, looksLikeEmail, isUserId, stripUrlFragment } from './privacy.js'
 
 const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefined'
 
@@ -118,7 +118,10 @@ export const sanitizeIdentity = (input) => {
  *                .resolveLanding, $setOnInsert) whichever envelope of the
  *                session lands first. Rides INSIDE `page` because the
  *                mermaid relay rebuilds the envelope from a fixed field
- *                list and passes `page` through whole.
+ *                list and passes `page` through whole. `url` / `referrer`
+ *                lose their URL fragment, the override's too
+ *                (stripUrlFragment), like every other URL of the envelope
+ *                (page.url / referrer, an event's url / source).
  *
  * Auth (pick one):
  *   apiKey       string                          X-Analyze-Key header
@@ -193,9 +196,11 @@ export const resolveNetworkCapture = ({ debug, captureOverrides } = {}) => {
 // touch). Each utm field comes from the utm_<name> query param of
 // `location.search`, trimmed, capped at LANDING_MAX_LEN, omitted when
 // empty; the `utm` key is omitted when no field resolved; `url` /
-// `referrer` are omitted when unavailable. Never throws — outside a
-// browser (SSR, tests without globals) it returns `{}`. Pure over the
-// globals it reads; exported for direct unit testing.
+// `referrer` are omitted when unavailable, and lose their fragment
+// (stripUrlFragment) BEFORE the cap, so the cap spends its 200 chars on
+// the path and the query. Never throws — outside a browser (SSR, tests
+// without globals) it returns `{}`. Pure over the globals it reads;
+// exported for direct unit testing.
 export const LANDING_MAX_LEN = 200
 export const UTM_PARAMS = ['source', 'medium', 'campaign', 'term', 'content']
 
@@ -211,9 +216,9 @@ export const captureLanding = ({ location: loc, document: doc } = {}) => {
   try {
     const l = loc || (typeof location !== 'undefined' ? location : null)
     const d = doc || (typeof document !== 'undefined' ? document : null)
-    const url = _capLanding(l?.href)
+    const url = _capLanding(stripUrlFragment(l?.href))
     if (url) out.url = url
-    const referrer = _capLanding(d?.referrer)
+    const referrer = _capLanding(stripUrlFragment(d?.referrer))
     if (referrer) out.referrer = referrer
     const search = typeof l?.search === 'string' ? l.search : ''
     if (search) {
@@ -226,6 +231,35 @@ export const captureLanding = ({ location: loc, document: doc } = {}) => {
       if (Object.keys(utm).length) out.utm = utm
     }
   } catch {}
+  return out
+}
+
+// ── URL fragments never leave the browser ──────────────────────────────
+// Every URL field of an outbound envelope goes through stripUrlFragment
+// (privacy.js): the landing's (captureLanding above, or opts.landing); the
+// page block's `url` / `href` / `referrer` (@symbo.ls/analyze
+// collectPageInfo builds the block — its `url` is location.href AT FLUSH
+// TIME, fragment included); an event's top-level `url` (a network event's
+// request URL) and `source` (an error's script URL, ErrorEvent.filename).
+// _stampEnvelope applies it to every envelope.
+const LANDING_URL_KEYS = ['url', 'referrer']
+const PAGE_URL_KEYS = ['url', 'href', 'referrer']
+const EVENT_URL_KEYS = ['url', 'source']
+
+// `obj` with the fragment dropped from each string field in `keys` — the
+// SAME object when no field had one. Copy-on-write: an object the caller or
+// another sink still holds is never mutated.
+const _withoutUrlFragments = (obj, keys) => {
+  if (!obj || typeof obj !== 'object') return obj
+  let out = obj
+  for (const key of keys) {
+    const value = obj[key]
+    if (typeof value !== 'string') continue
+    const clean = stripUrlFragment(value)
+    if (clean === value) continue
+    if (out === obj) out = { ...obj }
+    out[key] = clean
+  }
   return out
 }
 
@@ -811,13 +845,16 @@ export const createAnalyzing = (opts = {}) => {
   // its drop-by-returning-null contract. Never throws — telemetry is
   // best-effort, and a throw here would be caught by the sink and ship the
   // UNstamped envelope, which is exactly the mislabelling this prevents.
+  // The stamp also drops the fragment from every URL of the envelope (see
+  // "URL fragments never leave the browser" above).
   const resolvedKind = kind === 'workspace' || kind === 'project' ? kind : null
   // First touch — captured ONCE, here, and frozen: an SPA navigation later
   // in the session changes location, never the landing. `opts.landing`
-  // (an object) replaces the capture for SSR consumers + tests.
+  // (an object) replaces the capture for SSR consumers + tests; its URLs
+  // lose their fragment like the capture's.
   const resolvedLanding =
     landingOverride && typeof landingOverride === 'object' && !Array.isArray(landingOverride)
-      ? landingOverride
+      ? _withoutUrlFragments(landingOverride, LANDING_URL_KEYS)
       : captureLanding()
   const _stampEnvelope = (envelope) => {
     try {
@@ -825,7 +862,7 @@ export const createAnalyzing = (opts = {}) => {
       if (resolvedKind) envelope.kind = resolvedKind
       const page = envelope.page && typeof envelope.page === 'object' ? envelope.page : {}
       const utcOffset = -new Date().getTimezoneOffset()
-      const stamped = { ...page }
+      const stamped = { ..._withoutUrlFragments(page, PAGE_URL_KEYS) }
       if (Number.isFinite(utcOffset)) stamped.utcOffset = utcOffset
       if (!stamped.timezone) {
         try {
@@ -842,6 +879,9 @@ export const createAnalyzing = (opts = {}) => {
         if (v) stamped.visitor = v
       } catch {}
       envelope.page = stamped
+      if (Array.isArray(envelope.events)) {
+        envelope.events = envelope.events.map((event) => _withoutUrlFragments(event, EVENT_URL_KEYS))
+      }
     } catch {}
     return envelope
   }

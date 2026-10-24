@@ -66,6 +66,13 @@ analyzing.addMeasurement('checkout.tti', 920, 'ms')
   nobody on its own. It does not read a site's own login (no
   `sb-*-auth-token` scan). A visitor is the first-party visitor id
   (`smbls_vid`) only; `client.visitorId` returns it (or `null`).
+- No URL fragment leaves the browser. Pages keep private state after the
+  `#` (Fly's hand-off `#idea=…&company=…`, an auth redirect's
+  `#access_token=…`), so every URL an envelope carries loses `#` and
+  everything after it: `page.url` / `page.referrer`, `page.landing.url` /
+  `referrer` (an `opts.landing` override too), an event's `url` / `source`,
+  and the page_view's `referrer`. The path and the query stay; the `utm_*`
+  read is unchanged.
 
 ## Public page API — `window.SymbolsAnalytics`
 
