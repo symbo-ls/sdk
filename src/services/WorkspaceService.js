@@ -713,6 +713,72 @@ export class WorkspaceService extends BaseService {
     }
   }
 
+  // ==================== WORKSPACE PRESETS ====================
+  // The server's preset registry (core/constants/industryPresets.js) — the
+  // App Store "Workspace presets" row, the new-account wizard, Fly and the
+  // landing all read it here. The server owns WHICH apps and setup a preset
+  // gives; every surface owns how it NAMES the preset.
+
+  /**
+   * The Workspace Presets registry, in registry order (the featured ones
+   * first). PUBLIC: the landing and Fly read it signed out, so no
+   * Authorization header is attached.
+   *
+   * @returns {Promise<Array<{ key: string, apps: string[], suggested: string[],
+   *   setup: { channels: Array<{ name: string, topic: string }>, folders: string[] },
+   *   featured: boolean, order: number }>>}
+   *   `apps` in install order (first = the primary app); `suggested` = apps
+   *   to offer unticked; `setup` = what an apply creates besides apps.
+   */
+  async listWorkspacePresets () {
+    const data = await this._call('listWorkspacePresets', '/presets')
+    return Array.isArray(data?.presets) ? data.presets : []
+  }
+
+  /**
+   * Apply a Workspace Preset to a workspace (owner/admin of it). Installs the
+   * preset's apps − `exclude` + `include` (any catalog workspace app,
+   * `owner/key`, at most 20 per list), then its setup (public chat channels +
+   * root folders of Files) unless `setup: false`, and records
+   * `workspace.settings.preset = { key, appliedAt, appliedBy, apps }`.
+   * Idempotent: it only ADDS what is missing; a re-apply is "Add what is
+   * missing". One app or setup item that fails is a line in the answer
+   * (`failed`, `setup.*.failed` — show it with a retry), never a thrown call.
+   *
+   * Throws (the `_request` HTTP error: `err.status`, `err.cause` = the body)
+   * on 403 (not an owner/admin — `err.cause.error` is
+   * `forbidden_workspace_role` / `forbidden_workspace_member_required`), 404
+   * (`unknown_preset`, or the workspace), 400 (`invalid_picks`,
+   * `invalid_setup`).
+   *
+   * @param {string} workspaceId
+   * @param {string} presetKey - a registry key (`virtual-assistance`, `real-estate`, …)
+   * @param {{ include?: string[], exclude?: string[], setup?: boolean }} [options]
+   * @returns {Promise<{ ok: boolean, preset: string, installed: string[], skipped: string[],
+   *   failed: Array<{ appId: string, error: string, message: (string|null) }>,
+   *   setup: { channels: { created: string[], existing: string[], failed: Array<{ name: string, error: string }> },
+   *            folders: { created: string[], existing: string[], failed: Array<{ name: string, error: string }> } },
+   *   workspacePreset: ({ key: string, appliedAt: string, appliedBy: (string|null), apps: string[] }|null) }>}
+   *   `ok` — at least one of the apply's apps is present afterwards (or it
+   *   asked for none); when `ok` is false nothing is recorded in
+   *   `settings.preset` and `workspacePreset` is the earlier record, if any.
+   *   `failed[].error` is `app_not_found` for an app this environment does
+   *   not carry yet.
+   */
+  async applyWorkspacePreset (workspaceId, presetKey, { include, exclude, setup } = {}) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!presetKey) throw new Error('presetKey is required')
+    const body = {}
+    if (include !== undefined) body.include = include
+    if (exclude !== undefined) body.exclude = exclude
+    if (setup !== undefined) body.setup = setup
+    return this._call(
+      'applyWorkspacePreset',
+      `/workspaces/${workspaceId}/presets/${encodeURIComponent(presetKey)}/apply`,
+      { method: 'POST', body }
+    )
+  }
+
   // ==================== PERMISSIONS ====================
 
   /**

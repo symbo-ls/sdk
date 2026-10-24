@@ -545,6 +545,11 @@ export const SERVICE_METHODS = {
   installWorkspaceApps: 'workspace',
   removeWorkspaceApp: 'workspace',
 
+  // Workspace Presets — the public registry (GET /core/presets, no session)
+  // and the owner/admin apply (POST /core/workspaces/:id/presets/:key/apply).
+  listWorkspacePresets: 'workspace',
+  applyWorkspacePreset: 'workspace',
+
   // Workspace public config + write-only private-secret management.
   // Trusted runtime secret resolution is intentionally not browser-exposed.
   getWorkspacePublicConfig: 'workspace',

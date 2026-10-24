@@ -610,6 +610,9 @@ export class BaseService {
       'getPlan',
       'listPublicProjects',
       'getPublicProject',
+      // The Workspace Presets registry (GET /core/presets) — public and
+      // cached `public, max-age=300`; the landing and Fly read it signed out.
+      'listWorkspacePresets',
       // Anonymous meet guest flow — unauthenticated visitors join public
       // rooms through the waiting room; no bearer token is attached.
       'meetGuestMeta',
