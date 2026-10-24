@@ -6,6 +6,7 @@ import {
   PROJECT_ROLE_PERMISSIONS
 } from '../utils/permission.js'
 import { logger } from '../utils/logger.js'
+import { ambiguousKeyError } from '../utils/ambiguousKey.js'
 
 const PLUGIN_SESSION_STORAGE_KEY = 'plugin_auth_session'
 
@@ -1459,6 +1460,10 @@ export class AuthService extends BaseService {
       if (error?.status === 401 || error?.status === 403) {
         return 'guest'
       }
+      // A bare key held by several owners: the structured 409 (candidates),
+      // never a role for a guessed project.
+      const ambiguous = ambiguousKeyError(error, keyOrSpec)
+      if (ambiguous) throw ambiguous
       const message = error?.message || ''
       throw new Error(`Failed to get project role by key: ${message}`, {
         cause: error
@@ -1513,22 +1518,43 @@ export class AuthService extends BaseService {
    * This method tries to get the role from user projects first,
    * then falls back to API call if not found
    */
-  async getProjectRoleByKeyWithFallback(projectKey, userProjects = null) {
+  async getProjectRoleByKeyWithFallback(keyOrSpec, userProjects = null) {
     this._requireReady('getProjectRoleByKeyWithFallback')
-    if (!projectKey) {
+    // `{ owner, key }` (or 'owner/key') names one project; a bare key can name
+    // several owners' projects.
+    let spec = keyOrSpec && typeof keyOrSpec === 'object' ? keyOrSpec : null
+    if (!spec && typeof keyOrSpec === 'string') {
+      const at = keyOrSpec.indexOf('/')
+      spec =
+        at > 0
+          ? { owner: keyOrSpec.slice(0, at), key: keyOrSpec.slice(at + 1) }
+          : { owner: null, key: keyOrSpec }
+    }
+    if (!spec || !spec.key) {
       throw new Error('Project key is required')
     }
 
-    // First try to find in user projects if provided
-    if (userProjects && Array.isArray(userProjects)) {
-      const userProject = userProjects.find((p) => p.key === projectKey)
+    // The user's own projects answer only an owner + key match: a bare key
+    // used to take the FIRST of the user's projects holding it. A bare key
+    // goes to the API, which names its project or answers the structured
+    // 409 ambiguous_key.
+    if (spec.owner && userProjects && Array.isArray(userProjects)) {
+      const ownerOf = (p) =>
+        (p && p.owner && typeof p.owner === 'object' ? p.owner.slug : p?.owner) ||
+        p?.ownerSlug ||
+        null
+      const userProject = userProjects.find(
+        (p) => p && p.key === spec.key && ownerOf(p) === spec.owner
+      )
       if (userProject && userProject.role) {
         return userProject.role
       }
     }
 
     // Fallback to API call
-    return await this.getMyProjectRoleByKey(projectKey)
+    return await this.getMyProjectRoleByKey(
+      spec.owner ? { owner: spec.owner, key: spec.key } : spec.key
+    )
   }
 
   // ==================== AUTH HELPER METHODS ====================

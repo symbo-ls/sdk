@@ -4,6 +4,7 @@ import { preprocessChanges } from '../utils/changePreprocessor.js'
 import { deepStringifyFunctions } from '@symbo.ls/utils'
 import { PROJECT_SOURCE_ACCESS } from '../constants/roles.js'
 import { projectKeyPath as keyPath } from '../utils/projectKeyPath.js'
+import { ambiguousKeyError } from '../utils/ambiguousKey.js'
 import { logger } from '../utils/logger.js'
 
 // BaseService wraps every error as `new Error(`Request failed: …`,
@@ -236,6 +237,10 @@ export class ProjectService extends BaseService {
 
       throw new Error(response.message)
     } catch (error) {
+      // A bare key held by several owners: 409 ambiguous_key with the
+      // candidates — thrown as ONE structured error, never a pick.
+      const ambiguous = ambiguousKeyError(error, keyOrSpec)
+      if (ambiguous) throw ambiguous
       throw new Error(`Failed to get project by key: ${error.message}`, { cause: error })
     }
   }
@@ -287,6 +292,8 @@ export class ProjectService extends BaseService {
 
       throw new Error(response.message)
     } catch (error) {
+      const ambiguous = ambiguousKeyError(error, keyOrSpec)
+      if (ambiguous) throw ambiguous
       throw new Error(`Failed to get project data by key: ${error.message}`, { cause: error })
     }
   }
@@ -1820,20 +1827,26 @@ export class ProjectService extends BaseService {
   }
 
   /**
-   * List all component resources for a project by key. Today the server
-   * only exposes the 1-seg variant; pass a bare key (string) or
-   * `{ key }` object. `{ owner, key }` is accepted for forward-compat
-   * but currently hits the 1-seg route (owner segment is a no-op).
+   * List all component resources for a project by key. Pass `{ owner, key }`
+   * for the collision-safe 2-seg route (`/key/:owner/:projectSlug/resources/…`);
+   * a bare key takes the 1-seg route, which answers 409 for a key held by
+   * more than one project — thrown as the structured `ambiguous_key` error
+   * (`err.candidates`).
    * @param {string | { owner?: string, key: string }} projectKey
    * @returns {Promise<{items: Array<object>, total?: number}>}
    */
   async getProjectComponentsByKey (projectKey) {
     this._requireReady('getProjectComponentsByKey')
     if (!projectKey) throw new Error('projectKey is required')
-    const response = await this._request(
-      `/projects/key/${keyPath(projectKey)}/resources/components`,
-      { method: 'GET', methodName: 'getProjectComponentsByKey' }
-    )
+    let response
+    try {
+      response = await this._request(
+        `/projects/key/${keyPath(projectKey)}/resources/components`,
+        { method: 'GET', methodName: 'getProjectComponentsByKey' }
+      )
+    } catch (error) {
+      throw ambiguousKeyError(error, projectKey) || error
+    }
     if (response?.success) return response
     return { items: [] }
   }
@@ -1847,10 +1860,15 @@ export class ProjectService extends BaseService {
   async getProjectFunctionsByKey (projectKey) {
     this._requireReady('getProjectFunctionsByKey')
     if (!projectKey) throw new Error('projectKey is required')
-    const response = await this._request(
-      `/projects/key/${keyPath(projectKey)}/resources/functions`,
-      { method: 'GET', methodName: 'getProjectFunctionsByKey' }
-    )
+    let response
+    try {
+      response = await this._request(
+        `/projects/key/${keyPath(projectKey)}/resources/functions`,
+        { method: 'GET', methodName: 'getProjectFunctionsByKey' }
+      )
+    } catch (error) {
+      throw ambiguousKeyError(error, projectKey) || error
+    }
     if (response?.success) return response
     return { items: [] }
   }
@@ -1864,10 +1882,15 @@ export class ProjectService extends BaseService {
   async getProjectPagesByKey (projectKey) {
     this._requireReady('getProjectPagesByKey')
     if (!projectKey) throw new Error('projectKey is required')
-    const response = await this._request(
-      `/projects/key/${keyPath(projectKey)}/resources/pages`,
-      { method: 'GET', methodName: 'getProjectPagesByKey' }
-    )
+    let response
+    try {
+      response = await this._request(
+        `/projects/key/${keyPath(projectKey)}/resources/pages`,
+        { method: 'GET', methodName: 'getProjectPagesByKey' }
+      )
+    } catch (error) {
+      throw ambiguousKeyError(error, projectKey) || error
+    }
     if (response?.success) return response
     return { items: [] }
   }
