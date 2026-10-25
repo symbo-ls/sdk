@@ -794,6 +794,22 @@ export class IntegrationService extends BaseService {
     return this._call('listOrgIntegrationKinds', '/org-integrations/kinds')
   }
 
+  /**
+   * Read the public integrations catalogue — the integrations symbols.app
+   * recommends, each `live` or `planned` (a planned row names its ticket).
+   * Public: no session, cached `public, max-age=300`; the landing reads it
+   * signed out.
+   *
+   * Mirrors: GET /integrations/catalog
+   *
+   * @returns {Promise<{ version: number, statuses: object[], groups: object[],
+   *   integrations: Array<{ key: string, name: { en: string, ka: string },
+   *   group: string, status: 'live'|'planned', ticket: string|null }> }>}
+   */
+  getIntegrationsCatalog () {
+    return this._call('getIntegrationsCatalog', '/integrations/catalog')
+  }
+
   // ── Capability dispatch (data plane) ──────────────────────────────────
   // The CRUD above manages OrgIntegration rows; this is the per-kind call
   // surface that actually reaches the connected integration. Two server
