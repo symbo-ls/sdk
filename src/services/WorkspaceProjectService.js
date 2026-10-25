@@ -1348,6 +1348,13 @@ export class WorkspaceProjectService extends BaseService {
       })
       return r?.prefs ?? null
     },
+    // THE STORED RECORD IS CAPPED (512 KB of JSON by default). Both writers
+    // reject with `pref_record_too_large` (413) when the record the write
+    // leaves behind would exceed it — EXCEPT a write that makes the record
+    // smaller, which is always accepted, so a person over the cap can always
+    // remove data. The error's `message` carries the measured size and the
+    // limit; show it rather than a generic failure, because the fix is the
+    // user's (remove preference data), not a retry. A 413 is never retried.
     upsert: (payload) =>
       this._request('/prefs/user', {
         method: 'PUT',
@@ -1377,8 +1384,10 @@ export class WorkspaceProjectService extends BaseService {
     // shape `get`/`upsert` return. A refused patch rejects with the server's
     // own code: invalid_patch / invalid_pref_path / reserved_pref_key /
     // conflicting_pref_paths / pref_path_too_deep / too_many_pref_paths /
-    // empty_patch (400), or pref_path_not_viable (409 — a stored non-object
-    // value sits in the way of a named path).
+    // empty_patch (400), pref_path_not_viable (409 — a stored non-object
+    // value sits in the way of a named path), or pref_record_too_large (413 —
+    // the stored-record cap above; the patch is well-formed, the record it
+    // would leave behind is not).
     patch: (patch) =>
       this._request('/prefs/user', {
         method: 'PATCH',
