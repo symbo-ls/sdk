@@ -298,6 +298,16 @@ const mailScopeArgs = (a) => [
   }
 ]
 
+// Blueprint + setup adapter (server lane S1). Both routes take the
+// workspace id POSITIONALLY and nothing else routes them: the id comes off
+// the imperative bag ({ workspaceId }) or the declarative fetch-adapter packs
+// ({ params }, { filter }), like mailScopeArgs. `id` is deliberately NOT a
+// fallback, and the write takes the Blueprint from `blueprint` / `payload`
+// only, never from the rest of the bag: a Blueprint carries its own `id`
+// (the client's short id) and `v`.
+const setupWorkspaceId = (a) =>
+  a?.workspaceId ?? a?.params?.workspaceId ?? a?.filter?.workspaceId
+
 const ENTITY_ROUTES = {
   // ─── i18n (translations stream) ────────────────────────────────────────────
   // The TranslationWatcher in workspace/app.js subscribes to live translation
@@ -451,6 +461,43 @@ const ENTITY_ROUTES = {
             const { workspaceId, userId, ...rest } = a || {}
             return rest
           })()
+      ]
+    }
+  },
+  // The Fly Blueprint store + the workspace setup job (server lane S1),
+  // owner/admin. `list` aliases the read: the fetch plugin's declarative
+  // adapter emits list, never a bare get (see 'workspace.members.recordScope').
+  //   sdk.execute('workspace.blueprint', 'get', { workspaceId })
+  //   sdk.execute('workspace.blueprint', 'update', { workspaceId, blueprint })
+  //   sdk.execute('workspace.setup', 'create', { workspaceId })            // start
+  //   sdk.execute('workspace.setup', 'create', { workspaceId, retry: true })
+  //   sdk.execute('workspace.setup', 'get', { workspaceId })               // poll
+  'workspace.blueprint': {
+    service: 'workspace',
+    methods: {
+      get: 'getWorkspaceBlueprint',
+      list: 'getWorkspaceBlueprint',
+      update: 'saveWorkspaceBlueprint'
+    },
+    argMap: {
+      get: (a) => [setupWorkspaceId(a)],
+      list: (a) => [setupWorkspaceId(a)],
+      update: (a) => [setupWorkspaceId(a), a?.blueprint ?? a?.payload]
+    }
+  },
+  'workspace.setup': {
+    service: 'workspace',
+    methods: {
+      get: 'getWorkspaceSetup',
+      list: 'getWorkspaceSetup',
+      create: 'startWorkspaceSetup'
+    },
+    argMap: {
+      get: (a) => [setupWorkspaceId(a)],
+      list: (a) => [setupWorkspaceId(a)],
+      create: (a) => [
+        setupWorkspaceId(a),
+        a?.retry !== undefined ? { retry: a.retry } : {}
       ]
     }
   },

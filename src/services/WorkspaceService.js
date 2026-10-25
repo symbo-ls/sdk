@@ -823,6 +823,117 @@ export class WorkspaceService extends BaseService {
     )
   }
 
+  // ==================== BLUEPRINT + WORKSPACE SETUP ====================
+  // The Fly Blueprint the server keeps for a workspace — owner/admin only,
+  // never in workspace.settings — and the setup job that builds the
+  // workspace from it with one status per step (server lane S1). Make it
+  // real: saveWorkspaceBlueprint → startWorkspaceSetup → hand over; the
+  // workspace polls getWorkspaceSetup and opens the first thread.
+
+  /**
+   * Keep the Blueprint of a workspace (owner/admin of it). The server checks
+   * every key, list and text against its caps and bumps `rev` only when the
+   * content changed: a re-sent identical Blueprint is `changed: false` and
+   * starts nothing. No answer ever carries `summary` — `hasSummary` says
+   * whether the store holds one (the setup moves it into the first thread).
+   *
+   * Throws (the `_request` HTTP error: `err.status`, `err.cause` = the body)
+   * on 400 `invalid_blueprint` (`err.cause.path` names the field,
+   * `err.cause.reason` is `unknown_key` · `bad_type` · `too_long` ·
+   * `too_many` · `bad_value` · `bad_app_id` · `control_char` — never the
+   * value), 403 (not an owner/admin), 409 `setup_running` (a setup run is
+   * reading the Blueprint) or `blueprint_conflict` (a concurrent write — send
+   * it again).
+   *
+   * @param {string} workspaceId
+   * @param {object} blueprint - the Blueprint (`v: 1`, company, industry, apps,
+   *   site, concepts, lang, theme, summary, preset, …)
+   * @returns {Promise<{ blueprint: object, hasSummary: boolean, rev: number,
+   *   updatedAt: (string|null), updatedBy: (string|null), changed: boolean }>}
+   */
+  async saveWorkspaceBlueprint (workspaceId, blueprint) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!blueprint || typeof blueprint !== 'object' || Array.isArray(blueprint)) {
+      throw new Error('blueprint must be an object')
+    }
+    return this._call(
+      'saveWorkspaceBlueprint',
+      `/workspaces/${workspaceId}/blueprint`,
+      { method: 'PUT', body: blueprint }
+    )
+  }
+
+  /**
+   * The Blueprint the server keeps for a workspace (owner/admin of it), or
+   * `null` before the first save. Never its `summary` (see `hasSummary`).
+   *
+   * @param {string} workspaceId
+   * @returns {Promise<({ blueprint: object, hasSummary: boolean, rev: number,
+   *   updatedAt: (string|null), updatedBy: (string|null) }|null)>}
+   */
+  async getWorkspaceBlueprint (workspaceId) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    return this._call(
+      'getWorkspaceBlueprint',
+      `/workspaces/${workspaceId}/blueprint`
+    )
+  }
+
+  /**
+   * Start the workspace setup from the kept Blueprint (owner/admin). The
+   * server runs `name`, `language`, `theme`, `onboarding` and `thread` (the
+   * first thread with the plan and summary notes — no AI turn, no charge)
+   * BEFORE it answers, then the apps (one `app:<owner/key>` step each), the
+   * preset and the website in the background. Idempotent: the same Blueprint
+   * revision answers its job unchanged; `retry: true` runs the `failed`
+   * steps of a finished job again.
+   *
+   * Throws (the `_request` HTTP error) on 400 `invalid_setup`, 403, 409
+   * `no_blueprint` (save one first) or `setup_running` (a run of an older
+   * Blueprint is still going).
+   *
+   * @param {string} workspaceId
+   * @param {{ retry?: boolean }} [options]
+   * @returns {Promise<SetupStatus>} the job — see getWorkspaceSetup. `threadId`
+   *   is set once the `thread` step is done.
+   */
+  async startWorkspaceSetup (workspaceId, { retry } = {}) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    const body = {}
+    if (retry !== undefined) body.retry = retry
+    return this._call(
+      'startWorkspaceSetup',
+      `/workspaces/${workspaceId}/setup`,
+      { method: 'POST', body }
+    )
+  }
+
+  /**
+   * The setup job of a workspace (owner/admin), or `null` before the first
+   * start. A run whose server process died (`stale: true`) is resumed by this
+   * read once its lease has expired.
+   *
+   * @typedef {{ id: string, run: number, rev: number,
+   *   status: ('running'|'done'|'failed'), reason?: string, stale: boolean,
+   *   steps: Array<{ key: string, status: ('pending'|'running'|'done'|'skipped'|'failed'),
+   *     at: (string|null), reason?: string, detail?: object }>,
+   *   counts: { pending: number, running: number, done: number, skipped: number, failed: number },
+   *   threadId: (string|null), projectId: (string|null),
+   *   startedAt: (string|null), finishedAt: (string|null) }} SetupStatus
+   *   `steps` in run order; a step's `reason` is a code (`app_not_found` for
+   *   an app this environment does not carry yet, `free_cap_reached`, …).
+   *
+   * @param {string} workspaceId
+   * @returns {Promise<(SetupStatus|null)>}
+   */
+  async getWorkspaceSetup (workspaceId) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    return this._call(
+      'getWorkspaceSetup',
+      `/workspaces/${workspaceId}/setup`
+    )
+  }
+
   // ==================== PERMISSIONS ====================
 
   /**

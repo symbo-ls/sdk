@@ -556,6 +556,13 @@ export const SERVICE_METHODS = {
   listWorkspacePresets: 'workspace',
   applyWorkspacePreset: 'workspace',
 
+  // The Fly Blueprint store + the workspace setup job (server lane S1) —
+  // owner/admin: PUT/GET /core/workspaces/:id/blueprint, POST/GET …/setup.
+  saveWorkspaceBlueprint: 'workspace',
+  getWorkspaceBlueprint: 'workspace',
+  startWorkspaceSetup: 'workspace',
+  getWorkspaceSetup: 'workspace',
+
   // Workspace public config + write-only private-secret management.
   // Trusted runtime secret resolution is intentionally not browser-exposed.
   getWorkspacePublicConfig: 'workspace',
