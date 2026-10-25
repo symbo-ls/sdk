@@ -888,19 +888,27 @@ export class WorkspaceService extends BaseService {
    * revision answers its job unchanged; `retry: true` runs the `failed`
    * steps of a finished job again.
    *
+   * `from` is the way back: the page the setup was started from (an https
+   * link on a platform host, or http on localhost). It is sent only when it
+   * is a string. The server keeps its origin + pathname on the person's
+   * onboarding record (`userPrefs.onboarding.from`) when this call starts a
+   * fresh run that writes the record; a retry and an existing record ignore
+   * it, and a bad value is dropped (never a 400).
+   *
    * Throws (the `_request` HTTP error) on 400 `invalid_setup`, 403, 409
    * `no_blueprint` (save one first) or `setup_running` (a run of an older
    * Blueprint is still going).
    *
    * @param {string} workspaceId
-   * @param {{ retry?: boolean }} [options]
+   * @param {{ retry?: boolean, from?: string }} [options]
    * @returns {Promise<SetupStatus>} the job — see getWorkspaceSetup. `threadId`
    *   is set once the `thread` step is done.
    */
-  async startWorkspaceSetup (workspaceId, { retry } = {}) {
+  async startWorkspaceSetup (workspaceId, { retry, from } = {}) {
     if (!workspaceId) throw new Error('workspaceId is required')
     const body = {}
     if (retry !== undefined) body.retry = retry
+    if (typeof from === 'string') body.from = from
     return this._call(
       'startWorkspaceSetup',
       `/workspaces/${workspaceId}/setup`,

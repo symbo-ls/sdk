@@ -186,6 +186,37 @@ test('startWorkspaceSetup POSTs /workspaces/:id/setup — an empty body, or { re
   t.end()
 })
 
+// The way back (server CORE r1 follow-up, S1-API.md §9.16): the page the setup
+// was started from. The SDK sends `from` only when it is a string; the server
+// cleans it (origin + pathname of a platform link), drops a bad value without a
+// 400, and keeps it on the onboarding record only on a fresh run.
+test('startWorkspaceSetup sends `from` (the way back) only when it is a string', async t => {
+  const FROM = 'https://fly.symbols.app/blueprint'
+  const svc = makeService()
+  const requestStub = sandbox.stub(svc, '_request').resolves({ success: true, data: STATUS })
+
+  const started = await svc.startWorkspaceSetup('w1', { from: FROM })
+  const [endpoint, opts] = requestStub.firstCall.args
+  t.equal(endpoint, '/workspaces/w1/setup', 'URL matches')
+  t.equal(opts.method, 'POST', 'method POST')
+  t.deepEqual(JSON.parse(opts.body), { from: FROM }, 'a string rides the body as given (the server cleans it)')
+  t.deepEqual(started, STATUS, 'the job status, unwrapped')
+
+  await svc.startWorkspaceSetup('w1', { retry: true, from: FROM })
+  t.deepEqual(
+    JSON.parse(requestStub.secondCall.args[1].body),
+    { retry: true, from: FROM },
+    'beside retry (the server ignores it on a retry run)'
+  )
+
+  const notStrings = [undefined, null, 42, true, { href: FROM }, [FROM]]
+  for (const from of notStrings) await svc.startWorkspaceSetup('w1', { from })
+  const bodies = requestStub.getCalls().slice(2).map(c => JSON.parse(c.args[1].body))
+  t.deepEqual(bodies, notStrings.map(() => ({})), 'a value that is not a string is never sent')
+  sandbox.restore()
+  t.end()
+})
+
 test('startWorkspaceSetup surfaces a 409 no_blueprint verbatim', async t => {
   t.plan(2)
   const svc = makeService()
@@ -274,4 +305,15 @@ test('sdk.execute("workspace.setup", create | get | list) starts, retries and po
   t.deepEqual(calls[1], { method: 'startWorkspaceSetup', args: ['w1', { retry: true }] })
   t.deepEqual(calls[2], { method: 'getWorkspaceSetup', args: ['w1'] })
   t.deepEqual(calls[3], { method: 'getWorkspaceSetup', args: ['w1'] })
+})
+
+test('sdk.execute("workspace.setup", create) threads `from` (the way back) beside retry', async t => {
+  t.plan(2)
+  const FROM = 'https://fly.symbols.app/blueprint'
+  const calls = []
+  const execute = createEntityDispatcher(makeDispatcherSdk(calls))
+  await execute('workspace.setup', 'create', { workspaceId: 'w1', from: FROM })
+  await execute('workspace.setup', 'create', { workspaceId: 'w1', retry: true, from: FROM })
+  t.deepEqual(calls[0], { method: 'startWorkspaceSetup', args: ['w1', { from: FROM }] })
+  t.deepEqual(calls[1], { method: 'startWorkspaceSetup', args: ['w1', { retry: true, from: FROM }] })
 })

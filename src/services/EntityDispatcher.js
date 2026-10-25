@@ -471,6 +471,7 @@ const ENTITY_ROUTES = {
   //   sdk.execute('workspace.blueprint', 'update', { workspaceId, blueprint })
   //   sdk.execute('workspace.setup', 'create', { workspaceId })            // start
   //   sdk.execute('workspace.setup', 'create', { workspaceId, retry: true })
+  //   sdk.execute('workspace.setup', 'create', { workspaceId, from })      // + the way back
   //   sdk.execute('workspace.setup', 'get', { workspaceId })               // poll
   'workspace.blueprint': {
     service: 'workspace',
@@ -497,7 +498,10 @@ const ENTITY_ROUTES = {
       list: (a) => [setupWorkspaceId(a)],
       create: (a) => [
         setupWorkspaceId(a),
-        a?.retry !== undefined ? { retry: a.retry } : {}
+        {
+          ...(a?.retry !== undefined ? { retry: a.retry } : {}),
+          ...(a?.from !== undefined ? { from: a.from } : {})
+        }
       ]
     }
   },
