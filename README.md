@@ -847,6 +847,10 @@ await workspace.getCreditBalance(workspaceId)
 await workspace.getCreditLedger(workspaceId, { limit, before, reason })
 await workspace.getSpendControls(workspaceId)
 await workspace.updateSpendControls(workspaceId, controls)
+// The price of a builder turn before it is sent: the turn's own body (plus
+// conversationId for an existing thread), POST only. No model call, no write.
+const { step, balance, waived, canStart, enough } =
+  await workspace.estimateBuild(workspaceId, { content, context: { surface: 'add-app-builder' } })
 
 // Permissions / projects
 await workspace.getWorkspacePermissions(workspaceId)

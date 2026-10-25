@@ -942,6 +942,54 @@ export class WorkspaceService extends BaseService {
     )
   }
 
+  /**
+   * The price of a builder turn BEFORE it is sent (server CORE-EST, S1-API.md
+   * "CORE-EST — build estimate"): the credits its first model step reserves,
+   * what this workspace can spend, and whether the first-build waiver covers
+   * it — so a client never guesses "enough". A member of the workspace.
+   *
+   * `body` is the body the builder turn will POST to
+   * `/core/agents/workspaces/:id/conversations/:cid/messages` — `content`,
+   * `context` (with `surface: 'add-app-builder'`), `modelMode`,
+   * `targetAgentId`, `attachments` — plus `conversationId` when the thread
+   * exists (absent: the first turn of a thread not created yet). It is sent
+   * whole and unchanged, in the POST body only (never in the URL); the server
+   * reads it the way the turn does, and never logs, stores or echoes it. No
+   * model call, no write.
+   *
+   * Answer: `step` — `full` (what the first step reserves) and `min` (the
+   * smallest balance the step still starts on: a capped answer); `build` —
+   * null for now, with `basis: 'first-step-only'`; `balance`; `waived` and
+   * `waiver` (`{ reason, threadId, projectId, expiresAt, capRemaining }` |
+   * null); `allocationExceeded` (an org pool's monthly cap refuses the step);
+   * `canStart` (the turn runs now) and `enough` (the build is likely paid
+   * through).
+   *
+   * Throws (the `_request` HTTP error) on 400 `unknown_surface` (not a
+   * builder turn), 401, 404 `workspace_not_found` (not a member) or a thread
+   * the caller cannot use, 503 `NO_AI_PROVIDERS`.
+   *
+   * @param {string} workspaceId
+   * @param {{ content: (string|Array), context: { surface: string },
+   *   conversationId?: string, modelMode?: string, targetAgentId?: string,
+   *   attachments?: Array }} body - the builder turn's body
+   * @returns {Promise<{ surface: string, step: { full: number, min: number },
+   *   build: null, basis: string, balance: number, waived: boolean,
+   *   waiver: (object|null), allocationExceeded: boolean, canStart: boolean,
+   *   enough: boolean }>}
+   */
+  async estimateBuild (workspaceId, body) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      throw new Error('body must be an object')
+    }
+    return this._call(
+      'estimateBuild',
+      `/workspaces/${workspaceId}/build-estimate`,
+      { method: 'POST', body }
+    )
+  }
+
   // ==================== PERMISSIONS ====================
 
   /**

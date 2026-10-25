@@ -565,6 +565,10 @@ export const SERVICE_METHODS = {
   startWorkspaceSetup: 'workspace',
   getWorkspaceSetup: 'workspace',
 
+  // The price of a builder turn before it is sent (server CORE-EST) — a member:
+  // POST /core/workspaces/:id/build-estimate with the turn's own body.
+  estimateBuild: 'workspace',
+
   // Workspace public config + write-only private-secret management.
   // Trusted runtime secret resolution is intentionally not browser-exposed.
   getWorkspacePublicConfig: 'workspace',
