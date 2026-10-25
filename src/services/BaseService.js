@@ -613,6 +613,9 @@ export class BaseService {
       // The Workspace Presets registry (GET /core/presets) — public and
       // cached `public, max-age=300`; the landing and Fly read it signed out.
       'listWorkspacePresets',
+      // The integrations catalogue (GET /core/integrations/catalog) — public
+      // and cached; the landing's Integrations page reads it signed out.
+      'getIntegrationsCatalog',
       // Anonymous meet guest flow — unauthenticated visitors join public
       // rooms through the waiting room; no bearer token is attached.
       'meetGuestMeta',

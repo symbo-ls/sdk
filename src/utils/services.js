@@ -397,6 +397,7 @@ export const SERVICE_METHODS = {
   assignOrgIntegrationScope: 'integration',
   reorderOrgIntegrations: 'integration',
   listOrgIntegrationKinds: 'integration',
+  getIntegrationsCatalog: 'integration',
   // Capability dispatch (data plane) — the per-kind call surface behind the
   // CRUD above.
   callOrgIntegrationCapability: 'integration',
