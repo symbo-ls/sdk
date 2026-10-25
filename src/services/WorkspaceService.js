@@ -173,6 +173,50 @@ export class WorkspaceService extends BaseService {
     })
   }
 
+  // ==================== DATA EXPORT ("export any time") ====================
+  //
+  // An owner/admin archive of the workspace data (server domains/workspaceExport).
+  // The server gates every call: a signed-in session, owner or admin by the
+  // caller's real role, and only the requester sees or downloads a job. The
+  // archive is a ZIP (JSON + CSV per collection) kept 7 days; the download
+  // link is a fresh 5-minute signed URL per call.
+
+  async startWorkspaceExport (workspaceId) {
+    if (!workspaceId) throw new Error('Workspace ID is required')
+    return this._call('startWorkspaceExport', `/workspaces/${workspaceId}/exports`, {
+      method: 'POST',
+    })
+  }
+
+  async listWorkspaceExports (workspaceId) {
+    if (!workspaceId) throw new Error('Workspace ID is required')
+    return this._call('listWorkspaceExports', `/workspaces/${workspaceId}/exports`)
+  }
+
+  async getWorkspaceExport (workspaceId, exportId) {
+    if (!workspaceId) throw new Error('Workspace ID is required')
+    if (!exportId) throw new Error('Export ID is required')
+    return this._call('getWorkspaceExport', `/workspaces/${workspaceId}/exports/${exportId}`)
+  }
+
+  async getWorkspaceExportDownloadUrl (workspaceId, exportId) {
+    if (!workspaceId) throw new Error('Workspace ID is required')
+    if (!exportId) throw new Error('Export ID is required')
+    return this._call(
+      'getWorkspaceExportDownloadUrl',
+      `/workspaces/${workspaceId}/exports/${exportId}/download`,
+      { method: 'POST' },
+    )
+  }
+
+  async deleteWorkspaceExport (workspaceId, exportId) {
+    if (!workspaceId) throw new Error('Workspace ID is required')
+    if (!exportId) throw new Error('Export ID is required')
+    return this._call('deleteWorkspaceExport', `/workspaces/${workspaceId}/exports/${exportId}`, {
+      method: 'DELETE',
+    })
+  }
+
   // ==================== MEMBER RECORD SCOPE (LOCATION axis) ====================
   //
   // The caller side of the records-plane scope-field mechanism (server
