@@ -139,6 +139,16 @@ await auth.register({ email, password, name, preset, acquisition: { visitor, sou
 await sdk.updateMe({ signupIntent: { preset, acquisition: { visitor, source, campaign, plan } } })
 ```
 
+**Sign-up policy.** What a sign-up form shows before the person types, read
+from the server instead of a copy: the password rule it enforces, whether a
+new account's first build is free, and the AI credits a new workspace gets.
+Public (no session needed, no token sent); the server's bare object.
+
+```javascript
+const { password, firstBuildFree, signupCredits } = await sdk.getSignupPolicy()
+// password: { minLength, lower, upper, digit, special }
+```
+
 **User Data:**
 
 ```javascript

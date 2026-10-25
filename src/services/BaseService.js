@@ -587,6 +587,10 @@ export class BaseService {
   // Helper method to determine if a method requires initialization
   _requiresInit (methodName) {
     const noInitMethods = new Set([
+      // The sign-up policy (GET /core/auth/signup-policy) — public, the same
+      // answer for everyone, cached `public, max-age=300`; a sign-up form
+      // reads it signed out, before register.
+      'getSignupPolicy',
       'register',
       'login',
       // Sign-out sends its own headers + the refresh token to revoke; a

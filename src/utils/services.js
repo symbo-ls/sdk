@@ -24,6 +24,8 @@ export const SERVICE_METHODS = {
   // Auth methods
   getStoredAuthState: 'auth',
   getAuthToken: 'auth',
+  // The public sign-up policy (GET /core/auth/signup-policy) — read before register.
+  getSignupPolicy: 'auth',
   register: 'auth',
   login: 'auth',
   startDemo: 'auth',

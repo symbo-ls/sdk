@@ -44,6 +44,25 @@ export class AuthService extends BaseService {
 
   // ==================== AUTH METHODS ====================
 
+  /**
+   * The sign-up policy (server CORE r1, GET /core/auth/signup-policy): what a
+   * sign-up form shows BEFORE the person types — the password rule the server
+   * enforces, whether a new account's first build is free, and the AI credits
+   * a new workspace gets. PUBLIC: no bearer token is attached (a signed-out
+   * Fly page or sign-up form reads it); the server answers the same object to
+   * everyone, `Cache-Control: public, max-age=300`. The answer is the server's
+   * BARE object (no `{ success, data }` envelope), returned as it came.
+   *
+   * @returns {Promise<{
+   *   password: { minLength: number, lower: boolean, upper: boolean, digit: boolean, special: string },
+   *   firstBuildFree: boolean,
+   *   signupCredits: number
+   * }>}
+   */
+  async getSignupPolicy() {
+    return this._call('getSignupPolicy', '/auth/signup-policy')
+  }
+
   async register(userData, options = {}) {
     try {
       const { payload, session } = this._preparePluginPayload(
