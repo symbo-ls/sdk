@@ -94,3 +94,49 @@ test('voiceVoices({ workspaceId }) names the workspace in the query', async t =>
   sandbox.restore()
   t.end()
 })
+
+// voiceAgentSession — POST /core/ai/voice/agent: a single-use token for a live
+// call with the private workspace voice agent (the overlay's talk mode) plus
+// the voice the call speaks in. The 503 `voice_agent_not_configured` code is
+// how the overlay knows to fall back to the recorder loop.
+test('voiceAgentSession POSTs /ai/voice/agent with the workspace and returns the payload verbatim', async t => {
+  t.plan(6)
+  const svc = makeService()
+  const payload = { conversationToken: 'tok_1', connectionType: 'webrtc', voiceId: 'V1' }
+  const stub = sandbox.stub(svc, '_request').resolves(payload)
+  const out = await svc.voiceAgentSession({ workspaceId: 'ws1' })
+  t.equal(stub.firstCall.args[0], '/ai/voice/agent', 'path')
+  t.equal(stub.firstCall.args[1].method, 'POST', 'POST')
+  t.equal(stub.firstCall.args[1].methodName, 'voiceAgentSession', 'method name for telemetry')
+  t.deepEqual(JSON.parse(stub.firstCall.args[1].body), { workspaceId: 'ws1' }, 'workspace in the body')
+  t.deepEqual(out, payload, 'verbatim')
+  await svc.voiceAgentSession()
+  t.deepEqual(JSON.parse(stub.secondCall.args[1].body), {}, 'no workspace → empty body (active claim)')
+  sandbox.restore()
+  t.end()
+})
+
+test('voiceAgentSession keeps the route code on err.code (503 voice_agent_not_configured)', async t => {
+  t.plan(2)
+  const svc = makeService()
+  const httpErr = new Error('The voice agent is unavailable', {
+    cause: { error: 'voice_agent_not_configured', message: 'The voice agent is unavailable' }
+  })
+  httpErr.status = 503
+  sandbox.stub(svc, '_request').rejects(httpErr)
+  try {
+    await svc.voiceAgentSession({ workspaceId: 'ws1' })
+    t.fail('should throw')
+  } catch (err) {
+    t.equal(err.status, 503, 'status kept')
+    t.equal(err.code, 'voice_agent_not_configured', 'typed code')
+  }
+  sandbox.restore()
+  t.end()
+})
+
+test('voiceAgentSession is registered on the SDK method map', t => {
+  t.plan(1)
+  t.equal(SERVICE_METHODS.voiceAgentSession, 'voice', 'sdk.voiceAgentSession routes to the voice service')
+  t.end()
+})

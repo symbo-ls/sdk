@@ -121,6 +121,41 @@ export class VoiceService extends BaseService {
       throw err
     }
   }
+
+  /**
+   * POST /ai/voice/agent — start a live call with the workspace voice agent
+   * (the overlay's TALK mode): `{ conversationToken, connectionType,
+   * voiceId }` verbatim. The token is single use — pass it straight to
+   * `@elevenlabs/client`'s `Conversation.startSession({ conversationToken,
+   * connectionType })`; `voiceId` is the voice the call speaks in (the
+   * workspace's own, checked by the server like /tts).
+   *
+   * A refusal throws with `status` and the route's typed `code`: 503
+   * `voice_agent_not_configured` (no agent on this server — fall back to the
+   * recorder loop), 429 `rate_limited`, 502/504 upstream.
+   *
+   * `workspaceId` names the workspace (the route checks membership);
+   * without it the server falls back to the active-workspace claim.
+   *
+   * @param {{ workspaceId?: string, signal?: AbortSignal }} [opts]
+   * @returns {Promise<{ conversationToken: string, connectionType: string, voiceId: string }>}
+   */
+  async voiceAgentSession ({ workspaceId, signal } = {}) {
+    this._requireReady('voiceAgentSession')
+    try {
+      return await this._request(`/ai/voice/agent`, {
+        method: 'POST',
+        methodName: 'voiceAgentSession',
+        body: JSON.stringify(workspaceId ? { workspaceId } : {}),
+        ...(signal ? { signal } : {})
+      })
+    } catch (err) {
+      if (err && !err.code && err.cause && typeof err.cause.error === 'string') {
+        err.code = err.cause.error
+      }
+      throw err
+    }
+  }
 }
 
 export const createVoiceService = (config) => new VoiceService(config)

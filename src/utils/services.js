@@ -502,6 +502,8 @@ export const SERVICE_METHODS = {
   voiceTts: 'voice',
   // The account's voice list for the workspace settings Voice card.
   voiceVoices: 'voice',
+  // A token for a live call with the workspace voice agent (talk mode).
+  voiceAgentSession: 'voice',
 
   createWorkspace: 'workspace',
   listWorkspaces: 'workspace',
