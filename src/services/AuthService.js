@@ -316,6 +316,10 @@ export class AuthService extends BaseService {
         if (this._tokenManager) {
           this._tokenManager.setTokens(tokenData)
         }
+        // Complete the session the way login does: cache the user and tell
+        // auth-state subscribers, or they never hear of this sign-in.
+        this._currentUser = response.data?.user || null
+        this._emitAuth?.('SIGNED_IN')
       }
 
       if (response.success) {
@@ -360,6 +364,10 @@ export class AuthService extends BaseService {
         if (this._tokenManager) {
           this._tokenManager.setTokens(tokenData)
         }
+        // Complete the session the way login does: cache the user and tell
+        // auth-state subscribers, or they never hear of this sign-in.
+        this._currentUser = response.data?.user || null
+        this._emitAuth?.('SIGNED_IN')
       }
 
       if (response.success) {
@@ -409,6 +417,10 @@ export class AuthService extends BaseService {
         if (this._tokenManager) {
           this._tokenManager.setTokens(tokenData)
         }
+        // Complete the session the way login does: cache the user and tell
+        // auth-state subscribers, or they never hear of this sign-in.
+        this._currentUser = response.data?.user || null
+        this._emitAuth?.('SIGNED_IN')
       }
 
       if (response.success) {
