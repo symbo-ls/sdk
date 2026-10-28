@@ -33,6 +33,27 @@ test('agreements.list threads kind/status/partyId', async t => {
   t.end()
 })
 
+// G-L (APP-FAMILY-CONTRACT §4): the server list takes free text over number
+// + title and an inclusive created range. A Date bound is sent as ISO-8601.
+test('agreements.list threads q / createdFrom / createdTo (G-L)', async t => {
+  t.plan(4)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves([])
+  await svc.list({
+    q: 'ORD-2026 & co',
+    createdFrom: '2026-10-01T00:00:00+04:00',
+    createdTo: new Date('2026-10-31T19:59:59.999Z')
+  })
+  const qs = new URLSearchParams(stub.firstCall.args[1].split('?')[1])
+  t.equal(qs.get('q'), 'ORD-2026 & co', 'q threaded (encoded)')
+  t.equal(qs.get('createdFrom'), '2026-10-01T00:00:00+04:00', 'createdFrom threaded as given')
+  t.equal(qs.get('createdTo'), '2026-10-31T19:59:59.999Z', 'a Date bound goes as ISO-8601')
+  await svc.list({ q: '', createdFrom: null })
+  t.equal(stub.secondCall.args[1], '/agreements', 'empty values add nothing')
+  sandbox.restore()
+  t.end()
+})
+
 test('agreements.get GETs /agreements/:id encoded', async t => {
   t.plan(2)
   const svc = makeService()
