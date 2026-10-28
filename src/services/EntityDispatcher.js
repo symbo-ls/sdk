@@ -1168,11 +1168,16 @@ const ENTITY_ROUTES = {
     argMap: WS_CRUD_ARG_MAP
   },
   // company-profile is a workspace singleton — no id on get/update; update
-  // carries the upsert payload.
+  // carries the upsert payload. A workspaceId the caller names rides on the
+  // service's options positional (get({ workspaceId }), update(payload,
+  // { workspaceId })) and never in the body, so the read / write is the
+  // NAMED workspace's profile, not the server's active-workspace claim
+  // fallback's. Without one the args are what they always were: get(),
+  // update(payload).
   companyProfile: {
     service: 'companyProfile',
     methods: { get: 'get', update: 'update' },
-    argMap: { get: () => [], update: argMaps.payload }
+    argMap: { get: (a) => _wsOpts(a), update: wsArgMaps.payload }
   },
 
   // ─── §7 spine capabilities (WORKSPACE_DATA_MODEL §7.3–§7.6/§6.9) ─────────────
