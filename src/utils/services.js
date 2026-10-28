@@ -445,6 +445,10 @@ export const SERVICE_METHODS = {
   updateAgentAssignment: 'organization',
   unassignAgent: 'organization',
   setMemberStatus: 'organization',
+  // One member's profile, acted on by the org (profile.edit_others /
+  // profile.private.read) — signed-in only.
+  updateOrgMemberProfile: 'organization',
+  listOrgMemberDocuments: 'organization',
   createOrgInvitation: 'organization',
   createOrgInvitationLink: 'organization',
   listOrgInvitations: 'organization',

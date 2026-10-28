@@ -501,6 +501,89 @@ export class OrganizationService extends BaseService {
     throw new Error(response.message || response.error || 'setMemberStatus failed')
   }
 
+  // ==================== MEMBER PROFILE (org acting on one member) ====================
+  //
+  // The server owns the field list and every rule (MemberProfileService);
+  // these wrappers check only their own arguments. A refusal arrives as the
+  // thrown Error with `err.status` and `err.cause = { error, message, field?,
+  // fields? }` — branch on `err.cause.error`, show `err.message`.
+
+  /**
+   * Edit ANOTHER member's profile as the org (G1).
+   * PATCH /core/organizations/:orgId/members/:userId/profile
+   *
+   * The caller's org role must carry `profile.edit_others` (owner and
+   * co-owner by default; any other role only through a custom role that
+   * adds the key) and STRICTLY outrank the target. Nobody edits an owner
+   * here, and the caller's own profile goes through the self routes.
+   * The member must be active, and must not belong to another organization
+   * (the fields live on their one account, shared by every org).
+   *
+   * @param {string} orgId
+   * @param {string} userId - the member's Mongo _id or the roster's `user_id`
+   * @param {{name?: string, timezone?: string|null, position?: string|null,
+   *   city?: string|null, country?: string|null, github?: string|null,
+   *   bio?: string|null}} patch - only these keys; null (or '') clears a
+   *   field, except `name`, which cannot be cleared
+   * @returns {Promise<{userId: string, user_id: string, name: string,
+   *   timezone: string|null, position: string|null, city: string|null,
+   *   country: string|null, github: string|null, bio: string|null,
+   *   updated: Array<string>}>} the member's profile after the edit
+   * @throws {Error} `.status` / `.cause.error`: 400 `unknown_field` (with
+   *   `fields`), `invalid_field` (with `field`), `empty_patch`; 403
+   *   `insufficient_permission`, `insufficient_rank`, `owner_protected`,
+   *   `self_target`, `member_not_managed`; 404 `member_not_found`; 409
+   *   `member_not_active`; 503 `audit_unavailable` (nothing was saved)
+   */
+  async updateOrgMemberProfile (orgId, userId, patch) {
+    if (!orgId) throw new Error('orgId is required')
+    if (!userId) throw new Error('userId is required')
+    if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
+      throw new Error('patch must be an object of profile fields')
+    }
+    if (!Object.values(patch).some((v) => v !== undefined)) {
+      throw new Error('patch cannot be empty')
+    }
+    return this._call(
+      'updateOrgMemberProfile',
+      `/organizations/${orgId}/members/${encodeURIComponent(userId)}/profile`,
+      { method: 'PATCH', body: patch }
+    )
+  }
+
+  /**
+   * List a member's documents that belong to this org (G2) — metadata only,
+   * newest first; archived and deleted documents are left out.
+   * GET /core/organizations/:orgId/members/:userId/documents
+   *
+   * The caller's org role must carry `profile.private.read` (owner and
+   * co-owner by default; any other role only through a custom role).
+   *
+   * @param {string} orgId
+   * @param {string} userId - the member's Mongo _id or the roster's `user_id`
+   * @param {{limit?: number, offset?: number}} [options] - limit 1..100
+   *   (server default 50), offset >= 0
+   * @returns {Promise<{documents: Array<{id: string, docId: string,
+   *   title: string, state: string, privacy: string, tags: Array<string>,
+   *   folderPath: string, author: string|null, source: string|null,
+   *   createdAt: string, updatedAt: string}>, count: number, limit: number,
+   *   offset: number}>} `count` is the total, not the page size
+   * @throws {Error} `.status` / `.cause.error`: 403
+   *   `insufficient_permission`; 404 `member_not_found`
+   */
+  async listOrgMemberDocuments (orgId, userId, { limit, offset } = {}) {
+    if (!orgId) throw new Error('orgId is required')
+    if (!userId) throw new Error('userId is required')
+    const qs = new URLSearchParams()
+    if (limit !== undefined && limit !== null) qs.set('limit', String(limit))
+    if (offset !== undefined && offset !== null) qs.set('offset', String(offset))
+    const query = qs.toString()
+    return this._call(
+      'listOrgMemberDocuments',
+      `/organizations/${orgId}/members/${encodeURIComponent(userId)}/documents${query ? `?${query}` : ''}`
+    )
+  }
+
   // ==================== INVITATIONS ====================
 
   async createOrgInvitation (orgId, { email, role = 'member', teams }) {

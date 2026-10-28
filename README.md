@@ -754,6 +754,12 @@ await organization.updateOrgMember(orgId, memberId, { role })
 await organization.removeOrgMember(orgId, memberId)
 await organization.getMemberEffectiveRole(orgId, memberId)
 
+// One member's profile, acted on by the org (signed-in only)
+// needs profile.edit_others + a strictly higher rank; never an owner, never self
+await organization.updateOrgMemberProfile(orgId, userId, { name, timezone, position, city, country, github, bio })
+// needs profile.private.read; the member's documents stamped with this org, metadata only
+await organization.listOrgMemberDocuments(orgId, userId, { limit, offset })
+
 // Teams
 await organization.createTeam(orgId, { name, slug, parentTeam })
 await organization.listTeams(orgId)
