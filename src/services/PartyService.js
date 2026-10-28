@@ -25,16 +25,21 @@ const _qs = (workspaceId, extra) => {
 }
 
 export class PartyService extends BaseService {
-  // GET /core/parties?kind=&role=&owner=&q=&includeArchived=&member=
+  // GET /core/parties?kind=&role=&owner=&q=&taxId=&includeArchived=&member=
   // `member`: 'exclude' leaves staff (member-linked parties) out — the CRM
   // contacts list; 'only' lists staff alone. The server refuses any other
   // value (400), it never ignores one.
+  // `q` matches name, legal name, primary email, tax id, reg no and — for a
+  // typed phone — the phones; `taxId` is an EXACT match on the normalized id
+  // ('205 123 456' = '205123456'; a prefix never matches) — the Party
+  // picker's duplicate check before a quick add.
   list (filter = {}, options = {}) {
     const extra = {}
     if (filter.kind) extra.kind = filter.kind
     if (filter.role) extra.role = filter.role
     if (filter.owner) extra.owner = filter.owner
     if (filter.q) extra.q = filter.q
+    if (filter.taxId) extra.taxId = filter.taxId
     if (filter.member) extra.member = filter.member
     if (filter.includeArchived || options.includeArchived) extra.includeArchived = 'true'
     const ws = filter.workspaceId || options.workspaceId
