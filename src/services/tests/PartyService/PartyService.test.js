@@ -53,6 +53,21 @@ test('parties.list threads member (exclude | only); none sends no term', async t
   t.end()
 })
 
+// G-D (APP-FAMILY-CONTRACT §4): the server's exact tax-id filter — the
+// Party picker's duplicate check before a quick add. q (which now also
+// matches tax id, reg no and phones) needs no client change.
+test('parties.list threads taxId (exact filter); none sends no term', async t => {
+  t.plan(2)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves([])
+  await svc.list({ kind: 'company', taxId: '205 123 456', includeArchived: true })
+  t.ok(stub.firstCall.args[1].includes('taxId=205+123+456'), 'taxId threaded (form-encoded)')
+  await svc.list({ kind: 'company' })
+  t.notOk(stub.secondCall.args[1].includes('taxId'), 'no taxId term when not asked')
+  sandbox.restore()
+  t.end()
+})
+
 test('parties.get GETs /parties/:id encoded', async t => {
   t.plan(2)
   const svc = makeService()
