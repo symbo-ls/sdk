@@ -109,3 +109,56 @@ test('companyProfile.update → update(payload), no id', async t => {
   )
   t.end()
 })
+
+// ─── invoices — G-M ops: void with a reason, credit notes; issue scoped ──────
+
+test('invoices.void / createCreditNote / listCreditNotes thread id, body and workspaceId', async t => {
+  const calls = []
+  const execute = createEntityDispatcher(makeSdk(calls))
+  await execute('invoices', 'void', { id: 'i1', reason: 'Duplicate', workspaceId: 'w1' })
+  await execute('invoices', 'createCreditNote', {
+    id: 'i1',
+    lines: [{ qty: 1 }],
+    notes: 'n',
+    workspaceId: 'w1'
+  })
+  await execute('invoices', 'listCreditNotes', { id: 'i1', workspaceId: 'w1' })
+  await execute('invoices', 'void', { id: 'i2', payload: { reason: 'x' } })
+  t.deepEqual(
+    calls[0],
+    { service: 'invoices', method: 'void', args: ['i1', { reason: 'Duplicate' }, { workspaceId: 'w1' }] },
+    'void(id, { reason }, { workspaceId })'
+  )
+  t.deepEqual(
+    calls[1],
+    {
+      service: 'invoices',
+      method: 'createCreditNote',
+      args: ['i1', { lines: [{ qty: 1 }], notes: 'n' }, { workspaceId: 'w1' }]
+    },
+    'createCreditNote(id, payload, { workspaceId }) — id / workspaceId stripped from the body'
+  )
+  t.deepEqual(
+    calls[2],
+    { service: 'invoices', method: 'listCreditNotes', args: ['i1', { workspaceId: 'w1' }] },
+    'listCreditNotes(id, { workspaceId })'
+  )
+  t.deepEqual(
+    calls[3],
+    { service: 'invoices', method: 'void', args: ['i2', { reason: 'x' }] },
+    'an explicit payload pack, no workspace'
+  )
+  t.end()
+})
+
+test('invoices.issue threads a caller workspaceId on the options positional', async t => {
+  const calls = []
+  const execute = createEntityDispatcher(makeSdk(calls))
+  await execute('invoices', 'issue', { id: 'i1', workspaceId: 'w1' })
+  t.deepEqual(
+    calls[0],
+    { service: 'invoices', method: 'issue', args: ['i1', { workspaceId: 'w1' }] },
+    'issue(id, { workspaceId })'
+  )
+  t.end()
+})

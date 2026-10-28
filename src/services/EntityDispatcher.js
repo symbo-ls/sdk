@@ -1148,12 +1148,22 @@ const ENTITY_ROUTES = {
       create: 'create',
       update: 'update',
       remove: 'remove',
-      issue: 'issue'
+      issue: 'issue',
+      void: 'void',
+      createCreditNote: 'createCreditNote',
+      listCreditNotes: 'listCreditNotes'
     },
     argMap: {
       ...WS_CRUD_ARG_MAP,
-      // issue transitions draft → open by id (no body).
-      issue: argMaps.id
+      // issue transitions draft → open by id (no body); the caller's
+      // workspaceId rides on the options positional like the CRUD ops.
+      issue: wsArgMaps.id,
+      // G-M — void(id, { reason }), createCreditNote(id, payload),
+      // listCreditNotes(id); flat callers' id / workspaceId are stripped
+      // from the body.
+      void: wsArgMaps.idPayload,
+      createCreditNote: wsArgMaps.idPayload,
+      listCreditNotes: wsArgMaps.id
     }
   },
   transactions: {
