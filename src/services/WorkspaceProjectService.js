@@ -491,11 +491,19 @@ export class WorkspaceProjectService extends BaseService {
         body: { filter }
       })
     },
-    getEvent: (id) =>
-      this._ws(
+    // The by-id calls (get / update / delete) take the same optional trailing
+    // workspaceId as listEvents. The worker reads it from the query; without
+    // it the route acts in the caller's STORED activeWorkspace (the last one
+    // used in any tab), so a write to this workspace's own event answered
+    // 200 + [] from a page in another workspace.
+    getEvent: (id, workspaceId) => {
+      const wsId = this._chatWorkspaceId(workspaceId)
+      const qs = wsId ? `?workspaceId=${encodeURIComponent(wsId)}` : ''
+      return this._ws(
         'calendar.getEvent',
-        `/calendar/events/${encodeURIComponent(id)}`
-      ),
+        `/calendar/events/${encodeURIComponent(id)}${qs}`
+      )
+    },
     createEvent: (payload) => {
       const wsId = this._chatWorkspaceId(payload?.workspace_id)
       return this._ws('calendar.createEvent', '/calendar/events', {
@@ -503,23 +511,29 @@ export class WorkspaceProjectService extends BaseService {
         body: { payload: wsId ? { ...payload, workspace_id: wsId } : payload }
       })
     },
-    updateEvent: (id, payload) =>
-      this._ws(
+    updateEvent: (id, payload, workspaceId) => {
+      const wsId = this._chatWorkspaceId(workspaceId)
+      const qs = wsId ? `?workspaceId=${encodeURIComponent(wsId)}` : ''
+      return this._ws(
         'calendar.updateEvent',
-        `/calendar/events/${encodeURIComponent(id)}`,
+        `/calendar/events/${encodeURIComponent(id)}${qs}`,
         {
           method: 'PATCH',
           body: { payload }
         }
-      ),
-    deleteEvent: (id) =>
-      this._ws(
+      )
+    },
+    deleteEvent: (id, workspaceId) => {
+      const wsId = this._chatWorkspaceId(workspaceId)
+      const qs = wsId ? `?workspaceId=${encodeURIComponent(wsId)}` : ''
+      return this._ws(
         'calendar.deleteEvent',
-        `/calendar/events/${encodeURIComponent(id)}`,
+        `/calendar/events/${encodeURIComponent(id)}${qs}`,
         {
           method: 'DELETE'
         }
-      ),
+      )
+    },
     // CORE-CALENDAR-SERIES-BULK-SOFT-DELETE-1 — future-scope series
     // soft-delete: one id-free filtered pass over the persisted Google
     // series (instances outside the loaded window included). The server
