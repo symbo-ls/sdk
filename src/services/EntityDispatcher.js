@@ -129,6 +129,43 @@ const growthActivationArgs = (a) => [
   a && typeof a === 'object' && !Array.isArray(a) ? a.workspaceId ?? a.id : a
 ]
 
+// The `publicBookings` route (PublicBookingService, SITES-4). The workspace
+// handle a call names: the bare value, `workspace` (canonical), `workspaceId`,
+// or inside a nested `params` / `filter` pack.
+const publicBookingWorkspace = (a) => {
+  if (typeof a === 'string') return a
+  return a?.workspace ?? a?.workspaceId ?? a?.params?.workspace ?? a?.filter?.workspace
+}
+
+// The keys of the sdk adapter's insert pack ({ payload: form, data: form,
+// ...params }) that are not request fields.
+const PUBLIC_BOOKING_PACK_KEYS = Object.freeze(['payload', 'data', 'workspaceId'])
+
+// ONE request body for requestPublicBooking from either shape:
+//   - the declarative insert pack — the page's `params` (fixed by the site:
+//     workspace, kind, mode, context, …) spread flat beside `data`, the form's
+//     fields: the body is the params with the form's fields over them, so a
+//     visitor's pick (a `kind` select) beats the page's default;
+//   - an imperative flat bag: { workspace, name, email, … } as it is.
+// The workspace is the explicit one (`workspace`, then `workspaceId`) before
+// a form field of that name. Undefined values are dropped; pack keys never
+// reach the body. No workspace → the method itself refuses.
+const publicBookingRequestArgs = (a) => {
+  const bag = a && typeof a === 'object' && !Array.isArray(a) ? a : {}
+  const raw = bag.data ?? bag.payload
+  const form = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}
+  const body = {}
+  for (const [k, v] of Object.entries(bag)) {
+    if (v !== undefined && !PUBLIC_BOOKING_PACK_KEYS.includes(k)) body[k] = v
+  }
+  for (const [k, v] of Object.entries(form)) {
+    if (v !== undefined) body[k] = v
+  }
+  const workspace = bag.workspace ?? bag.workspaceId ?? form.workspace
+  if (workspace !== undefined) body.workspace = workspace
+  return body
+}
+
 const CRUD_ARG_MAP = {
   list: argMaps.filterOptions,
   get: argMaps.id,
@@ -767,6 +804,32 @@ const ENTITY_ROUTES = {
     argMap: {
       list: (a) => [a?.scope ?? a?.workspaceId, a?.key ?? a?.collection, a?.idOrSlug ?? a?.slug ?? a?.id],
       get: (a) => [a?.scope ?? a?.workspaceId, a?.key ?? a?.collection, a?.idOrSlug ?? a?.slug ?? a?.id]
+    }
+  },
+  // ─── Public booking intake (PublicBookingService, /core/bookings/public/*) ──
+  // The ANONYMOUS booking surface of a workspace that opted in
+  // (settings.publicBookings) — SITES-4. A published site:
+  //   fetch: { from: 'publicBookings', params: { workspace: 'ws_…' } }
+  //     → listPublicBookingServices — resolves { services: [{ id, name, kind,
+  //       durationMinutes, price, currency }] }
+  //   fetch: { method: 'insert', from: 'publicBookings', on: 'submit',
+  //            params: { workspace: 'ws_…' } }
+  //     → requestPublicBooking — resolves { number, meeting? }
+  //   sdk.execute('publicBookings', 'create', { workspace, name, email, … })
+  // `workspace` (the ws_ key or the _id, never a slug) is the canonical name;
+  // `workspaceId` is accepted as an alias. See publicBookingRequestArgs for
+  // how one request body is built from the page's params and the form.
+  publicBookings: {
+    service: 'publicBookings',
+    methods: {
+      list: 'listPublicBookingServices',
+      create: 'requestPublicBooking',
+      submit: 'requestPublicBooking'
+    },
+    argMap: {
+      list: (a) => [publicBookingWorkspace(a)],
+      create: (a) => [publicBookingRequestArgs(a)],
+      submit: (a) => [publicBookingRequestArgs(a)]
     }
   },
   recordCollections: {

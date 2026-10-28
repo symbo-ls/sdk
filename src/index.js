@@ -72,6 +72,7 @@ import {
   createBuildsService,
   createStorefrontService,
   createPublicCollectionService,
+  createPublicBookingService,
   createPersonaService,
   workspaceProjectBaseUrl
 } from './services/index.js'
@@ -762,6 +763,15 @@ export class SDK {
           options: this._options
         })
       ),
+      // ANONYMOUS public booking intake against /core/bookings/public/*
+      // (list services / file a request) — see PublicBookingService.js.
+      this._initService(
+        'publicBookings',
+        createPublicBookingService({
+          context: this._context,
+          options: this._options
+        })
+      ),
       // Persona sessions ("view as <role>" — role simulation, never
       // per-person impersonation) against /core/persona/* on the main
       // server. Scope resolution is server-side in claimsToScope (server
@@ -1259,6 +1269,7 @@ export {
   createBuildsService,
   createStorefrontService,
   createPublicCollectionService,
+  createPublicBookingService,
   createPersonaService,
   workspaceProjectBaseUrl
 } from './services/index.js'

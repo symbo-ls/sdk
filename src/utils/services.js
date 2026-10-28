@@ -757,6 +757,11 @@ export const SERVICE_METHODS = {
   getPublicRecord: 'publicRecords',
   submitPublicRecord: 'publicRecords',
   votePublicRecord: 'publicRecords',
+  // ANONYMOUS public booking intake (PublicBookingService,
+  // /core/bookings/public/*, SITES-4). Both are in BaseService._requiresInit's
+  // no-auth set; requestPublicBooking is never retried.
+  listPublicBookingServices: 'publicBookings',
+  requestPublicBooking: 'publicBookings',
 
   // Persona sessions (tickets/sonnet.md PERSONA-4) — role simulation
   // ("view as <role>"), NEVER per-person impersonation; scope is resolved

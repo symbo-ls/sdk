@@ -136,6 +136,9 @@ import { StorefrontService } from './StorefrontService.js'
 // Generic opt-in ANONYMOUS records surface (/core/public/*) — list / get /
 // submit / vote on collections whose owner set RecordCollection.public.
 import { PublicCollectionService } from './PublicCollectionService.js'
+// ANONYMOUS public booking intake (/core/bookings/public/*, SITES-4) — a
+// published site lists a workspace's services and files a booking request.
+import { PublicBookingService } from './PublicBookingService.js'
 // Persona sessions — role simulation ("view as <role>"), never per-person
 // impersonation. /core/persona/* on the main server; scope resolution is
 // server-side in claimsToScope (server 886a9b27). See PersonaService.js.
@@ -280,6 +283,10 @@ export const createStorefrontService = (config) =>
 // Public records service — see PublicCollectionService.js header.
 export const createPublicCollectionService = (config) =>
   createService(PublicCollectionService, config)
+
+// Public booking intake service — see PublicBookingService.js header.
+export const createPublicBookingService = (config) =>
+  createService(PublicBookingService, config)
 
 // Meet service — guest waiting-room flow (anonymous) + host-side remote
 // mute against /core/meet/* on the main server.
@@ -481,5 +488,6 @@ export {
   RecurrenceService,
   MailService,
   StorefrontService,
-  PublicCollectionService
+  PublicCollectionService,
+  PublicBookingService
 }
