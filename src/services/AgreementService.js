@@ -18,13 +18,23 @@ const _qs = (workspaceId, extra) => {
   return s ? `?${s}` : ''
 }
 
+// A created-range bound: a Date goes as ISO-8601, anything else as given
+// (the server parses it and answers 400 on a bad one).
+const _bound = (v) => (v instanceof Date ? v.toISOString() : String(v))
+
 export class AgreementService extends BaseService {
-  // GET /core/agreements?kind=&status=&partyId=
+  // GET /core/agreements?kind=&status=&partyId=&q=&createdFrom=&createdTo=
+  // q matches number + title (plain text); the created range is inclusive
+  // (G-L, APP-FAMILY-CONTRACT §4).
   list (filter = {}, options = {}) {
+    filter = filter || {}
     const extra = {}
     if (filter.kind) extra.kind = filter.kind
     if (filter.status) extra.status = filter.status
     if (filter.partyId) extra.partyId = filter.partyId
+    if (filter.q) extra.q = filter.q
+    if (filter.createdFrom) extra.createdFrom = _bound(filter.createdFrom)
+    if (filter.createdTo) extra.createdTo = _bound(filter.createdTo)
     const ws = filter.workspaceId || options.workspaceId
     return this._call('agreements.list', `/agreements${_qs(ws, extra)}`)
   }
@@ -44,6 +54,11 @@ export class AgreementService extends BaseService {
   }
 
   // PATCH /core/agreements/:id (editor; number stripped, total re-derived).
+  // G-L payload keys: `expect: { status?, updatedAt? }` (a mismatch throws
+  // with err.status 409, err.cause.error 'agreement_changed' and
+  // err.cause.current { status, updatedAt }); `customPatch` merges top-level
+  // custom keys (null removes one); `party` while draft; status 'cancelled'
+  // + `cancelReason`.
   update (id, payload = {}, { workspaceId } = {}) {
     return this._call('agreements.update', `/agreements/${encodeURIComponent(id)}${_qs(workspaceId)}`, {
       method: 'PATCH',
