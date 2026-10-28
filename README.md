@@ -920,6 +920,9 @@ await ws.notifications.list()
 await ws.notifications.unreadCount()
 await ws.notifications.markRead(id)
 await ws.notifications.markAllRead()
+await ws.notifications.create({ title, body, toRole: 'admin' }) // notify by audience
+await ws.notifications.close({ appId, dedupKey })
+await ws.notifications.audience() // [{ ref, name, avatar }] for toMembers
 await ws.search(q, opts)
 await ws.permissions.me()
 await ws.permissions.check(action, resource)

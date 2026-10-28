@@ -2034,15 +2034,30 @@ const ENTITY_ROUTES = {
       // wrapper exposes a /notifications/bulk endpoint.
       create: 'notifications.create',
       update: 'notifications.markRead',
-      markAllRead: 'notifications.markAllRead'
+      markAllRead: 'notifications.markAllRead',
+      // close — the OPEN notices an installed app sent under one dedupKey
+      // (POST /notifications/close { appId, dedupKey }).
+      close: 'notifications.close'
     },
     argMap: {
       list: () => [],
       get: () => [],
-      create: argMaps.payload,
+      // A top-level `workspaceId` (the shell bridge's) routes into create's
+      // opts → `?workspaceId=`; `{ payload }` alone is unchanged.
+      create: wsArgMaps.payload,
       update: argMaps.id,
-      markAllRead: () => []
+      markAllRead: () => [],
+      close: argMaps.payload
     }
+  },
+  // The members a sender may notify by ref (GET /notifications/audience):
+  // [{ ref, name, avatar, self?, role? }] — no address, no id. A read-only
+  // entity; the one-word lowercase name is what the shell's app data bridge
+  // (which lower-cases a page's `from`) can reach.
+  'workspaceProject.audience': {
+    service: 'workspaceProject',
+    methods: { list: 'notifications.audience' },
+    argMap: { list: (a) => _wsOpts(a) }
   },
   'workspaceProject.presence': {
     service: 'workspaceProject',
