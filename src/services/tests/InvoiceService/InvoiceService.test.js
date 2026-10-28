@@ -120,3 +120,69 @@ test('invoices threads workspaceId as a query param across reads, writes + issue
   sandbox.restore()
   t.end()
 })
+
+// ─── G-M (APP-FAMILY-CONTRACT §4): agreement filter, void with a reason,
+// credit notes ────────────────────────────────────────────────────────────────
+
+test('invoices.list forwards agreement (and its alias agreementId)', async t => {
+  t.plan(3)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves([])
+  await svc.list({ agreement: 'a1' })
+  t.ok(stub.getCall(0).args[1].includes('agreement=a1'), 'agreement threaded')
+  await svc.list({ agreementId: 'a2', status: 'open' }, { workspaceId: 'ws1' })
+  const path = stub.getCall(1).args[1]
+  t.ok(path.includes('agreement=a2'), 'agreementId goes as agreement')
+  t.ok(path.includes('workspaceId=ws1') && path.includes('status=open'), 'other keys kept')
+  sandbox.restore()
+  t.end()
+})
+
+test('invoices.void POSTs /invoices/:id/void with the reason', async t => {
+  t.plan(6)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({})
+  await svc.void('i/1', { reason: 'Duplicate' }, { workspaceId: 'ws1' })
+  const [name, path, init] = stub.firstCall.args
+  t.equal(name, 'invoices.void', 'name')
+  t.equal(path, '/invoices/i%2F1/void?workspaceId=ws1', 'void path, id encoded, ws threaded')
+  t.equal(init.method, 'POST', 'POST')
+  t.deepEqual(init.body, { reason: 'Duplicate' }, 'reason in the body, never the URL')
+  await svc.void('i1')
+  await svc.void('i1', null)
+  t.deepEqual(stub.secondCall.args[2].body, { reason: null }, 'no reason → null')
+  t.deepEqual(stub.thirdCall.args[2].body, { reason: null }, 'a null payload → null')
+  sandbox.restore()
+  t.end()
+})
+
+test('invoices.createCreditNote POSTs /invoices/:id/credit-notes with the payload', async t => {
+  t.plan(4)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves({ creditNote: {}, invoice: {} })
+  const payload = {
+    lines: [{ description: 'Returned', qty: 1, unitAmount: { value: -100, currency: 'GEL' } }],
+    expectCredited: 0
+  }
+  await svc.createCreditNote('i/1', payload, { workspaceId: 'ws1' })
+  const [name, path, init] = stub.firstCall.args
+  t.equal(name, 'invoices.createCreditNote', 'name')
+  t.equal(path, '/invoices/i%2F1/credit-notes?workspaceId=ws1', 'credit-notes path')
+  t.equal(init.method, 'POST', 'POST')
+  t.deepEqual(init.body, payload, 'body')
+  sandbox.restore()
+  t.end()
+})
+
+test('invoices.listCreditNotes GETs /invoices/:id/credit-notes', async t => {
+  t.plan(3)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves([])
+  await svc.listCreditNotes('i1', { workspaceId: 'ws1' })
+  const [name, path, init] = stub.firstCall.args
+  t.equal(name, 'invoices.listCreditNotes', 'name')
+  t.equal(path, '/invoices/i1/credit-notes?workspaceId=ws1', 'path')
+  t.equal(init, undefined, 'a GET (no init)')
+  sandbox.restore()
+  t.end()
+})
