@@ -744,11 +744,41 @@ export class WorkspaceProjectService extends BaseService {
     // create() stays on the worker surface (Mongo-backed server-side) — the
     // realtime INSERT delivery keys off that write path. Repointing create
     // is a later increment.
-    create: (payload) =>
-      this._ws('notifications.create', '/notifications', {
+    //
+    // NOTIFY BY AUDIENCE (server notificationAudience, 2026-10-28): a payload
+    // that names toRole / toPermission / toTeam / toMembers / toUserIds /
+    // includeAdmins is resolved server-side against the workspace's OWN
+    // member list (never an address the caller supplies); it may carry
+    // appId + dedupKey (one OPEN row per recipient) and severity. The
+    // workspace is `?workspaceId=` — explicit `opts.workspaceId`, else the
+    // SDK's active workspace (_chatWorkspaceId), so a stale token claim
+    // never picks the audience. A payload with no audience key keeps the
+    // old paths (no recipient → the caller).
+    create: (payload, opts) => {
+      const wsId = this._chatWorkspaceId(opts?.workspaceId)
+      const qs = wsId ? `?workspaceId=${encodeURIComponent(wsId)}` : ''
+      return this._ws('notifications.create', `/notifications${qs}`, {
         method: 'POST',
         body: { payload }
-      }),
+      })
+    },
+    // Close the OPEN notices an installed app sent under one dedupKey — for
+    // every recipient (read + closedAt; the key is free for the next send).
+    close: ({ appId, dedupKey, workspaceId } = {}) => {
+      const wsId = this._chatWorkspaceId(workspaceId)
+      const qs = wsId ? `?workspaceId=${encodeURIComponent(wsId)}` : ''
+      return this._ws('notifications.close', `/notifications/close${qs}`, {
+        method: 'POST',
+        body: { appId, dedupKey }
+      })
+    },
+    // The members a sender may pick: [{ ref, name, avatar, self?, role? }] —
+    // `ref` is an opaque member ref for `toMembers`; no address, no id.
+    audience: (opts) => {
+      const wsId = this._chatWorkspaceId(opts?.workspaceId)
+      const qs = wsId ? `?workspaceId=${encodeURIComponent(wsId)}` : ''
+      return this._ws('notifications.audience', `/notifications/audience${qs}`)
+    },
     markRead: (id) =>
       this._request(`/notifications/${encodeURIComponent(id)}/read`, {
         method: 'POST',
