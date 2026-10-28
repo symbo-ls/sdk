@@ -102,10 +102,52 @@ test('companyProfile.update → update(payload), no id', async t => {
   const calls = []
   const execute = createEntityDispatcher(makeSdk(calls))
   await execute('companyProfile', 'update', { payload: { legalName: 'Acme' } })
+  await execute('companyProfile', 'update', { legalName: 'Acme' })
   t.deepEqual(
     calls[0],
     { service: 'companyProfile', method: 'update', args: [{ legalName: 'Acme' }] },
     'update(payload) with no leading id'
+  )
+  t.deepEqual(calls[1].args, [{ legalName: 'Acme' }], 'a flat body without workspaceId: the same args')
+  t.end()
+})
+
+// The singleton is the CALLER'S workspace's: a workspaceId the caller names
+// (a routing param, never body) rides on the service's options positional, so
+// the read / write never falls back to the server's active-workspace claim —
+// a module in workspace B must not read workspace A's profile.
+test('companyProfile.get → get({ workspaceId }) when the caller names its workspace', async t => {
+  const calls = []
+  const execute = createEntityDispatcher(makeSdk(calls))
+  await execute('companyProfile', 'get', { workspaceId: 'ws1' })
+  await execute('companyProfile', 'get', { id: 'ignored', workspaceId: 'ws1' })
+  t.deepEqual(
+    calls[0],
+    { service: 'companyProfile', method: 'get', args: [{ workspaceId: 'ws1' }] },
+    'get(opts) pins the workspace'
+  )
+  t.deepEqual(calls[1].args, [{ workspaceId: 'ws1' }], 'an id is still dropped')
+  t.end()
+})
+
+test('companyProfile.update → update(payload, { workspaceId }); workspaceId never rides in the body', async t => {
+  const calls = []
+  const execute = createEntityDispatcher(makeSdk(calls))
+  await execute('companyProfile', 'update', { payload: { baseCurrency: 'GEL' }, workspaceId: 'ws1' })
+  await execute('companyProfile', 'update', {
+    baseCurrency: 'GEL',
+    numbering: { order: { prefix: 'ORD-{YYYY}-' } },
+    workspaceId: 'ws1'
+  })
+  t.deepEqual(
+    calls[0],
+    { service: 'companyProfile', method: 'update', args: [{ baseCurrency: 'GEL' }, { workspaceId: 'ws1' }] },
+    'a packed payload + the workspace'
+  )
+  t.deepEqual(
+    calls[1].args,
+    [{ baseCurrency: 'GEL', numbering: { order: { prefix: 'ORD-{YYYY}-' } } }, { workspaceId: 'ws1' }],
+    'a flat body without workspaceId + the workspace'
   )
   t.end()
 })
