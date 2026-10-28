@@ -698,17 +698,16 @@ export class WorkspaceProjectService extends BaseService {
         'meet.getTranscriptView',
         `/meet/rooms/${encodeURIComponent(roomId)}/transcript-view`
       ),
-    // Patch the `applied_items` array on a meet_transcript_analyses row
-    // when the user "applies" a suggestion (saves as note, creates
-    // ticket, etc). RLS allows room members to modify this column only.
+    // Patch the applied-items array of a room's transcript analysis when
+    // the user "applies" a suggestion (saves as note, creates ticket, etc).
+    // The /core meet route (room-access gate, writes applied items only;
+    // body { appliedItems }). The workspace-project worker never had this
+    // route — the old worker call answered 404 "no workspace route".
     updateAnalysisAppliedItems: (roomId, appliedItems) =>
-      this._ws(
+      this._call(
         'meet.updateAnalysisAppliedItems',
         `/meet/rooms/${encodeURIComponent(roomId)}/analysis/applied-items`,
-        {
-          method: 'PATCH',
-          body: { applied_items: appliedItems }
-        }
+        { method: 'PATCH', body: { appliedItems } }
       )
   }
 

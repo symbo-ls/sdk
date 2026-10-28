@@ -2544,9 +2544,18 @@ const ENTITY_ROUTES = {
     service: 'workspaceProject',
     methods: { update: 'meet.updateAnalysisAppliedItems' },
     argMap: {
+      // The server needs the ARRAY: callers send it bare ({ appliedItems })
+      // or wrapped ({ payload: { applied_items } }), so unwrap the payload.
       update: (a) => [
         a?.roomId ?? a?.id ?? a?.filter?.room_id,
-        a?.applied_items ?? a?.appliedItems ?? a?.payload ?? a?.data
+        a?.applied_items ??
+          a?.appliedItems ??
+          a?.payload?.applied_items ??
+          a?.payload?.appliedItems ??
+          a?.data?.applied_items ??
+          a?.data?.appliedItems ??
+          a?.payload ??
+          a?.data
       ]
     }
   },
