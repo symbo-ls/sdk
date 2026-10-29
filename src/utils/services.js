@@ -656,10 +656,12 @@ export const SERVICE_METHODS = {
   // POST /core/meet/guest/status  → { status }                   (no auth)
   // POST /core/meet/guest/token   → { token, url, identity }     (no auth)
   // POST /core/meet/mute          → { ok: true }                 (auth, host-only)
+  // POST /core/meet/token         → { roomName, livekitToken, livekitUrl } (auth)
   meetGuestMeta: 'meet',
   meetGuestRequest: 'meet',
   meetGuestStatus: 'meet',
   meetGuestToken: 'meet',
+  meetMintToken: 'meet',
   meetMuteParticipant: 'meet',
   meetArchiveRooms: 'meet',
 
