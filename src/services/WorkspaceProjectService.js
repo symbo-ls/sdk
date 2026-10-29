@@ -205,6 +205,24 @@ export class WorkspaceProjectService extends BaseService {
     return this._requestExternal(url, init)
   }
 
+  // A wrapper whose workspace-project worker route is gone (the worker
+  // answers 404 "no workspace route" for it). It rejects at once and sends
+  // nothing, so a caller learns why — and what to call instead — rather than
+  // reading a 404 from a route that does not exist. Error: `code`
+  // 'route_removed', `method` (this wrapper), `replacement` (the method to
+  // call, or null when there is none). Kept (not deleted) so an old caller
+  // fails with this message instead of "not a function".
+  _routeRemoved(methodName, replacement = null) {
+    const err = new Error(
+      `workspaceProject.${methodName} was removed: the workspace-project worker has no such route. ` +
+        (replacement ? `Use ${replacement}.` : 'There is no replacement.')
+    )
+    err.code = 'route_removed'
+    err.method = `workspaceProject.${methodName}`
+    err.replacement = replacement
+    return Promise.reject(err)
+  }
+
   // The `/sb` PostgREST passthrough (`_sb()`) is REMOVED. It routed arbitrary
   // workspace-tenant tables through /workspace/sb/rest/v1/* so a table could be
   // exposed on the SDK without a curated server route. Every table it served
@@ -678,17 +696,23 @@ export class WorkspaceProjectService extends BaseService {
           method: 'POST'
         }
       ),
-    issueToken: (params) =>
-      this._ws('meet.issueToken', '/meet/token', {
-        method: 'POST',
-        body: { params }
-      }),
-    // #2226 — owner remote-mutes a participant's published audio. Routes
-    // through the worker → meet-mute edge fn → LiveKit
-    // RoomServiceClient.mutePublishedTrack. params: { roomId,
-    // participantIdentity, trackSid, muted }.
-    mute: (params) =>
-      this._ws('meet.mute', '/meet/mute', { method: 'POST', body: { params } }),
+    /**
+     * @deprecated The worker has no POST /meet/token (the token moved to
+     * /core); rejects at once with `route_removed`. Use
+     * `sdk.meetMintToken({ roomId })`.
+     */
+    issueToken: () =>
+      this._routeRemoved('meet.issueToken', 'sdk.meetMintToken({ roomId })'),
+    /**
+     * @deprecated The worker has no POST /meet/mute (moved to /core
+     * 2026-07-31); rejects at once with `route_removed`. Use
+     * `sdk.meetMuteParticipant({ roomId, participantIdentity, trackSid, muted })`.
+     */
+    mute: () =>
+      this._routeRemoved(
+        'meet.mute',
+        'sdk.meetMuteParticipant({ roomId, participantIdentity, trackSid, muted })'
+      ),
     // Combined transcript+analysis view — wraps the
     // `get_meet_transcript_view(uuid)` RPC. Returns
     // { utterances, analysis } in a single round-trip; replaces the
@@ -718,21 +742,16 @@ export class WorkspaceProjectService extends BaseService {
   // workspace-project Supabase docs wrappers are gone; no back-compat alias.
 
   // --- Presence ---------------------------------------------------------------
+  // The worker has no presence routes: presence is the /user-socket roster
+  // (sdk.subscribePresence). Both wrappers reject at once with
+  // `route_removed`.
   presence = {
-    // Presence follows the workspace the tab is VIEWING (server membership-
-    // validates; fail-closed to the claim).
-    online: (workspaceId) => {
-      const wsId = this._chatWorkspaceId(workspaceId)
-      const qs = wsId ? `?workspaceId=${encodeURIComponent(wsId)}` : ''
-      return this._ws('presence.online', `/presence/online${qs}`)
-    },
-    heartbeat: (workspaceId) => {
-      const wsId = this._chatWorkspaceId(workspaceId)
-      const qs = wsId ? `?workspaceId=${encodeURIComponent(wsId)}` : ''
-      return this._ws('presence.heartbeat', `/presence/heartbeat${qs}`, {
-        method: 'POST'
-      })
-    }
+    /** @deprecated Use `sdk.subscribePresence({ scope }, onSync)`. */
+    online: () =>
+      this._routeRemoved('presence.online', 'sdk.subscribePresence({ scope }, onSync)'),
+    /** @deprecated Use `sdk.subscribePresence({ scope }, onSync)`. */
+    heartbeat: () =>
+      this._routeRemoved('presence.heartbeat', 'sdk.subscribePresence({ scope }, onSync)')
   }
 
   // --- Notifications ----------------------------------------------------------
@@ -817,19 +836,28 @@ export class WorkspaceProjectService extends BaseService {
   }
 
   // --- Permissions ------------------------------------------------------------
+  // The worker has no permission routes; both wrappers reject at once with
+  // `route_removed`. The caller's keys: sdk.getPermissions(orgId).
   permissions = {
-    me: () => this._ws('permissions.me', '/permissions/me'),
-    check: (action, resource) =>
-      this._ws('permissions.check', '/permissions/check', {
-        method: 'POST',
-        body: { action, resource }
-      })
+    /** @deprecated Use `sdk.getPermissions(orgId)`. */
+    me: () => this._routeRemoved('permissions.me', 'sdk.getPermissions(orgId)'),
+    /** @deprecated Read `sdk.getPermissions(orgId)` and test the key. */
+    check: () =>
+      this._routeRemoved(
+        'permissions.check',
+        'sdk.getPermissions(orgId) (test the key in the answer)'
+      )
   }
 
   // --- System -----------------------------------------------------------------
+  // The worker has no system routes; both wrappers reject at once with
+  // `route_removed`.
   system = {
-    status: () => this._ws('system.status', '/system/status'),
-    featureFlags: () => this._ws('system.featureFlags', '/system/feature-flags')
+    /** @deprecated Use `sdk.getSystemStatus()`. */
+    status: () => this._routeRemoved('system.status', 'sdk.getSystemStatus()'),
+    /** @deprecated Use `sdk.getFeatureFlags()`. */
+    featureFlags: () =>
+      this._routeRemoved('system.featureFlags', 'sdk.getFeatureFlags()')
   }
 
   // --- Persona oracle (escape hatch — tickets/opus.md PERSONA-3) --------------
@@ -2079,5 +2107,8 @@ export class WorkspaceProjectService extends BaseService {
   }
 
   // --- Generic escape hatch ---------------------------------------------------
-  query = (body) => this._ws('query', '/query', { method: 'POST', body })
+  // The worker has no POST /query (and no generic escape hatch): rejects at
+  // once with `route_removed`. Ask for a real route.
+  /** @deprecated No replacement: every read and write has its own route. */
+  query = () => this._routeRemoved('query')
 }

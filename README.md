@@ -902,7 +902,8 @@ await ws.meet.getRoom(id)
 await ws.meet.listMembers(id)
 await ws.meet.listTranscripts(id)
 await ws.meet.waitingRoom()
-await ws.meet.issueToken(params)
+// ws.meet.issueToken / ws.meet.mute — removed (reject with code 'route_removed'):
+//   use sdk.meetMintToken({ roomId }) / sdk.meetMuteParticipant({ … })
 
 // Documents
 await ws.documents.list()
@@ -914,8 +915,7 @@ await ws.documents.listResourceLinks()
 await ws.documents.addResourceLink(payload)
 
 // Presence, notifications, search, permissions, system, people, activity
-await ws.presence.online()
-await ws.presence.heartbeat()
+// ws.presence.online / heartbeat — removed ('route_removed'): use sdk.subscribePresence({ scope }, onSync)
 await ws.notifications.list()
 await ws.notifications.unreadCount()
 await ws.notifications.markRead(id)
@@ -924,10 +924,8 @@ await ws.notifications.create({ title, body, toRole: 'admin' }) // notify by aud
 await ws.notifications.close({ appId, dedupKey })
 await ws.notifications.audience() // [{ ref, name, avatar }] for toMembers
 await ws.search(q, opts)
-await ws.permissions.me()
-await ws.permissions.check(action, resource)
-await ws.system.status()
-await ws.system.featureFlags()
+// ws.permissions.me / check — removed ('route_removed'): use sdk.getPermissions(orgId)
+// ws.system.status / featureFlags — removed ('route_removed'): use sdk.getSystemStatus() / sdk.getFeatureFlags()
 await ws.people.list()
 await ws.people.get(id)
 await ws.people.me()
@@ -935,8 +933,7 @@ await ws.activity.listNotes()
 await ws.activity.addNote(payload)
 await ws.activity.scoringConfig()
 
-// Generic escape hatch
-await ws.query(body)
+// ws.query — removed ('route_removed'); no generic escape hatch: every call has its own route
 ```
 
 ### KV Service
