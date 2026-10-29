@@ -92,4 +92,110 @@ export class OnboardingResearchService extends BaseService {
     if (over) stop()
     return () => end()
   }
+
+  // ── After sign-up: the workspace's build board, "Delete all research" and
+  // the team rows (server PLAN §7b-2 / §7b-3). Authenticated, workspace-
+  // scoped: `workspaceId` explicit, else the active workspace.
+
+  _onboardingWorkspace (workspaceId) {
+    const ws = this._resolveWorkspaceId(workspaceId)
+    if (!ws) throw new Error('workspaceId is required')
+    return encodeURIComponent(ws)
+  }
+
+  // GET /core/onboarding/build → `{ researchId, steps: [{ key, status,
+  // label: { en, ka }, result?, error?, reason?, at }], done }`; a workspace
+  // with no POB sign-up throws `.code` `not_found`.
+  async getOnboardingBuild (workspaceId) {
+    const ws = this._onboardingWorkspace(workspaceId)
+    try {
+      return await this._request(`/onboarding/build?workspaceId=${ws}`, {
+        method: 'GET',
+        methodName: 'getOnboardingBuild'
+      })
+    } catch (error) {
+      throw withCode(error)
+    }
+  }
+
+  // POST /core/onboarding/build/:key/retry — a FAILED step only (409
+  // `not_retryable` otherwise) → the new board.
+  async retryOnboardingBuildStep (workspaceId, key) {
+    if (!key) throw new Error('key is required')
+    const ws = this._onboardingWorkspace(workspaceId)
+    try {
+      return await this._request(
+        `/onboarding/build/${encodeURIComponent(key)}/retry?workspaceId=${ws}`,
+        { method: 'POST', methodName: 'retryOnboardingBuildStep' }
+      )
+    } catch (error) {
+      throw withCode(error)
+    }
+  }
+
+  // DELETE /core/onboarding/workspace-research — ONE call: research values
+  // still unchanged, the research records, the team rows →
+  // `{ deleted: { records, people, profileFields } }`.
+  async deleteOnboardingResearch (workspaceId) {
+    const ws = this._onboardingWorkspace(workspaceId)
+    try {
+      return await this._request(`/onboarding/workspace-research?workspaceId=${ws}`, {
+        method: 'DELETE',
+        methodName: 'deleteOnboardingResearch'
+      })
+    } catch (error) {
+      throw withCode(error)
+    }
+  }
+
+  // GET /core/onboarding/people → `{ people: [{ id, name, role, sourceUrl,
+  // fetchedAt, expiresAt, invitedAt }] }` (names + job titles from the
+  // company's own team page; never an e-mail).
+  async listOnboardingPeople (workspaceId) {
+    const ws = this._onboardingWorkspace(workspaceId)
+    try {
+      return await this._request(`/onboarding/people?workspaceId=${ws}`, {
+        method: 'GET',
+        methodName: 'listOnboardingPeople'
+      })
+    } catch (error) {
+      throw withCode(error)
+    }
+  }
+
+  // DELETE /core/onboarding/people/:personId → `{ removed: true }`.
+  async removeOnboardingPerson (workspaceId, personId) {
+    if (!personId) throw new Error('personId is required')
+    const ws = this._onboardingWorkspace(workspaceId)
+    try {
+      return await this._request(
+        `/onboarding/people/${encodeURIComponent(personId)}?workspaceId=${ws}`,
+        { method: 'DELETE', methodName: 'removeOnboardingPerson' }
+      )
+    } catch (error) {
+      throw withCode(error)
+    }
+  }
+
+  // POST /core/onboarding/people/:personId/invite { email, recipientName }
+  // → `{ invitation: { id, email, role }, person }`. The server sends the
+  // normal workspace invitation with role `editor` and marks the row
+  // (`invitedAt`). The owner types the address; 400 `invalid_email`.
+  async inviteOnboardingPerson (workspaceId, personId, { email, recipientName } = {}) {
+    if (!personId) throw new Error('personId is required')
+    if (!email) throw new Error('email is required')
+    const ws = this._onboardingWorkspace(workspaceId)
+    try {
+      return await this._request(
+        `/onboarding/people/${encodeURIComponent(personId)}/invite?workspaceId=${ws}`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ email, ...(recipientName ? { recipientName } : {}) }),
+          methodName: 'inviteOnboardingPerson'
+        }
+      )
+    } catch (error) {
+      throw withCode(error)
+    }
+  }
 }

@@ -81,3 +81,59 @@ test('streamResearch: anonymous, one event shape, closes itself after done', t =
   sandbox.restore()
   t.end()
 })
+
+test('after sign-up: build board, retry, delete research, team rows — paths + workspace pin', async t => {
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_request').resolves({ ok: true })
+  await svc.getOnboardingBuild('ws1')
+  await svc.retryOnboardingBuildStep('ws1', 'apps')
+  await svc.deleteOnboardingResearch('ws1')
+  await svc.listOnboardingPeople('ws1')
+  await svc.removeOnboardingPerson('ws1', 'p1')
+  await svc.inviteOnboardingPerson('ws1', 'p1', { email: 'nino@demo.example', recipientName: 'Nino' })
+  t.deepEqual(stub.getCalls().map((c) => [c.args[1].method, c.args[0]]), [
+    ['GET', '/onboarding/build?workspaceId=ws1'],
+    ['POST', '/onboarding/build/apps/retry?workspaceId=ws1'],
+    ['DELETE', '/onboarding/workspace-research?workspaceId=ws1'],
+    ['GET', '/onboarding/people?workspaceId=ws1'],
+    ['DELETE', '/onboarding/people/p1?workspaceId=ws1'],
+    ['POST', '/onboarding/people/p1/invite?workspaceId=ws1']
+  ])
+  t.deepEqual(JSON.parse(stub.lastCall.args[1].body), { email: 'nino@demo.example', recipientName: 'Nino' })
+  sandbox.restore()
+  t.end()
+})
+
+test('after sign-up: the active workspace is the default; none throws; refusals carry .code', async t => {
+  const svc = makeService()
+  svc._context = { activeWorkspaceId: 'wsA' }
+  const stub = sandbox.stub(svc, '_request').resolves({})
+  await svc.listOnboardingPeople()
+  t.equal(stub.firstCall.args[0], '/onboarding/people?workspaceId=wsA')
+  sandbox.restore()
+  const bare = makeService()
+  bare._context = {}
+  try {
+    await bare.getOnboardingBuild()
+    t.fail('should throw')
+  } catch (e) {
+    t.match(e.message, /workspaceId is required/)
+  }
+  try {
+    await bare.inviteOnboardingPerson('ws1', 'p1', {})
+    t.fail('should throw')
+  } catch (e) {
+    t.match(e.message, /email is required/)
+  }
+  sandbox.restore()
+  const svc3 = makeService()
+  const err = new Error('x', { cause: { error: 'not_retryable' } })
+  sandbox.stub(svc3, '_request').rejects(err)
+  try {
+    await svc3.retryOnboardingBuildStep('ws1', 'profile')
+  } catch (e) {
+    t.equal(e.code, 'not_retryable')
+  }
+  sandbox.restore()
+  t.end()
+})
