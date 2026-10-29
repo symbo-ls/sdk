@@ -479,9 +479,17 @@ export class OrganizationService extends BaseService {
 
   // Set a member's account status. 'inactive' = read-only access (the auth
   // middleware allows reads but 403s writes); 'active' restores full access.
-  // Sets the GLOBAL Mongo User.status; authz is org-scoped (caller must hold an
-  // org-management role on :orgId). userId may be a Mongo _id OR the member's
-  // supabaseUserId — the server resolves either.
+  // Sets the GLOBAL Mongo User.status, so the server (MemberStatusService)
+  // asks for the org permission `member.remove` (owner, co-owner, admin,
+  // maintainer by default) and a STRICTLY higher rank than the member; never
+  // an owner, never the caller; only active <-> inactive; never an account
+  // another org can see. The status the member already has answers 200 and
+  // writes nothing. userId may be a Mongo _id OR the member's supabaseUserId.
+  // A refusal throws an Error with `.status` and `.cause.error`: 400
+  // `invalid_status`; 403 `insufficient_permission`, `insufficient_rank`,
+  // `owner_protected`, `self_target`, `member_not_managed`; 404
+  // `member_not_found`; 409 `member_status_locked` (suspended or pending —
+  // the platform's), `member_status_changed`; 503 `audit_unavailable`.
   async setMemberStatus (orgId, userId, status) {
     this._requireReady('setMemberStatus')
     if (!orgId) throw new Error('orgId is required')
@@ -552,12 +560,16 @@ export class OrganizationService extends BaseService {
   }
 
   /**
-   * List a member's documents that belong to this org (G2) — metadata only,
-   * newest first; archived and deleted documents are left out.
+   * List a member's personal documents created while they worked in this
+   * org (G2) — metadata only, newest first; archived and deleted documents
+   * are left out. The server stamps that org on each NEW personal document
+   * (`createdInOrg`); older documents carry no stamp and stay private.
    * GET /core/organizations/:orgId/members/:userId/documents
    *
    * The caller's org role must carry `profile.private.read` (owner and
-   * co-owner by default; any other role only through a custom role).
+   * co-owner by default; any other role only through a custom role) and
+   * STRICTLY outrank the member. Nobody lists an owner's documents here, and
+   * the caller's own documents come from the docs list, not this route.
    *
    * @param {string} orgId
    * @param {string} userId - the member's Mongo _id or the roster's `user_id`
@@ -569,7 +581,8 @@ export class OrganizationService extends BaseService {
    *   createdAt: string, updatedAt: string}>, count: number, limit: number,
    *   offset: number}>} `count` is the total, not the page size
    * @throws {Error} `.status` / `.cause.error`: 403
-   *   `insufficient_permission`; 404 `member_not_found`
+   *   `insufficient_permission`, `insufficient_rank`, `owner_protected`,
+   *   `self_target`; 404 `member_not_found`
    */
   async listOrgMemberDocuments (orgId, userId, { limit, offset } = {}) {
     if (!orgId) throw new Error('orgId is required')
