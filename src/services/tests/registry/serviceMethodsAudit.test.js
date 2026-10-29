@@ -38,7 +38,8 @@ import {
   PersonaService,
   RegistryService,
   ShareLinkService,
-  AiBoardsService
+  AiBoardsService,
+  OnboardingResearchService
 } from '../../index.js'
 
 // service-name → ServiceClass — the same wiring `_initService` does in
@@ -82,7 +83,8 @@ const SERVICES = {
   persona: PersonaService,
   registry: RegistryService,
   shareLinks: ShareLinkService,
-  aiBoards: AiBoardsService
+  aiBoards: AiBoardsService,
+  onboardingResearch: OnboardingResearchService
 }
 
 // Methods that intentionally exist on a service but are NOT flat-exposed via
