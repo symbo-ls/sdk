@@ -13,6 +13,7 @@ import {
   createScreenshotService,
   createTrackingService,
   createWaitlistService,
+  createOnboardingResearchService,
   createMetricsService,
   createIntegrationService,
   createFeatureFlagService,
@@ -269,6 +270,13 @@ export class SDK {
       this._initService(
         'waitlist',
         createWaitlistService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      this._initService(
+        'onboardingResearch',
+        createOnboardingResearchService({
           context: this._context,
           options: this._options
         })
@@ -1202,6 +1210,7 @@ export {
   createSubscriptionService,
   createTrackingService,
   createWaitlistService,
+  createOnboardingResearchService,
   createMetricsService,
   createIntegrationService,
   createFeatureFlagService,

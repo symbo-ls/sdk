@@ -703,7 +703,11 @@ export class BaseService {
       'listStorefrontLoyalty',
       // CRM lead-source web form (LeadSourceService.submitForm) — a visitor
       // on a published site submits a lead; the form key is the credential.
-      'leadSources.submitForm'
+      'leadSources.submitForm',
+      // POB — the public website read before sign-up; an anonymous visitor.
+      'getOnboardingConfig',
+      'startResearch',
+      'getResearch'
     ])
     return !noInitMethods.has(methodName)
   }

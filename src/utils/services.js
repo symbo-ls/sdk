@@ -362,6 +362,11 @@ export const SERVICE_METHODS = {
 
   // Waitlist methods
   joinWaitlist: 'waitlist',
+  // POB — the public website read before sign-up (OnboardingResearchService)
+  getOnboardingConfig: 'onboardingResearch',
+  startResearch: 'onboardingResearch',
+  getResearch: 'onboardingResearch',
+  streamResearch: 'onboardingResearch',
   listWaitlistEntries: 'waitlist',
   updateWaitlistEntry: 'waitlist',
   inviteWaitlistEntry: 'waitlist',
