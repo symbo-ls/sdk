@@ -597,6 +597,40 @@ export class OrganizationService extends BaseService {
     )
   }
 
+  /**
+   * Would updateOrgMemberProfile and listOrgMemberDocuments go through for
+   * the signed-in caller on this member? Ask before showing an Edit control
+   * or reading the documents. Writes nothing.
+   * GET /core/organizations/:orgId/members/:userId/profile-access
+   *
+   * Any member of the org gets an answer (also a caller who reaches the org
+   * only through a workspace grant). Each side checks its key first
+   * (`profile.edit_others` / `profile.private.read`), so a side without it
+   * answers `insufficient_permission`, the same for every member. A refused
+   * side is a VALUE here, never a throw: branch on `allowed`, and on `error`
+   * for the reason to show.
+   *
+   * @param {string} orgId
+   * @param {string} userId - the member's Mongo _id or the roster's `user_id`
+   * @returns {Promise<{edit: {allowed: boolean, error?: string},
+   *   documents: {allowed: boolean, error?: string}}>} `edit.error`:
+   *   `insufficient_permission`, `self_target`, `owner_protected`,
+   *   `insufficient_rank`, `member_not_active`, `member_not_managed`;
+   *   `documents.error`: `insufficient_permission`, `self_target`,
+   *   `owner_protected`, `insufficient_rank`
+   * @throws {Error} `.status` / `.cause.error`: 404 `member_not_found` (a
+   *   caller with a key asked about somebody who is not a member); 403
+   *   `Organization membership required` (not in the org)
+   */
+  async getOrgMemberProfileAccess (orgId, userId) {
+    if (!orgId) throw new Error('orgId is required')
+    if (!userId) throw new Error('userId is required')
+    return this._call(
+      'getOrgMemberProfileAccess',
+      `/organizations/${orgId}/members/${encodeURIComponent(userId)}/profile-access`
+    )
+  }
+
   // ==================== INVITATIONS ====================
 
   async createOrgInvitation (orgId, { email, role = 'member', teams }) {

@@ -760,6 +760,9 @@ await organization.updateOrgMemberProfile(orgId, userId, { name, timezone, posit
 // needs profile.private.read + a strictly higher rank; never an owner, never self;
 // the member's personal documents created in this org (new ones carry the stamp), metadata only
 await organization.listOrgMemberDocuments(orgId, userId, { limit, offset })
+// would the two calls above go through for me on this member? any org member may ask; writes nothing
+// → { edit: { allowed, error? }, documents: { allowed, error? } } (a refused side is a value, not a throw)
+await organization.getOrgMemberProfileAccess(orgId, userId)
 // needs member.remove + a strictly higher rank; never an owner, never self; active <-> inactive only
 await organization.setMemberStatus(orgId, userId, 'inactive')
 

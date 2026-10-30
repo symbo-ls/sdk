@@ -470,6 +470,8 @@ export const SERVICE_METHODS = {
   // profile.private.read) — signed-in only.
   updateOrgMemberProfile: 'organization',
   listOrgMemberDocuments: 'organization',
+  // …and whether those two would go through for the caller (writes nothing).
+  getOrgMemberProfileAccess: 'organization',
   createOrgInvitation: 'organization',
   createOrgInvitationLink: 'organization',
   listOrgInvitations: 'organization',
