@@ -141,7 +141,7 @@ export class OnboardingResearchService extends BaseService {
 
   // POST /core/onboarding/build/profile/reviewed — the owner confirmed the
   // research review (the `checklist.profile` tick). Idempotent: the first
-  // time is kept. → the board (the getOnboardingBuild shape). A member.
+  // time is kept. → the board (the getOnboardingBuild shape). An owner or admin (403 for a member).
   async markOnboardingProfileReviewed (workspaceId) {
     const ws = this._onboardingWorkspace(workspaceId)
     try {
