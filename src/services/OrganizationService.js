@@ -479,9 +479,17 @@ export class OrganizationService extends BaseService {
 
   // Set a member's account status. 'inactive' = read-only access (the auth
   // middleware allows reads but 403s writes); 'active' restores full access.
-  // Sets the GLOBAL Mongo User.status; authz is org-scoped (caller must hold an
-  // org-management role on :orgId). userId may be a Mongo _id OR the member's
-  // supabaseUserId — the server resolves either.
+  // Sets the GLOBAL Mongo User.status, so the server (MemberStatusService)
+  // asks for the org permission `member.remove` (owner, co-owner, admin,
+  // maintainer by default) and a STRICTLY higher rank than the member; never
+  // an owner, never the caller; only active <-> inactive; never an account
+  // another org can see. The status the member already has answers 200 and
+  // writes nothing. userId may be a Mongo _id OR the member's supabaseUserId.
+  // A refusal throws an Error with `.status` and `.cause.error`: 400
+  // `invalid_status`; 403 `insufficient_permission`, `insufficient_rank`,
+  // `owner_protected`, `self_target`, `member_not_managed`; 404
+  // `member_not_found`; 409 `member_status_locked` (suspended or pending —
+  // the platform's), `member_status_changed`; 503 `audit_unavailable`.
   async setMemberStatus (orgId, userId, status) {
     this._requireReady('setMemberStatus')
     if (!orgId) throw new Error('orgId is required')
@@ -499,6 +507,94 @@ export class OrganizationService extends BaseService {
     )
     if (response.success) return response
     throw new Error(response.message || response.error || 'setMemberStatus failed')
+  }
+
+  // ==================== MEMBER PROFILE (org acting on one member) ====================
+  //
+  // The server owns the field list and every rule (MemberProfileService);
+  // these wrappers check only their own arguments. A refusal arrives as the
+  // thrown Error with `err.status` and `err.cause = { error, message, field?,
+  // fields? }` — branch on `err.cause.error`, show `err.message`.
+
+  /**
+   * Edit ANOTHER member's profile as the org (G1).
+   * PATCH /core/organizations/:orgId/members/:userId/profile
+   *
+   * The caller's org role must carry `profile.edit_others` (owner and
+   * co-owner by default; any other role only through a custom role that
+   * adds the key) and STRICTLY outrank the target. Nobody edits an owner
+   * here, and the caller's own profile goes through the self routes.
+   * The member must be active, and must not belong to another organization
+   * (the fields live on their one account, shared by every org).
+   *
+   * @param {string} orgId
+   * @param {string} userId - the member's Mongo _id or the roster's `user_id`
+   * @param {{name?: string, timezone?: string|null, position?: string|null,
+   *   city?: string|null, country?: string|null, github?: string|null,
+   *   bio?: string|null}} patch - only these keys; null (or '') clears a
+   *   field, except `name`, which cannot be cleared
+   * @returns {Promise<{userId: string, user_id: string, name: string,
+   *   timezone: string|null, position: string|null, city: string|null,
+   *   country: string|null, github: string|null, bio: string|null,
+   *   updated: Array<string>}>} the member's profile after the edit
+   * @throws {Error} `.status` / `.cause.error`: 400 `unknown_field` (with
+   *   `fields`), `invalid_field` (with `field`), `empty_patch`; 403
+   *   `insufficient_permission`, `insufficient_rank`, `owner_protected`,
+   *   `self_target`, `member_not_managed`; 404 `member_not_found`; 409
+   *   `member_not_active`; 503 `audit_unavailable` (nothing was saved)
+   */
+  async updateOrgMemberProfile (orgId, userId, patch) {
+    if (!orgId) throw new Error('orgId is required')
+    if (!userId) throw new Error('userId is required')
+    if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
+      throw new Error('patch must be an object of profile fields')
+    }
+    if (!Object.values(patch).some((v) => v !== undefined)) {
+      throw new Error('patch cannot be empty')
+    }
+    return this._call(
+      'updateOrgMemberProfile',
+      `/organizations/${orgId}/members/${encodeURIComponent(userId)}/profile`,
+      { method: 'PATCH', body: patch }
+    )
+  }
+
+  /**
+   * List a member's personal documents created while they worked in this
+   * org (G2) — metadata only, newest first; archived and deleted documents
+   * are left out. The server stamps that org on each NEW personal document
+   * (`createdInOrg`); older documents carry no stamp and stay private.
+   * GET /core/organizations/:orgId/members/:userId/documents
+   *
+   * The caller's org role must carry `profile.private.read` (owner and
+   * co-owner by default; any other role only through a custom role) and
+   * STRICTLY outrank the member. Nobody lists an owner's documents here, and
+   * the caller's own documents come from the docs list, not this route.
+   *
+   * @param {string} orgId
+   * @param {string} userId - the member's Mongo _id or the roster's `user_id`
+   * @param {{limit?: number, offset?: number}} [options] - limit 1..100
+   *   (server default 50), offset >= 0
+   * @returns {Promise<{documents: Array<{id: string, docId: string,
+   *   title: string, state: string, privacy: string, tags: Array<string>,
+   *   folderPath: string, author: string|null, source: string|null,
+   *   createdAt: string, updatedAt: string}>, count: number, limit: number,
+   *   offset: number}>} `count` is the total, not the page size
+   * @throws {Error} `.status` / `.cause.error`: 403
+   *   `insufficient_permission`, `insufficient_rank`, `owner_protected`,
+   *   `self_target`; 404 `member_not_found`
+   */
+  async listOrgMemberDocuments (orgId, userId, { limit, offset } = {}) {
+    if (!orgId) throw new Error('orgId is required')
+    if (!userId) throw new Error('userId is required')
+    const qs = new URLSearchParams()
+    if (limit !== undefined && limit !== null) qs.set('limit', String(limit))
+    if (offset !== undefined && offset !== null) qs.set('offset', String(offset))
+    const query = qs.toString()
+    return this._call(
+      'listOrgMemberDocuments',
+      `/organizations/${orgId}/members/${encodeURIComponent(userId)}/documents${query ? `?${query}` : ''}`
+    )
   }
 
   // ==================== INVITATIONS ====================
