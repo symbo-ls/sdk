@@ -104,8 +104,14 @@ export class OnboardingResearchService extends BaseService {
   }
 
   // GET /core/onboarding/build → `{ researchId, steps: [{ key, status,
-  // label: { en, ka }, result?, error?, reason?, at }], done }`; a workspace
-  // with no POB sign-up throws `.code` `not_found`.
+  // label: { en, ka }, result?: { count }, error?: { code }, reason?: { code },
+  // at, retryable }], done, checklist }`. `retryable` is true only for a
+  // failed step "Try again" can run (retryOnboardingBuildStep). `checklist`
+  // is the "Getting started" ticks, each `{ done, at }` from a server fact:
+  // `profile` (markOnboardingProfileReviewed), `website` (the site step is
+  // done), `team` (a POB invite used a team row), `import` (a finished
+  // import run; v0 always `{ done: false, at: null }`). `null` when this
+  // workspace has no build board (a sign-up without research).
   async getOnboardingBuild (workspaceId) {
     const ws = this._onboardingWorkspace(workspaceId)
     try {
@@ -119,7 +125,7 @@ export class OnboardingResearchService extends BaseService {
   }
 
   // POST /core/onboarding/build/:key/retry — a FAILED step only (409
-  // `not_retryable` otherwise) → the new board.
+  // `not_retryable` otherwise) → the new board (the getOnboardingBuild shape).
   async retryOnboardingBuildStep (workspaceId, key) {
     if (!key) throw new Error('key is required')
     const ws = this._onboardingWorkspace(workspaceId)
@@ -128,6 +134,21 @@ export class OnboardingResearchService extends BaseService {
         `/onboarding/build/${encodeURIComponent(key)}/retry?workspaceId=${ws}`,
         { method: 'POST', methodName: 'retryOnboardingBuildStep' }
       )
+    } catch (error) {
+      throw withCode(error)
+    }
+  }
+
+  // POST /core/onboarding/build/profile/reviewed — the owner confirmed the
+  // research review (the `checklist.profile` tick). Idempotent: the first
+  // time is kept. → the board (the getOnboardingBuild shape). A member.
+  async markOnboardingProfileReviewed (workspaceId) {
+    const ws = this._onboardingWorkspace(workspaceId)
+    try {
+      return await this._request(`/onboarding/build/profile/reviewed?workspaceId=${ws}`, {
+        method: 'POST',
+        methodName: 'markOnboardingProfileReviewed'
+      })
     } catch (error) {
       throw withCode(error)
     }
@@ -143,6 +164,24 @@ export class OnboardingResearchService extends BaseService {
         method: 'DELETE',
         methodName: 'deleteOnboardingResearch'
       })
+    } catch (error) {
+      throw withCode(error)
+    }
+  }
+
+  // DELETE /core/onboarding/workspace-research/lines/:line — ONE line of the
+  // research summary: `profile` (the CompanyProfile values research still
+  // owns), `offerings`, `faq` (from the research record) or `team` (the team
+  // rows) → `{ deleted: { line, records, people, profileFields } }`; 400
+  // `unknown_line` for any other line. A manager.
+  async deleteOnboardingResearchLine (workspaceId, line) {
+    if (!line) throw new Error('line is required')
+    const ws = this._onboardingWorkspace(workspaceId)
+    try {
+      return await this._request(
+        `/onboarding/workspace-research/lines/${encodeURIComponent(line)}?workspaceId=${ws}`,
+        { method: 'DELETE', methodName: 'deleteOnboardingResearchLine' }
+      )
     } catch (error) {
       throw withCode(error)
     }

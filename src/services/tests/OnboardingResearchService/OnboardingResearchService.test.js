@@ -137,3 +137,63 @@ test('after sign-up: the active workspace is the default; none throws; refusals 
   sandbox.restore()
   t.end()
 })
+
+test('after sign-up: profile reviewed + per-line research delete — paths + workspace pin', async t => {
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_request').resolves({ ok: true })
+  await svc.markOnboardingProfileReviewed('ws1')
+  for (const line of ['profile', 'offerings', 'faq', 'team']) {
+    await svc.deleteOnboardingResearchLine('ws1', line)
+  }
+  t.deepEqual(stub.getCalls().map((c) => [c.args[1].method, c.args[0], c.args[1].methodName]), [
+    ['POST', '/onboarding/build/profile/reviewed?workspaceId=ws1', 'markOnboardingProfileReviewed'],
+    ['DELETE', '/onboarding/workspace-research/lines/profile?workspaceId=ws1', 'deleteOnboardingResearchLine'],
+    ['DELETE', '/onboarding/workspace-research/lines/offerings?workspaceId=ws1', 'deleteOnboardingResearchLine'],
+    ['DELETE', '/onboarding/workspace-research/lines/faq?workspaceId=ws1', 'deleteOnboardingResearchLine'],
+    ['DELETE', '/onboarding/workspace-research/lines/team?workspaceId=ws1', 'deleteOnboardingResearchLine']
+  ])
+  sandbox.restore()
+  t.end()
+})
+
+test('after sign-up: profile reviewed / line delete — active workspace default; no line throws; refusals carry .code', async t => {
+  const svc = makeService()
+  svc._context = { activeWorkspaceId: 'wsA' }
+  const stub = sandbox.stub(svc, '_request').resolves({})
+  await svc.markOnboardingProfileReviewed()
+  t.equal(stub.firstCall.args[0], '/onboarding/build/profile/reviewed?workspaceId=wsA')
+  sandbox.restore()
+  const bare = makeService()
+  bare._context = {}
+  try {
+    await bare.markOnboardingProfileReviewed()
+    t.fail('should throw')
+  } catch (e) {
+    t.match(e.message, /workspaceId is required/)
+  }
+  try {
+    await bare.deleteOnboardingResearchLine('ws1')
+    t.fail('should throw')
+  } catch (e) {
+    t.match(e.message, /line is required/)
+  }
+  sandbox.restore()
+  const svc3 = makeService()
+  sandbox.stub(svc3, '_request').rejects(new Error('x', { cause: { error: 'unknown_line' } }))
+  try {
+    await svc3.deleteOnboardingResearchLine('ws1', 'hours')
+    t.fail('should throw')
+  } catch (e) {
+    t.equal(e.code, 'unknown_line')
+  }
+  sandbox.restore()
+  t.end()
+})
+
+test('getOnboardingBuild: a workspace with no build board answers null', async t => {
+  const svc = makeService()
+  sandbox.stub(svc, '_request').resolves(null)
+  t.equal(await svc.getOnboardingBuild('ws1'), null)
+  sandbox.restore()
+  t.end()
+})

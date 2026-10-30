@@ -370,6 +370,8 @@ export const SERVICE_METHODS = {
   getOnboardingBuild: 'onboardingResearch',
   retryOnboardingBuildStep: 'onboardingResearch',
   deleteOnboardingResearch: 'onboardingResearch',
+  markOnboardingProfileReviewed: 'onboardingResearch',
+  deleteOnboardingResearchLine: 'onboardingResearch',
   listOnboardingPeople: 'onboardingResearch',
   removeOnboardingPerson: 'onboardingResearch',
   inviteOnboardingPerson: 'onboardingResearch',
