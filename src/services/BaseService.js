@@ -652,6 +652,12 @@ export class BaseService {
       'getPublicRecord',
       'submitPublicRecord',
       'votePublicRecord',
+      // Public booking intake (PublicBookingService, /core/bookings/public/*,
+      // SITES-4) — a published site's signed-out visitor lists a workspace's
+      // services and files a booking request. A signed-in member who opens
+      // the site is an anonymous visitor here too: never their bearer token.
+      'listPublicBookingServices',
+      'requestPublicBooking',
       // Storefront customer identity (tickets/server.md "storefront customer
       // identity layer", NAT-V1-25/27/28) — register/login/OTP/reset are the
       // anonymous-visitor surface itself, no bearer token. `getStorefrontCustomerMe`
