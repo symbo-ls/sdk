@@ -2137,6 +2137,8 @@ const ENTITY_ROUTES = {
     methods: { list: 'notifications.audience' },
     argMap: { list: (a) => _wsOpts(a) }
   },
+  // DEPRECATED: the worker has no presence routes — both methods reject at
+  // once with `route_removed` (use sdk.subscribePresence).
   'workspaceProject.presence': {
     service: 'workspaceProject',
     methods: { list: 'presence.online', update: 'presence.heartbeat' },
@@ -2151,6 +2153,8 @@ const ENTITY_ROUTES = {
     },
     argMap: { list: () => [], get: argMaps.id, me: () => [] }
   },
+  // DEPRECATED: the worker has no permission routes — both methods reject
+  // at once with `route_removed` (use sdk.getPermissions(orgId)).
   'workspaceProject.permissions': {
     service: 'workspaceProject',
     methods: { list: 'permissions.me', rpc: 'permissions.check' },
@@ -2236,6 +2240,8 @@ const ENTITY_ROUTES = {
   // Replaces direct `_probeTable(sb, 'profiles')`-style admin probes from
   // /admin/status. `status` returns aggregated health info; `featureFlags`
   // returns the active flag map.
+  // DEPRECATED: the worker has no system routes — both methods reject at
+  // once with `route_removed` (use sdk.getSystemStatus / sdk.getFeatureFlags).
   'workspaceProject.system': {
     service: 'workspaceProject',
     methods: { status: 'system.status', featureFlags: 'system.featureFlags' },
@@ -2607,9 +2613,18 @@ const ENTITY_ROUTES = {
     service: 'workspaceProject',
     methods: { update: 'meet.updateAnalysisAppliedItems' },
     argMap: {
+      // The server needs the ARRAY: callers send it bare ({ appliedItems })
+      // or wrapped ({ payload: { applied_items } }), so unwrap the payload.
       update: (a) => [
         a?.roomId ?? a?.id ?? a?.filter?.room_id,
-        a?.applied_items ?? a?.appliedItems ?? a?.payload ?? a?.data
+        a?.applied_items ??
+          a?.appliedItems ??
+          a?.payload?.applied_items ??
+          a?.payload?.appliedItems ??
+          a?.data?.applied_items ??
+          a?.data?.appliedItems ??
+          a?.payload ??
+          a?.data
       ]
     }
   },
@@ -2638,6 +2653,8 @@ const ENTITY_ROUTES = {
   // sdk/src/services/AiChatService.js + the 'aiChat.*' entries above.
   // LiveKit token issuance. Replaces direct fetch('/functions/v1/meet-token')
   // — auth threads through the workspace JWT just like every other meet route.
+  // DEPRECATED: the token moved to /core — rejects at once with
+  // `route_removed` (use sdk.meetMintToken({ roomId })).
   'workspaceProject.meet.token': {
     service: 'workspaceProject',
     methods: { rpc: 'meet.issueToken' },
@@ -2645,6 +2662,8 @@ const ENTITY_ROUTES = {
   },
   // #2226 — owner remote-mute. mute({ roomId, participantIdentity, trackSid,
   // muted }) → worker /meet/mute → meet-mute edge fn → LiveKit.
+  // DEPRECATED: mute moved to /core — rejects at once with `route_removed`
+  // (use sdk.meetMuteParticipant).
   'workspaceProject.meet.mute': {
     service: 'workspaceProject',
     methods: { mute: 'meet.mute' },
@@ -2743,6 +2762,8 @@ const ENTITY_ROUTES = {
   // Generic escape-hatch for one-off RPCs that don't have a dedicated route.
   // sdk.execute('workspaceProject.query', 'rpc', { body }) calls
   // workspaceProject.query(body). Use sparingly — prefer adding a real route.
+  // DEPRECATED: the worker has no POST /query — rejects at once with
+  // `route_removed`; there is no replacement.
   'workspaceProject.query': {
     service: 'workspaceProject',
     methods: { rpc: 'query' },

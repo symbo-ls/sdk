@@ -9,6 +9,8 @@ import { BaseService } from './BaseService.js'
 //   POST /core/meet/guest/status   → { status: 'waiting'|'admitted'|'rejected',
 //                                      roomId, guestName }
 //   POST /core/meet/guest/token    → { token, url, identity, roomName }
+//   POST /core/meet/token          → { roomName, livekitToken, livekitUrl,
+//                                      workspaceId, … }
 //   POST /core/meet/mute           → { ok: true }
 //
 // The three guest methods are ANONYMOUS — they are listed in
@@ -100,6 +102,26 @@ export class MeetService extends BaseService {
    * @param {boolean} args.muted
    * @returns {Promise<{ok: true}>}
    */
+  /**
+   * Mint a LiveKit access token for the signed-in caller to join a meet
+   * room. Authenticated — the server applies the room-read gate (creator,
+   * workspace member, room member, or a public room) and refuses with 401
+   * (signed out) or 403 (no access; a missing room too), body `{ error }`
+   * (the thrown error carries `.status`).
+   * Replaces `workspaceProject.meet.issueToken` (its worker route went when
+   * the token moved to /core) and a consumer's raw fetch of this route.
+   *
+   * @param {object} args
+   * @param {string} args.roomId
+   * @returns {Promise<{roomName: string, livekitToken: string, livekitUrl: string, workspaceId: (string|null)}>}
+   */
+  meetMintToken ({ roomId } = {}) {
+    if (!roomId) throw new Error('roomId is required')
+    return this._call('meetMintToken', '/meet/token', {
+      method: 'POST',
+      body: { roomId }
+    })
+  }
   meetMuteParticipant ({ roomId, participantIdentity, trackSid, muted } = {}) {
     if (!roomId) throw new Error('roomId is required')
     if (!participantIdentity) throw new Error('participantIdentity is required')
