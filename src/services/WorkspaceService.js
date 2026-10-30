@@ -757,6 +757,48 @@ export class WorkspaceService extends BaseService {
     }
   }
 
+  // ==================== BUILT-APP CRM LEADS ====================
+  // "CRM leads, opt-in per app" (Nika 2026-10-30): a built app's sign-up form
+  // can send its entries to the workspace CRM as leads, only when the app's
+  // owner turns it on. Owner / admin only (the server answers 403 otherwise).
+
+  /**
+   * Read a built app's "send sign-ups to CRM" setting.
+   *
+   * @param {string} workspaceId
+   * @param {string} projectId - the built app's Project id
+   * @returns {Promise<{ projectId: string, enabled: boolean, signupForms: Array<{ collection: string, fields: { name?: string, firstName?: string, lastName?: string, email?: string, phone?: string } }>, crmInstalled: boolean, active: boolean, reason: null|'no_signup_form'|'crm_not_installed'|'off', updatedAt: string|null }>}
+   */
+  async getBuiltAppCrmLeads (workspaceId, projectId) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!projectId) throw new Error('projectId is required')
+    return this._call(
+      'getBuiltAppCrmLeads',
+      `/workspaces/${workspaceId}/built-apps/${projectId}/crm-leads`,
+      { method: 'GET' },
+    )
+  }
+
+  /**
+   * Turn a built app's "send sign-ups to CRM" on or off. Answers the same
+   * view as getBuiltAppCrmLeads (`active` / `reason` say whether sign-ups
+   * flow now).
+   *
+   * @param {string} workspaceId
+   * @param {string} projectId - the built app's Project id
+   * @param {{ enabled: boolean }} args
+   */
+  async setBuiltAppCrmLeads (workspaceId, projectId, { enabled } = {}) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!projectId) throw new Error('projectId is required')
+    if (typeof enabled !== 'boolean') throw new Error('enabled must be true or false')
+    return this._call(
+      'setBuiltAppCrmLeads',
+      `/workspaces/${workspaceId}/built-apps/${projectId}/crm-leads`,
+      { method: 'PATCH', body: { enabled } },
+    )
+  }
+
   // ==================== WORKSPACE PRESETS ====================
   // The server's preset registry (core/constants/industryPresets.js) — the
   // App Store "Workspace presets" row, the new-account wizard, Fly and the

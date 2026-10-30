@@ -580,6 +580,10 @@ export const SERVICE_METHODS = {
   installWorkspaceApps: 'workspace',
   removeWorkspaceApp: 'workspace',
 
+  // A built app's "send sign-ups to CRM" opt-in (owner / admin).
+  getBuiltAppCrmLeads: 'workspace',
+  setBuiltAppCrmLeads: 'workspace',
+
   // Workspace Presets — the public registry (GET /core/presets, no session)
   // and the owner/admin apply (POST /core/workspaces/:id/presets/:key/apply).
   listWorkspacePresets: 'workspace',
