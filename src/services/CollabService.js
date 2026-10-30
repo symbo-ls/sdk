@@ -5,6 +5,7 @@ import { validateParams, primeCodeValidation } from '../utils/validation.js'
 import { deepStringifyFunctions } from '@symbo.ls/utils'
 import { preprocessChanges } from '../utils/changePreprocessor.js'
 import { logger } from '../utils/logger.js'
+import { CollabOutbox } from '../utils/collabOutbox.js'
 
 // CollabClient drags yjs + lib0 (+ the buffer polyfill, ~360 KB dev) with it,
 // so it is loaded on demand at the first connect() instead of eagerly —
@@ -72,9 +73,12 @@ export class CollabService extends BaseService {
     this._undoStack = []
     this._redoStack = []
     this._isUndoRedo = false
-    // Store operations made while offline so they can be flushed once the
-    // socket reconnects.
-    this._pendingOps = []
+    // Every op waits in its room's outbox until the server has saved it
+    // (utils/collabOutbox.js): room key `<projectId>:<branch>` -> outbox. Ops
+    // made before any room is known wait under '' and go to the next room.
+    this._outboxes = new Map()
+    // The room the socket is joined to (its outbox sends).
+    this._roomKey = null
 
     this._onSocketConnect = this._onSocketConnect.bind(this)
     this._onSocketDisconnect = this._onSocketDisconnect.bind(this)
@@ -239,6 +243,7 @@ export class CollabService extends BaseService {
       if (this._client) {
         await this.disconnect()
       }
+      this._roomKey = null
 
       const { CollabClient } = await collabClientReady
 
@@ -369,15 +374,6 @@ export class CollabService extends BaseService {
         this._stateManager.applyChanges(changes, { fromSocket: true })
       })
 
-      socket?.on('commit', ({ version }) => {
-        if (version) {
-          this._stateManager.setVersion(version)
-        }
-
-        // Inform UI about automatic commit
-        rootBus.emit('checkpoint:done', { version, origin: 'auto' })
-      })
-
       // 🔄  Presence / members / cursor updates
       socket?.on('clients', this._handleClientsEvent.bind(this))
 
@@ -385,29 +381,10 @@ export class CollabService extends BaseService {
       socket?.on('bundle:done', this._handleBundleDoneEvent.bind(this))
       socket?.on('bundle:error', this._handleBundleErrorEvent.bind(this))
 
-      // Flush any operations that were queued while we were offline.
-      if (this._pendingOps.length) {
-        logger.log(
-          `[CollabService] Flushing ${this._pendingOps.length} offline operation batch(es)`
-        )
-        this._pendingOps.forEach(
-          ({ changes, granularChanges, orders, options: opOptions }) => {
-            const { message } = opOptions || {}
-            const ts = Date.now()
-            const payload = {
-              changes,
-              granularChanges,
-              orders,
-              ts
-            }
-            if (message) {
-              payload.message = message
-            }
-            this.socket.emit('ops', payload)
-          }
-        )
-        this._pendingOps.length = 0
-      }
+      // The room's outbox joins this socket: the 'commit' event takes the
+      // ops it names, and what the outbox holds (ops made offline, ops not
+      // yet saved) goes once the snapshot says how this server answers ops.
+      this._joinRoomOutbox({ projectId, branch, socket })
 
       await this._client.ready
 
@@ -429,6 +406,9 @@ export class CollabService extends BaseService {
   }
 
   disconnect() {
+    // The room's outbox keeps its ops (they go when this room connects again).
+    this._outboxes.get(this._roomKey)?.setConnected(false)
+    this._roomKey = null
     if (this._client?.socket) {
       if (this._pendingConnectReject) {
         this._pendingConnectReject(
@@ -462,7 +442,7 @@ export class CollabService extends BaseService {
       projectId: this._connectionMeta?.projectId ?? null,
       branch: this._connectionMeta?.branch ?? null,
       live: this._connectionMeta?.live ?? null,
-      pendingOps: this._pendingOps.length,
+      pendingOps: this.getSaveState().unsaved,
       undoStackSize: this.getUndoStackSize(),
       redoStackSize: this.getRedoStackSize()
     }
@@ -523,45 +503,148 @@ export class CollabService extends BaseService {
 
     const { message } = options
 
-    // If not connected yet, queue the operations for later synchronisation.
+    const payload = {
+      changes: stringifiedTuples,
+      granularChanges: stringifiedGranularTuples,
+      orders,
+      ts: Date.now()
+    }
+    if (message) {
+      payload.message = message
+    }
+
+    // Every op goes through its room's outbox: sent while the socket is
+    // connected, one at a time, and kept until the server has saved it.
+    this._outboxFor(this._roomKey ?? this._outboxKey()).push(payload)
+
     if (!this.isConnected()) {
       logger.warn('[CollabService] Not connected, queuing real-time update')
-      this._pendingOps.push({
-        changes: stringifiedTuples,
-        granularChanges: stringifiedGranularTuples,
-        orders,
-        options
-      })
       // Op was accepted (queued) — callers (addItem/deleteItem/etc.) treat
       // the returned envelope's `.success` as a yes/no on acceptance.
       return { success: true, queued: true }
     }
 
-    // When connected, send the operations to the backend.
-    if (this.socket?.connected) {
-      const ts = Date.now()
-      // console.log('[CollabService] Sending operations to the backend', {
-      //   changes: stringifiedTuples,
-      //   granularChanges: stringifiedGranularTuples,
-      //   orders,
-      //   ts,
-      //   message
-      // })
-      const payload = {
-        changes: stringifiedTuples,
-        granularChanges: stringifiedGranularTuples,
-        orders,
-        ts
-      }
-
-      if (message) {
-        payload.message = message
-      }
-
-      this.socket.emit('ops', payload)
-    }
-
     return { success: true }
+  }
+
+  /* ---------- the outbox: saved or not ---------- */
+
+  // connect() calls this once the socket is up.
+  _joinRoomOutbox({ projectId, branch, socket }) {
+    const roomKey = `${projectId}:${branch}`
+    const outbox = this._outboxFor(roomKey)
+    const unassigned = this._outboxes.get('')
+    if (unassigned && unassigned !== outbox) {
+      outbox.adopt(unassigned)
+      this._outboxes.delete('')
+    }
+    this._roomKey = roomKey
+
+    socket?.on('commit', ({ version, opIds } = {}) => {
+      if (version) {
+        this._stateManager.setVersion(version)
+      }
+
+      // The ops the commit names are committed: they leave the outbox.
+      outbox.onCommit(opIds)
+
+      // Inform UI about automatic commit
+      rootBus.emit('checkpoint:done', { version, origin: 'auto' })
+    })
+
+    // What the server says it does with ops (`collab.opsAck`), on every
+    // (re)connect; a failed commit of saved ops.
+    socket?.on('snapshot', (snapshot) => outbox.setCaps(snapshot?.collab ?? null))
+    socket?.on('error', (error) => {
+      if (error?.code === 'COMMIT_FAILED') {
+        outbox.onCommitFailed()
+      }
+    })
+
+    outbox.setConnected(Boolean(socket?.connected))
+    outbox.setCaps(this._client?.collabCaps)
+    return outbox
+  }
+
+  // The room key of an op made now, with no room joined yet.
+  _outboxKey() {
+    const projectId = this._context?.projectId
+    return projectId ? `${projectId}:${this._context?.branch || 'main'}` : ''
+  }
+
+  _outboxFor(key) {
+    let outbox = this._outboxes.get(key)
+    if (!outbox) {
+      outbox = new CollabOutbox({
+        emit: (payload, opts) => this._emitOps(payload, opts),
+        onState: (info) => this._onOutboxState(key, info),
+        onRejected: (info) => {
+          logger.warn('[CollabService] The server refused an edit', info)
+          rootBus.emit('collab:opRejected', { ...info, room: key || null })
+        }
+      })
+      this._outboxes.set(key, outbox)
+    }
+    return outbox
+  }
+
+  _emitOps(payload, opts) {
+    const socket = this.socket
+    if (!socket) {
+      if (opts?.ack) {
+        opts.ack(new Error('[CollabService] Socket instance missing'))
+      }
+      return
+    }
+    if (opts?.ack) {
+      socket.timeout(opts.timeoutMs).emit('ops', payload, opts.ack)
+    } else {
+      socket.emit('ops', payload)
+    }
+  }
+
+  _onOutboxState(key, info) {
+    const current = this._roomKey ?? this._outboxKey()
+    if (key !== current) {
+      return
+    }
+    rootBus.emit('collab:saveState', { ...info, room: key || null })
+  }
+
+  /**
+   * Are the edits saved? For the room joined now (or, before any, the ops
+   * waiting for one). Also on the root bus as `collab:saveState`.
+   * @returns {{ state: 'saved'|'saving'|'not_saved', unsaved: number,
+   *   awaitingCommit: number, code: string|null, commitFailed: boolean,
+   *   mode: 'unknown'|'ack'|'legacy' }}
+   */
+  getSaveState() {
+    const outbox = this._outboxes.get(this._roomKey ?? this._outboxKey())
+    if (outbox) {
+      return outbox.info()
+    }
+    return {
+      state: 'saved',
+      unsaved: 0,
+      awaitingCommit: 0,
+      code: null,
+      commitFailed: false,
+      mode: 'unknown'
+    }
+  }
+
+  /**
+   * True while an edit of any room is not yet saved on the server (made
+   * offline, on its way, or failed and waiting to be sent again). A page can
+   * warn before it closes.
+   */
+  hasUnsavedOps() {
+    for (const outbox of this._outboxes.values()) {
+      if (outbox.hasUnsavedOps()) {
+        return true
+      }
+    }
+    return false
   }
 
   _trackForUndo(tuples, options) {
@@ -929,10 +1012,12 @@ export class CollabService extends BaseService {
 
   _onSocketConnect() {
     this._connected = true
+    this._outboxes.get(this._roomKey)?.setConnected(true)
   }
 
   _onSocketDisconnect(reason) {
     this._connected = false
+    this._outboxes.get(this._roomKey)?.setConnected(false)
 
     if (reason && reason !== 'io client disconnect') {
       logger.warn('[CollabService] Socket disconnected', reason)

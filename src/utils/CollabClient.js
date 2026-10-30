@@ -22,6 +22,9 @@ export class CollabClient {
   live = false
   projectId = null
   jwt = null
+  // The snapshot's `collab` (what the server does with ops: CollabService's
+  // outbox reads it). undefined: no snapshot yet; null: a server that sends none.
+  collabCaps = undefined
 
   /* private state */
   _buffer = []
@@ -111,7 +114,9 @@ export class CollabClient {
   sendPresence (d) { this.socket.emit('presence', d) }
 
   /* ---------- private handlers ---------- */
-  _onSnapshot = ({ data /* Uint8Array */ }) => {
+  _onSnapshot = (snapshot = {}) => {
+    const { data /* Uint8Array */ } = snapshot || {}
+    this.collabCaps = snapshot?.collab ?? null
     if (Array.isArray(data) ? data.length : (data && data.byteLength)) {
       // First paint; trust server compressed payload (≤256 kB)
       Y.applyUpdate(this.ydoc, Uint8Array.from(data))

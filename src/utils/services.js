@@ -14,6 +14,9 @@ export const SERVICE_METHODS = {
   undo: 'collab',
   redo: 'collab',
   checkpoint: 'collab',
+  // Are the edits saved on the server (the outbox, utils/collabOutbox.js)?
+  getSaveState: 'collab',
+  hasUnsavedOps: 'collab',
 
   // Realtime collaboration helper methods
   sendCursor: 'collab',
