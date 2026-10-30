@@ -31,6 +31,8 @@ import { TrackingService } from './TrackingService.js'
 import { WaitlistService } from './WaitlistService.js'
 // /core/onboarding/research — POB, the public website read before sign-up.
 import { OnboardingResearchService } from './OnboardingResearchService.js'
+// /core/workspaces/:id/imports — POB, the import core (upload, preview, run, undo).
+import { ImportsService } from './ImportsService.js'
 import { MetricsService } from './MetricsService.js'
 import { IntegrationService } from './IntegrationService.js'
 import { FeatureFlagService } from './FeatureFlagService.js'
@@ -186,6 +188,9 @@ export const createWaitlistService = (config) =>
 
 export const createOnboardingResearchService = (config) =>
   createService(OnboardingResearchService, config)
+
+export const createImportsService = (config) =>
+  createService(ImportsService, config)
 
 export const createMetricsService = (config) =>
   createService(MetricsService, config)
@@ -426,6 +431,7 @@ export {
   TrackingService,
   WaitlistService,
   OnboardingResearchService,
+  ImportsService,
   MetricsService,
   IntegrationService,
   FeatureFlagService,
