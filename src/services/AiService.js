@@ -1836,7 +1836,10 @@ export class AiService extends BaseService {
     return this._unwrap(res)
   }
 
-  // Soft-archive a thread for the current member (keeps the conversation).
+  // Delete a thread for the current member: the server marks this member's
+  // link deleted, and the thread never comes back for them (GET and PATCH
+  // answer 404). A thread that nobody else shares or holds also loses its
+  // messages, which cannot be undone; other members keep a shared thread.
   async deleteConversation(conversationId, opts = {}) {
     await this._requestExternal(
       `${this._conversationBase(opts)}/${encodeURIComponent(conversationId)}`,
