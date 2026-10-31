@@ -1214,10 +1214,14 @@ const ENTITY_ROUTES = {
       issue: 'issue',
       void: 'void',
       createCreditNote: 'createCreditNote',
-      listCreditNotes: 'listCreditNotes'
+      listCreditNotes: 'listCreditNotes',
+      contract: 'getContract'
     },
     argMap: {
       ...WS_CRUD_ARG_MAP,
+      // contract({ workspaceId? }) — the server's write bounds
+      // ({ voidReasonMaxLength }); only the workspace rides along.
+      contract: (a) => _wsOpts(a),
       // issue transitions draft → open by id (no body); the caller's
       // workspaceId rides on the options positional like the CRUD ops.
       issue: wsArgMaps.id,
