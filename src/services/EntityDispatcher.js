@@ -1986,10 +1986,12 @@ const ENTITY_ROUTES = {
       update: 'chat.updateMessage',
       remove: 'chat.removeMessage',
       react: 'chat.toggleReaction',
-      // Org-admin-only bulk purge of every message in the caller's active
-      // workspace (admin gate + workspace scoping enforced by the worker
-      // route POST /chat/messages/purge). Takes no args.
-      purge: 'chat.purgeMessages'
+      // Platform-admin-only bulk purge of every message in one workspace
+      // (User.globalRole 'admin'; the worker route POST /chat/messages/purge
+      // holds the gate). Optional { workspaceId } — see chat.purgeMessages.
+      purge: 'chat.purgeMessages',
+      // Its dry run: { messages, channels, workspaceId }, deletes nothing.
+      purgePreview: 'chat.previewPurgeMessages'
     },
     argMap: {
       // Same "no silent escalation" contract as chat.members.list above —
@@ -2025,8 +2027,10 @@ const ENTITY_ROUTES = {
       update: (a) => [a?.messageId ?? a?.id, a?.payload ?? a?.data ?? a],
       remove: (a) => [a?.messageId ?? a?.id],
       react: (a) => [a?.messageId ?? a?.id, a?.emoji, a?.userId],
-      // No args — the active workspace is derived server-side from the token.
-      purge: () => []
+      // workspaceId names the workspace the page shows; absent → the
+      // service defaults it to activeWorkspaceId.
+      purge: (a) => [a?.workspaceId],
+      purgePreview: (a) => [a?.workspaceId]
     }
   },
   'workspaceProject.chat.mentions': {

@@ -361,16 +361,33 @@ export class WorkspaceProjectService extends BaseService {
           method: 'DELETE'
         }
       ),
-    // Org-admin-only bulk purge of EVERY message in the caller's ACTIVE
-    // workspace. Takes no args — the worker route (POST /chat/messages/purge)
-    // derives the workspace from the bearer token and enforces the admin gate
-    // (auth.isSuperadmin) + workspace scoping server-side. Replaces the
-    // danger-zone page's raw, unscoped, client-side DELETE against
-    // chat_messages with the anon key.
-    purgeMessages: () =>
-      this._ws('chat.purgeMessages', '/chat/messages/purge', {
+    // PLATFORM-admin-only bulk purge of EVERY message in one workspace (the
+    // danger-zone page). The worker route (POST /chat/messages/purge) holds
+    // the gate: auth.isSuperadmin = User.globalRole 'admin' (an org owner or
+    // org admin is refused, 403 admin_role_required). workspaceId (optional,
+    // defaults to activeWorkspaceId) names the workspace the page shows: the
+    // worker purges it only when the caller is a proven member (else 403
+    // workspace_not_member, nothing deleted). Without any workspaceId the
+    // worker purges the caller's STORED active workspace (the last one used
+    // in any tab), which can be another workspace than the page's.
+    purgeMessages: (workspaceId) => {
+      const wsId = this._chatWorkspaceId(workspaceId)
+      const qs = wsId ? `?workspaceId=${encodeURIComponent(wsId)}` : ''
+      return this._ws('chat.purgeMessages', `/chat/messages/purge${qs}`, {
         method: 'POST'
-      }),
+      })
+    },
+    // The purge's dry run (GET /chat/messages/purge/preview): same gate, same
+    // workspace rule, deletes nothing. Answers { messages, channels,
+    // workspaceId } so the confirm can name the count and the workspace.
+    previewPurgeMessages: (workspaceId) => {
+      const wsId = this._chatWorkspaceId(workspaceId)
+      const qs = wsId ? `?workspaceId=${encodeURIComponent(wsId)}` : ''
+      return this._ws(
+        'chat.previewPurgeMessages',
+        `/chat/messages/purge/preview${qs}`
+      )
+    },
     toggleReaction: (messageId, emoji, userId) =>
       this._ws(
         'chat.toggleReaction',
