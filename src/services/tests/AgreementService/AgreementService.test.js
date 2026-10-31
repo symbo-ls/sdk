@@ -54,6 +54,37 @@ test('agreements.list threads q / createdFrom / createdTo (G-L)', async t => {
   t.end()
 })
 
+// The list's custom-field equality (custom.<key>=<value>, a field the
+// workspace declared for agreements) and the updatedAt range (BESSI's
+// to-bill read: the ended orders changed since a moment). A boolean or a
+// number goes as text (the server reads it as the field's type); a Date
+// bound goes as ISO-8601.
+test('agreements.list threads custom.<key> equalities and updatedFrom / updatedTo', async t => {
+  t.plan(8)
+  const svc = makeService()
+  const stub = sandbox.stub(svc, '_call').resolves([])
+  await svc.list({
+    kind: 'order',
+    status: 'ended',
+    custom: { channel: 'Facebook & co', rush: false, qty: 5 },
+    updatedFrom: new Date('2026-10-01T00:00:00.000Z'),
+    updatedTo: '2026-10-31T23:59:59+04:00'
+  })
+  const path = stub.firstCall.args[1]
+  t.ok(path.startsWith('/agreements?'), 'the same literal route')
+  const qs = new URLSearchParams(path.split('?')[1])
+  t.equal(qs.get('custom.channel'), 'Facebook & co', 'a text value threaded (encoded)')
+  t.equal(qs.get('custom.rush'), 'false', 'false goes as text')
+  t.equal(qs.get('custom.qty'), '5', 'a number goes as text')
+  t.equal(qs.get('updatedFrom'), '2026-10-01T00:00:00.000Z', 'a Date bound goes as ISO-8601')
+  t.equal(qs.get('updatedTo'), '2026-10-31T23:59:59+04:00', 'a text bound goes as given')
+  t.equal(qs.get('kind'), 'order', 'the other filters stay')
+  await svc.list({ custom: { channel: '', rush: null, qty: undefined }, updatedFrom: null, updatedTo: '' })
+  t.equal(stub.secondCall.args[1], '/agreements', 'empty values add nothing')
+  sandbox.restore()
+  t.end()
+})
+
 test('agreements.get GETs /agreements/:id encoded', async t => {
   t.plan(2)
   const svc = makeService()

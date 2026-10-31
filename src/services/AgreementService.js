@@ -24,8 +24,14 @@ const _bound = (v) => (v instanceof Date ? v.toISOString() : String(v))
 
 export class AgreementService extends BaseService {
   // GET /core/agreements?kind=&status=&partyId=&q=&createdFrom=&createdTo=
-  // q matches number + title (plain text); the created range is inclusive
-  // (G-L, APP-FAMILY-CONTRACT §4).
+  //   &updatedFrom=&updatedTo=&custom.<key>=<value>
+  // q matches number + title (plain text); the created and updated ranges
+  // are inclusive (G-L, APP-FAMILY-CONTRACT §4). `custom: { key: value }` is
+  // an equality per key on a field the workspace declared for agreements
+  // (a field definition, entityType 'agreement'); the server reads the value
+  // as the field's type, so a boolean or a number goes as text. An
+  // undeclared key answers 400 field_not_declared. A server without these
+  // filters ignores them: keep the row rule on the client.
   list (filter = {}, options = {}) {
     filter = filter || {}
     const extra = {}
@@ -35,6 +41,14 @@ export class AgreementService extends BaseService {
     if (filter.q) extra.q = filter.q
     if (filter.createdFrom) extra.createdFrom = _bound(filter.createdFrom)
     if (filter.createdTo) extra.createdTo = _bound(filter.createdTo)
+    if (filter.updatedFrom) extra.updatedFrom = _bound(filter.updatedFrom)
+    if (filter.updatedTo) extra.updatedTo = _bound(filter.updatedTo)
+    if (filter.custom && typeof filter.custom === 'object') {
+      for (const [key, value] of Object.entries(filter.custom)) {
+        if (value === undefined || value === null || value === '') continue
+        extra[`custom.${key}`] = String(value)
+      }
+    }
     const ws = filter.workspaceId || options.workspaceId
     return this._call('agreements.list', `/agreements${_qs(ws, extra)}`)
   }
