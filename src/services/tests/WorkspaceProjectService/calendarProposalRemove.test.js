@@ -52,7 +52,7 @@ test('calendar.removeProposal with no workspace anywhere sends no query (like de
 test('calendar.removeProposal needs the event id and the proposal id', async t => {
   const svc = makeService('ws-active')
   const stub = sandbox.stub(svc, '_ws').resolves({})
-  for (const [args, re] of [[['', 'p1'], /event/i], [['e1', ''], /proposal/i]]) {
+  for (const [args, re] of [[['', 'p1'], /event id/i], [['e1', ''], /proposal id/i]]) {
     try {
       await svc.calendar.removeProposal(...args)
       t.fail('a missing id should throw')
