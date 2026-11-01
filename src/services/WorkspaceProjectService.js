@@ -586,6 +586,28 @@ export class WorkspaceProjectService extends BaseService {
         }
       )
     },
+    // Withdraw or decline a time proposal (CRUD sweep item 6, CAL-6): DELETE
+    // /calendar/events/:id/proposals/:pid. A proposal is a record ON the
+    // event; the store decides who may remove it (the proposer withdraws,
+    // whoever may write the event declines) and tells the organizer. Same
+    // optional trailing workspaceId as the by-id event calls above.
+    removeProposal: (id, proposalId, workspaceId) => {
+      if (id === undefined || id === null || id === '') {
+        throw new Error('[workspaceProject] calendar.removeProposal needs the event id')
+      }
+      if (proposalId === undefined || proposalId === null || proposalId === '') {
+        throw new Error('[workspaceProject] calendar.removeProposal needs the proposal id')
+      }
+      const wsId = this._chatWorkspaceId(workspaceId)
+      const qs = wsId ? `?workspaceId=${encodeURIComponent(wsId)}` : ''
+      return this._ws(
+        'calendar.removeProposal',
+        `/calendar/events/${encodeURIComponent(id)}/proposals/${encodeURIComponent(proposalId)}${qs}`,
+        {
+          method: 'DELETE'
+        }
+      )
+    },
     // upsertEvent removed 2026-07 — it was the last PostgREST-upsert path on
     // this namespace (dropped with the workspace-project Supabase org
     // retirement). Google-sync re-pull dedupe is handled server-side by the
@@ -660,6 +682,35 @@ export class WorkspaceProjectService extends BaseService {
         'meet.listTranscripts',
         `/meet/rooms/${encodeURIComponent(id)}/transcripts`
       ),
+    // Remove one member row of a room (CRUD sweep item 6): DELETE
+    // /meet/rooms/:id/members/:userId. The room host, an owner/admin of the
+    // ROOM's workspace or a platform admin; the last host stays (409
+    // `last_room_host`); the person's open call session ends with the row.
+    removeMember: (roomId, userId) => {
+      if (!roomId) throw new Error('[workspaceProject] meet.removeMember needs a roomId')
+      if (!userId) throw new Error('[workspaceProject] meet.removeMember needs a userId')
+      return this._ws(
+        'meet.removeMember',
+        `/meet/rooms/${encodeURIComponent(roomId)}/members/${encodeURIComponent(userId)}`,
+        {
+          method: 'DELETE'
+        }
+      )
+    },
+    // Delete the room's transcript (CRUD sweep item 6): DELETE
+    // /meet/rooms/:id/transcripts — every utterance and the analysis built
+    // from them. Same people as removeMember. Answers the deleted counts
+    // { room_id, utterances, analyses }.
+    deleteTranscript: (roomId) => {
+      if (!roomId) throw new Error('[workspaceProject] meet.deleteTranscript needs a roomId')
+      return this._ws(
+        'meet.deleteTranscript',
+        `/meet/rooms/${encodeURIComponent(roomId)}/transcripts`,
+        {
+          method: 'DELETE'
+        }
+      )
+    },
     // Raw transcribed utterances (was sb().from('meet_transcripts').select())
     // — individual speech segments, distinct from the higher-level
     // transcript analysis summaries returned by listTranscripts.
@@ -1316,6 +1367,27 @@ export class WorkspaceProjectService extends BaseService {
         }
       )
       return r?.data ?? r
+    },
+    // Add to ONE number field of a record in one step (CRUD sweep item 6,
+    // the loyalty points fix): POST /workspaces/:ws/records/:id/increment
+    // { field, by }. A read → add → PATCH-the-row loses every add made in
+    // between; the server adds atomically. A spend lands only while the
+    // stored number covers it (409 `insufficient_balance`); a key that holds
+    // no number is 409 `field_not_numeric`. Answers the row after the add.
+    increment: async (id, change, options) => {
+      if (id === undefined || id === null || id === '') {
+        throw new Error('[sdk records] records.increment needs an id')
+      }
+      const ws = this._recordsWorkspaceId(null, options)
+      const r = await this._request(
+        `/workspaces/${ws}/records/${encodeURIComponent(id)}/increment`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ field: change?.field, by: change?.by }),
+          methodName: 'records.increment'
+        }
+      )
+      return r?.data ?? r
     }
   }
 
@@ -1645,6 +1717,21 @@ export class WorkspaceProjectService extends BaseService {
         body: JSON.stringify(payload || {}),
         methodName: 'standups.upsert'
       }).then((r) => r?.data ?? r)
+    },
+    // DELETE /core/workspaces/:workspaceId/standups/:id (CRUD sweep item 6):
+    // a wrong standup had no way out. The server rules who may delete it.
+    remove: (id, options) => {
+      if (id === undefined || id === null || id === '') {
+        throw new Error('[sdk activity] standups.remove needs an id')
+      }
+      const ws = this._activityWorkspaceId(null, options)
+      return this._request(
+        `/workspaces/${ws}/standups/${encodeURIComponent(id)}`,
+        {
+          method: 'DELETE',
+          methodName: 'standups.remove'
+        }
+      ).then((r) => r?.data ?? r)
     }
   }
 

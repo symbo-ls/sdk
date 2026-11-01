@@ -136,6 +136,14 @@ export class InteractionService extends BaseService {
       method: 'DELETE'
     })
   }
+
+  // POST /core/interactions/:id/restore (editor; the delete's undo, the same
+  // rights). Answers the restored row. CRUD sweep item 6.
+  restore (id, { workspaceId } = {}) {
+    return this._call('interactions.restore', `/interactions/${encodeURIComponent(id)}/restore${qs(workspaceId)}`, {
+      method: 'POST'
+    })
+  }
 }
 
 export const createInteractionService = config => new InteractionService(config)

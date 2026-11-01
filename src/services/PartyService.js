@@ -76,6 +76,14 @@ export class PartyService extends BaseService {
     })
   }
 
+  // POST /core/parties/:id/restore (editor; the delete's undo — a contact is
+  // a party). Answers the restored row. CRUD sweep item 6.
+  restore (id, { workspaceId } = {}) {
+    return this._call('parties.restore', `/parties/${encodeURIComponent(id)}/restore${_qs(workspaceId)}`, {
+      method: 'POST'
+    })
+  }
+
   // ── Roles (a party's typed hats — upsert by (party, role)) ────────────────
 
   // GET /core/parties/:id/roles (member).

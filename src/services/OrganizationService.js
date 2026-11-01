@@ -912,6 +912,46 @@ export class OrganizationService extends BaseService {
     )
   }
 
+  /**
+   * Detach a white-label domain from the org (org managers; CRUD sweep
+   * item 6). The app record only — the edge side (CF hostname, url-map
+   * rule) is the operator's revert.
+   * @param {string} orgId
+   * @param {string} domain
+   * @returns {Promise<{customDomains: Array}>} the remaining rows
+   */
+  async detachOrgCustomDomain (orgId, domain) {
+    if (!orgId) throw new Error('orgId is required')
+    if (!domain) throw new Error('domain is required')
+    return this._call(
+      'detachOrgCustomDomain',
+      `/organizations/${orgId}/custom-domains/${encodeURIComponent(domain)}`,
+      { method: 'DELETE' }
+    )
+  }
+
+  // ==================== LEAVE ====================
+
+  /**
+   * The caller leaves the org (POST /core/organizations/:orgId/leave, CRUD
+   * sweep item 6). Self only: the server takes the user from the token,
+   * never from a body or path id. Ends the org membership and the team,
+   * workspace and project memberships inside it; the member's own content
+   * stays. Refusals (the HTTP error, its body on `cause`): 409
+   * `last_owner_cannot_leave` (transfer ownership first), 400
+   * `personal_org_unleavable`, 404 `organization_not_found`.
+   * @param {string} orgId
+   * @returns {Promise<object>} what the server ended
+   */
+  async leaveOrganization (orgId) {
+    if (!orgId) throw new Error('orgId is required')
+    return this._call(
+      'leaveOrganization',
+      `/organizations/${orgId}/leave`,
+      { method: 'POST' }
+    )
+  }
+
   // ==================== ADMIN ====================
 
   // ==================== CUSTOM ROLES (Phase C/D) ====================

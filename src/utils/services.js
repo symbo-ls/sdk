@@ -91,6 +91,13 @@ export const SERVICE_METHODS = {
   getAgent: 'auth',
   updateAgent: 'auth',
   getAgentToolCatalog: 'auth',
+  // CRUD sweep item 6: deactivate / reactivate and delete an agent; the
+  // signed-in user's own sessions (list, sign out one, sign out the others).
+  setAgentStatus: 'auth',
+  deleteAgent: 'auth',
+  listMySessions: 'auth',
+  revokeMySession: 'auth',
+  revokeMyOtherSessions: 'auth',
 
   // Project methods (moved to project service)
   createProject: 'project',
@@ -502,6 +509,9 @@ export const SERVICE_METHODS = {
   listOrgCustomDomains: 'organization',
   attachOrgCustomDomain: 'organization',
   verifyOrgCustomDomain: 'organization',
+  // CRUD sweep item 6: detach a white-label domain; the caller leaves the org.
+  detachOrgCustomDomain: 'organization',
+  leaveOrganization: 'organization',
 
   // Single-round-trip boot composite — GET /core/boot. Collapses the
   // workspace shell's boot-sequence waterfall (getMe -> getOrganization +
@@ -729,6 +739,9 @@ export const SERVICE_METHODS = {
   createBuildImport: 'builds',
   updateBuildImport: 'builds',
   deleteBuildImport: 'builds',
+  // CRUD sweep item 6: ONE env var of an import (set / remove).
+  setBuildImportEnvVar: 'builds',
+  removeBuildImportEnvVar: 'builds',
   triggerBuild: 'builds',
   listBuilds: 'builds',
   getBuild: 'builds',

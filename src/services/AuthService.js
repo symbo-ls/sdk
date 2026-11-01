@@ -1223,10 +1223,18 @@ export class AuthService extends BaseService {
   // returns only that org's agents (metadata.organization match).
   // Omitting it falls back to the legacy unstamped subset, never the
   // cross-tenant roster.
-  async listAgents(orgId) {
+  //
+  // `includeDeletedSeeds: true` (CRUD sweep item 6) adds the org's DELETED
+  // default agents as rows (`includeDeletedSeeds=1`, read only with an
+  // orgId), so the canvas can show Restore on each; Restore is
+  // createAgent({ seedSlug }). Without the option the request is unchanged.
+  async listAgents(orgId, options) {
     this._requireReady('listAgents')
     try {
-      const qs = orgId ? `?orgId=${encodeURIComponent(orgId)}` : ''
+      const params = []
+      if (orgId) params.push(`orgId=${encodeURIComponent(orgId)}`)
+      if (options?.includeDeletedSeeds) params.push('includeDeletedSeeds=1')
+      const qs = params.length ? `?${params.join('&')}` : ''
       const response = await this._request(`/users/agents${qs}`, {
         method: 'GET',
         methodName: 'listAgents'
@@ -1320,6 +1328,70 @@ export class AuthService extends BaseService {
         cause: error
       })
     }
+  }
+
+  // Deactivate / reactivate an agent (CRUD sweep item 6): PATCH
+  // /core/users/agents/:agentId/status { status }. An inactive agent starts
+  // no run; the deactivation cancels its QUEUED runs (data.runs.cancelled),
+  // a started run goes on to its end (data.runs.started). The allowed values
+  // are the server's — a wrong one is 400 naming them; the SDK does not copy
+  // the list. _call, not the wrap above: a refusal reaches the caller as the
+  // HTTP error itself (status + the server body as `cause`).
+  async setAgentStatus(agentId, status) {
+    if (!agentId) throw new Error('agentId is required')
+    if (!status) throw new Error('status is required')
+    return this._call(
+      'setAgentStatus',
+      `/users/agents/${encodeURIComponent(agentId)}/status`,
+      { method: 'PATCH', body: { status } }
+    )
+  }
+
+  // Delete an agent (CRUD sweep item 6): DELETE /core/users/agents/:agentId.
+  // 409 `agent_has_active_runs` while a run is under way (cancel it first:
+  // ai.cancelWorkspaceRun). A deleted default agent comes back through
+  // createAgent({ seedSlug }) — listAgents(orgId, { includeDeletedSeeds })
+  // lists them.
+  async deleteAgent(agentId) {
+    if (!agentId) throw new Error('agentId is required')
+    return this._call(
+      'deleteAgent',
+      `/users/agents/${encodeURIComponent(agentId)}`,
+      { method: 'DELETE' }
+    )
+  }
+
+  // ==================== OWN SESSIONS (CRUD sweep item 6) ====================
+  //
+  // The signed-in user's OWN sessions — a signed-in web session only (a CLI,
+  // plugin, OAuth or delegated token is refused). The current session is the
+  // `sid` of the caller's token, so no call names it. Another user's, an
+  // unknown or an expired sid all answer 404. Named "My…" because
+  // `analyzed.listSessions` (visitor analytics) owns "listSessions".
+
+  // GET /core/auth/sessions → the caller's live sessions (the current one
+  // marked by the server).
+  async listMySessions() {
+    return this._call('listMySessions', '/auth/sessions')
+  }
+
+  // DELETE /core/auth/sessions/:sid → { revoked }. Sign out ONE other
+  // session; the caller's own is 409 (signing out is logout).
+  async revokeMySession(sid) {
+    if (!sid) throw new Error('sid is required')
+    return this._call(
+      'revokeMySession',
+      `/auth/sessions/${encodeURIComponent(sid)}`,
+      { method: 'DELETE' }
+    )
+  }
+
+  // POST /core/auth/sessions/revoke-others → { revoked }. Sign out every
+  // session but the caller's own.
+  async revokeMyOtherSessions() {
+    return this._call('revokeMyOtherSessions', '/auth/sessions/revoke-others', {
+      method: 'POST'
+    })
   }
 
   async getUserByEmail(email) {
