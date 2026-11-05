@@ -272,10 +272,13 @@ export class TicketService extends BaseService {
   }
 
   /**
-   * Delete a ticket permanently.
+   * Delete a ticket. The server soft-deletes it: the task is cancelled and
+   * the record stays. The first DELETE answers 204 (resolves `null`); a
+   * DELETE that changes nothing (the ticket is already deleted) answers 200
+   * `{ alreadyDeleted: true }`; a missing id answers 404 (rejects).
    *
    * @param {string} ticketId - Ticket ID to delete
-   * @returns {Promise<null>}
+   * @returns {Promise<null|{alreadyDeleted: true}>}
    */
   remove(ticketId) {
     const wid = this._workspaceScope()
