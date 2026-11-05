@@ -214,6 +214,36 @@ export class ScreenshotService extends BaseService {
     }
   }
 
+  /**
+   * One hosted-provider shot (screenshotapi.net) of a Symbols preview page or
+   * component. The server adds the provider token and only shoots
+   * Symbols-owned hosts — never build a provider URL on the client.
+   *
+   * @param {object} params
+   * @param {string} params.appKey  preview host, e.g. `demo.symbo.ls`
+   * @param {string} params.key     component key, or page path (`/pricing`)
+   * @param {boolean} [params.isPage]
+   * @param {number} [params.width]
+   * @param {number} [params.height]
+   * @param {boolean} [params.hideUi]
+   * @param {string} [params.globalTheme]  `'dark'` turns on dark mode
+   * @param {boolean} [params.pdf]
+   * @param {string} [params.filetype]     webp (default) | png | jpeg | jpg
+   * @param {boolean} [params.retina]
+   * @param {boolean} [params.selector]
+   * @param {boolean} [params.lazyLoad]
+   * @param {boolean} [params.omitBackground]
+   * @returns {Promise<object>} the provider JSON body (`screenshot`, `url`, …)
+   */
+  async takeRemoteScreenshot (params = {}) {
+    if (!params.appKey) {throw new Error('appKey is required')}
+    if (!params.key) {throw new Error('key is required')}
+    return this._call('takeRemoteScreenshot', '/screenshots/remote-shot', {
+      method: 'POST',
+      body: params
+    })
+  }
+
   async getQueueStatistics () {
     this._requireReady('getQueueStatistics')
     try {
