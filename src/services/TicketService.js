@@ -620,6 +620,16 @@ export class TicketService extends BaseService {
         method: 'POST'
       }),
 
+    /**
+     * Bring an archived cycle back (POST /tickets/cycle/:cycleId/unarchive,
+     * CRUD sweep item 6). Archive's undo: the cycle shows on the roadmap
+     * again; the server rules the state it returns to.
+     */
+    unarchive: (cycleId, { workspaceId } = {}) =>
+      this._call('tickets.cycle.unarchive', `/tickets/cycle/${encodeURIComponent(cycleId)}/unarchive${this._cycleQs(workspaceId)}`, {
+        method: 'POST'
+      }),
+
     /** List tickets attached to a cycle. */
     listTickets: (cycleId, { workspaceId } = {}) =>
       this._call('tickets.cycle.tickets.list', `/tickets/cycle/${encodeURIComponent(cycleId)}/tickets${this._cycleQs(workspaceId)}`),
@@ -640,24 +650,44 @@ export class TicketService extends BaseService {
 
   // ==================== COLUMNS SUB-NAMESPACE ====================
 
+  // `?workspaceId=` (+ any extra params, first) for the /tickets/columns
+  // routes. The column board is the org's; the server finds the org from the
+  // tab's workspace FIRST (resolveRequestOrgId → readExplicitWorkspaceId), so
+  // without it a user with several tabs read and wrote the DEFAULT org's
+  // columns (CRUD sweep item 6). An explicit id wins; otherwise the active
+  // workspace — the default every other tickets call carries. Nothing
+  // resolves → no param (the server's claim fallback, as before).
+  _columnsQs (workspaceId, extra) {
+    const params = new URLSearchParams()
+    for (const [k, v] of Object.entries(extra || {})) {
+      if (v !== undefined && v !== null && v !== '') params.set(k, String(v))
+    }
+    const wid = this._resolveWorkspaceId(workspaceId, { fallbackToStorage: true })
+    if (wid) params.set('workspaceId', String(wid))
+    const s = params.toString()
+    return s ? `?${s}` : ''
+  }
+
   columns = {
     /**
      * List all ticket columns (kanban board configuration).
      *
+     * @param {{ workspaceId?: string }} [options]
      * @returns {Promise<Array>} Array of column documents
      */
-    list: () =>
-      this._call('tickets.columns.list', '/tickets/columns'),
+    list: (options) =>
+      this._call('tickets.columns.list', `/tickets/columns${this._columnsQs(options?.workspaceId)}`),
 
     /**
      * Create a board column. Key defaults to a slug of the label;
      * position defaults to after the current last column.
      *
      * @param {object} payload - { label, key?, position?, color? }
+     * @param {{ workspaceId?: string }} [options]
      * @returns {Promise<object>} Created column document
      */
-    create: (payload) =>
-      this._call('tickets.columns.create', '/tickets/columns', {
+    create: (payload, options) =>
+      this._call('tickets.columns.create', `/tickets/columns${this._columnsQs(options?.workspaceId)}`, {
         method: 'POST',
         body: { payload }
       }),
@@ -667,13 +697,32 @@ export class TicketService extends BaseService {
      *
      * @param {string} key - Column key identifier
      * @param {object} payload - Properties to update
+     * @param {{ workspaceId?: string }} [options]
      * @returns {Promise<object>} Updated column document
      */
-    update: (key, payload) =>
-      this._call('tickets.columns.update', `/tickets/columns/${encodeURIComponent(key)}`, {
+    update: (key, payload, options) =>
+      this._call('tickets.columns.update', `/tickets/columns/${encodeURIComponent(key)}${this._columnsQs(options?.workspaceId)}`, {
         method: 'PUT',
         body: payload
+      }),
+
+    /**
+     * Remove a board column (DELETE /tickets/columns/:key, CRUD sweep item 6).
+     * The server refuses a column that still holds tickets — 409
+     * `column_not_empty` with `ticketCount` (on the error's `cause`) — unless
+     * `moveTo` names the column its tickets move to. The refusal reaches the
+     * caller as the HTTP error itself, so a confirm can offer the move.
+     *
+     * @param {string} key - Column key identifier
+     * @param {{ moveTo?: string, workspaceId?: string }} [options]
+     * @returns {Promise<object>} The server's answer
+     */
+    remove: (key, options) => {
+      if (!key) throw new Error('tickets.columns.remove: key is required')
+      return this._call('tickets.columns.remove', `/tickets/columns/${encodeURIComponent(key)}${this._columnsQs(options?.workspaceId, { moveTo: options?.moveTo })}`, {
+        method: 'DELETE'
       })
+    }
   }
 
   // ==================== TYPE-SPECIFIC SUGAR ====================

@@ -114,6 +114,14 @@ export class DealService extends BaseService {
       method: 'DELETE'
     })
   }
+
+  // POST /core/deals/:id/restore (editor; the delete's undo, the same
+  // rights). Answers the restored deal. CRUD sweep item 6.
+  restore (id, { workspaceId } = {}) {
+    return this._call('deals.restore', `/deals/${encodeURIComponent(id)}/restore${qs({ workspaceId })}`, {
+      method: 'POST'
+    })
+  }
 }
 
 export const createDealService = config => new DealService(config)

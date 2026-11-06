@@ -101,6 +101,14 @@ export class LeadService extends BaseService {
     })
   }
 
+  // POST /core/leads/:id/restore (editor; the delete's undo). Answers the
+  // restored lead. CRUD sweep item 6.
+  restore (id, { workspaceId } = {}) {
+    return this._call('leads.restore', `/leads/${encodeURIComponent(id)}/restore${qs({ workspaceId })}`, {
+      method: 'POST'
+    })
+  }
+
   // Live change stream — GET /core/leads/stream (SSE). A lead is a server
   // entity, not a records collection, so `records.subscribe` never covered
   // it: without this a new lead (website form, WhatsApp, SMS, manual) reached

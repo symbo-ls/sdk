@@ -230,7 +230,9 @@ const CRM_ENTITY_ARG_MAP = {
   markWon: (a) => [a?.id, _crmOpts(a)],
   markLost: (a) => [a?.id, a?.lossReason ?? null, _crmOpts(a)],
   reopen: (a) => [a?.id, { stage: a?.stage }, _crmOpts(a)],
-  convert: (a) => [a?.id, _stripWs(a, ['id']), _crmOpts(a)]
+  convert: (a) => [a?.id, _stripWs(a, ['id']), _crmOpts(a)],
+  // The delete's undo — (id, { workspaceId }) like remove (CRUD sweep item 6).
+  restore: wsArgMaps.id
 }
 
 // RECORDS ARG MAP — the generic maps above cannot serve this entity.
@@ -263,7 +265,14 @@ const RECORDS_ARG_MAP = {
   ],
   remove: wsArgMaps.id,
   // (filter, cb) — the dispatcher appends the callback for subscribe ops.
-  subscribe: (a) => [a || {}]
+  subscribe: (a) => [a || {}],
+  // (id, { field, by }, { workspaceId }) — one atomic add to one number
+  // field (CRUD sweep item 6, the loyalty points fix).
+  increment: (a) => [
+    a?.id ?? a?.number,
+    { field: a?.field, by: a?.by },
+    ..._wsOpts(a)
+  ]
 }
 
 // Bookmarks has one non-CRUD operation: enrich a composing URL. It keeps the
@@ -414,7 +423,9 @@ const ENTITY_ROUTES = {
   // Plural alias 'organizations' matches the spec's sdk.organizations.delete(orgId, opts) form.
   organizations: {
     service: 'organization',
-    methods: { delete: 'deleteOrganization' },
+    // leave — the caller leaves the org (POST /organizations/:orgId/leave,
+    // self only; CRUD sweep item 6).
+    methods: { delete: 'deleteOrganization', leave: 'leaveOrganization' },
     argMap: {
       delete: (a) => [
         a?.id ?? a?.orgId,
@@ -423,7 +434,8 @@ const ENTITY_ROUTES = {
           dryRun: a?.dryRun,
           cascade: a?.cascade
         }
-      ]
+      ],
+      leave: (a) => [a && typeof a === 'object' ? a.orgId ?? a.id : a]
     }
   },
   'organization.members': {
@@ -594,13 +606,37 @@ const ENTITY_ROUTES = {
       columnCounts: (a) => (a?.filter ? [a.filter, { groupBy: a.groupBy }] : [a ?? {}])
     }
   },
+  // Every column op carries the caller's `workspaceId` as the trailing
+  // options (the service sends it, else the active workspace, as
+  // ?workspaceId= — the server finds the board's org from it). `remove`
+  // takes the column `key` and an optional `moveTo` column for its tickets
+  // (409 column_not_empty without it while the column holds tickets).
   'tickets.columns': {
     service: 'tickets',
     methods: {
       list: 'columns.list',
-      update: 'columns.update'
+      create: 'columns.create',
+      update: 'columns.update',
+      remove: 'columns.remove'
     },
-    argMap: { list: () => [], update: argMaps.idPayload }
+    argMap: {
+      list: (a) => [{ workspaceId: a?.workspaceId }],
+      create: (a) => [
+        a?.payload ?? a?.data ?? _stripWs(a),
+        { workspaceId: a?.workspaceId }
+      ],
+      // id/number first, as argMaps.idPayload did (a flat `key` may be a
+      // field of the update); `key` names the column only without them.
+      update: (a) => [
+        a?.id ?? a?.number ?? a?.key,
+        a?.payload ?? a?.data ?? _stripWs(a, ['id', 'number']),
+        { workspaceId: a?.workspaceId }
+      ],
+      remove: (a) => [
+        a && typeof a === 'object' ? a.key ?? a.id : a,
+        { moveTo: a?.moveTo, workspaceId: a?.workspaceId }
+      ]
+    }
   },
   'tickets.comments': {
     service: 'tickets',
@@ -670,6 +706,7 @@ const ENTITY_ROUTES = {
       update: 'cycle.update',
       activate: 'cycle.activate',
       archive: 'cycle.archive',
+      unarchive: 'cycle.unarchive',
       listTickets: 'cycle.listTickets',
       addTicket: 'cycle.addTicket',
       removeTicket: 'cycle.removeTicket'
@@ -683,6 +720,7 @@ const ENTITY_ROUTES = {
       update: (a) => [a?.cycleId ?? a?.id, a?.payload ?? a, { workspaceId: a?.workspaceId }],
       activate: (a) => [a?.cycleId ?? a?.id ?? a, { workspaceId: a?.workspaceId }],
       archive: (a) => [a?.cycleId ?? a?.id ?? a, { workspaceId: a?.workspaceId }],
+      unarchive: (a) => [a?.cycleId ?? a?.id ?? a, { workspaceId: a?.workspaceId }],
       listTickets: (a) => [a?.cycleId ?? a?.id ?? a, { workspaceId: a?.workspaceId }],
       addTicket: (a) => [a?.cycleId ?? a?.id, a?.ticketId, { workspaceId: a?.workspaceId }],
       removeTicket: (a) => [a?.cycleId ?? a?.id, a?.ticketId, { workspaceId: a?.workspaceId }]
@@ -858,6 +896,8 @@ const ENTITY_ROUTES = {
       create: 'create',
       update: 'update',
       remove: 'remove',
+      // The delete's undo (POST /parties/:id/restore) — CRUD sweep item 6.
+      restore: 'restore',
       listRoles: 'listRoles',
       addRole: 'addRole',
       removeRole: 'removeRole',
@@ -867,6 +907,7 @@ const ENTITY_ROUTES = {
     },
     argMap: {
       ...WS_CRUD_ARG_MAP,
+      restore: wsArgMaps.id,
       // Roles/relationships thread the parent partyId first, then the body, then
       // the `{ workspaceId }` opts PartyService forwards to `?workspaceId=`. A
       // member's Party lives in the org's HQ workspace (org-level intranet home,
@@ -909,12 +950,15 @@ const ENTITY_ROUTES = {
       create: 'create',
       update: 'update',
       remove: 'remove',
+      // The delete's undo (POST /interactions/:id/restore) — CRUD sweep item 6.
+      restore: 'restore',
       // CRM 1.4 — activities.
       myDay: 'myDay',
       markDone: 'markDone'
     },
     argMap: {
       ...WS_CRUD_ARG_MAP,
+      restore: wsArgMaps.id,
       myDay: (a) => [{ date: a?.date, tz: a?.tz, workspaceId: a?.workspaceId }],
       markDone: (a) => [
         a?.id,
@@ -938,6 +982,8 @@ const ENTITY_ROUTES = {
       create: 'create',
       update: 'update',
       remove: 'remove',
+      // The delete's undo (POST /leads/:id/restore) — CRUD sweep item 6.
+      restore: 'restore',
       summary: 'summary',
       pipelines: 'pipelines',
       move: 'move',
@@ -992,6 +1038,8 @@ const ENTITY_ROUTES = {
       create: 'create',
       update: 'update',
       remove: 'remove',
+      // The delete's undo (POST /deals/:id/restore) — CRUD sweep item 6.
+      restore: 'restore',
       summary: 'summary',
       pipelines: 'pipelines',
       move: 'move',
@@ -1214,10 +1262,14 @@ const ENTITY_ROUTES = {
       issue: 'issue',
       void: 'void',
       createCreditNote: 'createCreditNote',
-      listCreditNotes: 'listCreditNotes'
+      listCreditNotes: 'listCreditNotes',
+      contract: 'getContract'
     },
     argMap: {
       ...WS_CRUD_ARG_MAP,
+      // contract({ workspaceId? }) — the server's write bounds
+      // ({ voidReasonMaxLength }); only the workspace rides along.
+      contract: (a) => _wsOpts(a),
       // issue transitions draft → open by id (no body); the caller's
       // workspaceId rides on the options positional like the CRUD ops.
       issue: wsArgMaps.id,
@@ -1986,10 +2038,12 @@ const ENTITY_ROUTES = {
       update: 'chat.updateMessage',
       remove: 'chat.removeMessage',
       react: 'chat.toggleReaction',
-      // Org-admin-only bulk purge of every message in the caller's active
-      // workspace (admin gate + workspace scoping enforced by the worker
-      // route POST /chat/messages/purge). Takes no args.
-      purge: 'chat.purgeMessages'
+      // Platform-admin-only bulk purge of every message in one workspace
+      // (User.globalRole 'admin'; the worker route POST /chat/messages/purge
+      // holds the gate). Optional { workspaceId } — see chat.purgeMessages.
+      purge: 'chat.purgeMessages',
+      // Its dry run: { messages, channels, workspaceId }, deletes nothing.
+      purgePreview: 'chat.previewPurgeMessages'
     },
     argMap: {
       // Same "no silent escalation" contract as chat.members.list above —
@@ -2025,8 +2079,10 @@ const ENTITY_ROUTES = {
       update: (a) => [a?.messageId ?? a?.id, a?.payload ?? a?.data ?? a],
       remove: (a) => [a?.messageId ?? a?.id],
       react: (a) => [a?.messageId ?? a?.id, a?.emoji, a?.userId],
-      // No args — the active workspace is derived server-side from the token.
-      purge: () => []
+      // workspaceId names the workspace the page shows; absent → the
+      // service defaults it to activeWorkspaceId.
+      purge: (a) => [a?.workspaceId],
+      purgePreview: (a) => [a?.workspaceId]
     }
   },
   'workspaceProject.chat.mentions': {
@@ -2079,10 +2135,13 @@ const ENTITY_ROUTES = {
       // CORE-CALENDAR-SERIES-BULK-SOFT-DELETE-1 — future-scope series
       // soft-delete. Filters CANNOT ride the update op (argMaps.idPayload
       // drops every non-id param by design), so the bulk pass is its own op.
-      deleteFuture: 'calendar.deleteFutureEvents'
+      deleteFuture: 'calendar.deleteFutureEvents',
       // upsert op removed 2026-07 — calendar.upsertEvent was the last
       // PostgREST-upsert path on the calendar namespace (dropped with the
       // workspace-project Supabase org retirement).
+      // removeProposal — withdraw or decline a time proposal on the event
+      // (CAL-6; CRUD sweep item 6).
+      removeProposal: 'calendar.removeProposal'
     },
     argMap: {
       list: (a) => [a?.filter ?? a?.params],
@@ -2090,7 +2149,12 @@ const ENTITY_ROUTES = {
       create: argMaps.payload,
       update: argMaps.idPayload,
       remove: argMaps.id,
-      deleteFuture: (a) => [a?.seriesId, a?.fromDate, a?.workspaceId]
+      deleteFuture: (a) => [a?.seriesId, a?.fromDate, a?.workspaceId],
+      removeProposal: (a) => [
+        a?.id ?? a?.eventId,
+        a?.proposalId ?? a?.pid,
+        a?.workspaceId
+      ]
     }
   },
   // workspaceProject.documents{,.kb,.notes,.userDocuments,.resourceLinks}
@@ -2218,7 +2282,9 @@ const ENTITY_ROUTES = {
       // upsert is a separate op so callers don't have to thread an
       // onConflict option through `create`. Maps to the dedicated
       // POST /standups/upsert endpoint server-side.
-      upsert: 'standups.upsert'
+      upsert: 'standups.upsert',
+      // DELETE /workspaces/:ws/standups/:id — CRUD sweep item 6.
+      remove: 'standups.remove'
     },
     argMap: {
       list: (a) => [
@@ -2232,7 +2298,9 @@ const ENTITY_ROUTES = {
       get: argMaps.id,
       create: argMaps.payload,
       update: argMaps.idPayload,
-      upsert: argMaps.payload
+      upsert: argMaps.payload,
+      // (id, { workspaceId }) — the caller's workspace rides as the options.
+      remove: wsArgMaps.id
     }
   },
 
@@ -2403,7 +2471,8 @@ const ENTITY_ROUTES = {
       create: 'records.create',
       update: 'records.update',
       remove: 'records.remove',
-      subscribe: 'records.subscribe'
+      subscribe: 'records.subscribe',
+      increment: 'records.increment'
     },
     // WS map, not plain CRUD: records.* shares the uniform `(…, { workspaceId })`
     // signature, and CRUD_ARG_MAP gave get/remove NO channel to carry the
@@ -2559,8 +2628,12 @@ const ENTITY_ROUTES = {
   },
   'workspaceProject.meet.transcripts': {
     service: 'workspaceProject',
-    methods: { list: 'meet.listTranscripts' },
-    argMap: { list: (a) => [a?.roomId ?? a?.filter?.room_id ?? a] }
+    // remove — delete the room's transcript (CRUD sweep item 6).
+    methods: { list: 'meet.listTranscripts', remove: 'meet.deleteTranscript' },
+    argMap: {
+      list: (a) => [a?.roomId ?? a?.filter?.room_id ?? a],
+      remove: (a) => [a?.roomId ?? a?.filter?.room_id ?? a]
+    }
   },
   // Members of a single meet room. Read = list members; create =
   // sb.from('meet_room_members').insert() — the createRoom flow auto-adds
@@ -2569,10 +2642,16 @@ const ENTITY_ROUTES = {
     service: 'workspaceProject',
     methods: {
       list: 'meet.listMembers',
-      create: 'meet.addMember'
+      create: 'meet.addMember',
+      // remove — one member row of the room (CRUD sweep item 6).
+      remove: 'meet.removeMember'
     },
     argMap: {
       list: (a) => [a?.roomId ?? a?.filter?.room_id ?? a],
+      remove: (a) => [
+        a?.roomId ?? a?.filter?.room_id,
+        a?.userId ?? a?.user_id ?? a?.filter?.user_id
+      ],
       create: (a) => [
         a?.roomId ?? a?.filter?.room_id,
         a?.payload ??
@@ -2910,13 +2989,24 @@ const ENTITY_ROUTES = {
       list: 'listBuildImports',
       create: 'createBuildImport',
       update: 'updateBuildImport',
-      remove: 'deleteBuildImport'
+      remove: 'deleteBuildImport',
+      // ONE env var of the import — set / remove (CRUD sweep item 6); the
+      // update op's envVars replaces the whole map.
+      setEnvVar: 'setBuildImportEnvVar',
+      removeEnvVar: 'removeBuildImportEnvVar'
     },
     argMap: {
       list: (a) => [buildsWs(a)],
       create: (a) => [buildsWs(a), a?.payload ?? a?.data],
       update: (a) => [buildsWs(a), buildsRepo(a), a?.payload ?? a?.data ?? {}],
-      remove: (a) => [buildsWs(a), buildsRepo(a)]
+      remove: (a) => [buildsWs(a), buildsRepo(a)],
+      setEnvVar: (a) => [
+        buildsWs(a),
+        buildsRepo(a),
+        a?.key ?? a?.params?.key,
+        a?.value ?? a?.params?.value
+      ],
+      removeEnvVar: (a) => [buildsWs(a), buildsRepo(a), a?.key ?? a?.params?.key]
     }
   },
   'builds.builds': {

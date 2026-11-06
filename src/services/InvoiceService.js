@@ -38,6 +38,13 @@ export class InvoiceService extends BaseService {
     return this._call('invoices.list', `/invoices${_qs(ws, extra)}`)
   }
 
+  // GET /core/invoices/contract — the bounds the server enforces, read
+  // BEFORE a write so no client hardcodes a copy: { voidReasonMaxLength }
+  // (a void reason longer than that is a 400). Member-gated like every read.
+  getContract ({ workspaceId } = {}) {
+    return this._call('invoices.getContract', `/invoices/contract${_qs(workspaceId)}`)
+  }
+
   // GET /core/invoices/:id
   get (id, { workspaceId } = {}) {
     return this._call('invoices.get', `/invoices/${encodeURIComponent(id)}${_qs(workspaceId)}`)

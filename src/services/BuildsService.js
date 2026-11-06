@@ -128,6 +128,50 @@ export class BuildsService extends BaseService {
   }
 
   /**
+   * Set ONE env var of an imported repo — add or change (CRUD sweep item 6).
+   * updateBuildImport's `envVars` replaces the WHOLE map, so a client that
+   * changes one variable has to send every other one and loses a variable
+   * another editor added in between; this writes only the one key. A plain
+   * name is added or changed; any other name is changed only while the
+   * import holds it (else 400 `invalid_env_var_key`). The path is spelled out
+   * (not wsBase) so the drift analyzer sees the route.
+   * @param {string} workspaceId
+   * @param {string} repoId — WorkspaceRepo id
+   * @param {string} key
+   * @param {string} value
+   * @returns {Promise<object>} the updated WorkspaceRepo row
+   */
+  setBuildImportEnvVar (workspaceId, repoId, key, value) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!repoId) throw new Error('repoId is required')
+    if (!key) throw new Error('key is required')
+    return this._call(
+      'setBuildImportEnvVar',
+      `/builds/workspaces/${encodeURIComponent(workspaceId)}/imports/${encodeURIComponent(repoId)}/env-vars/${encodeURIComponent(key)}`,
+      { method: 'PUT', body: { value } }
+    )
+  }
+
+  /**
+   * Remove ONE env var of an imported repo, whatever its name (CRUD sweep
+   * item 6). 404 `env_var_not_found` when the import has no such key.
+   * @param {string} workspaceId
+   * @param {string} repoId — WorkspaceRepo id
+   * @param {string} key
+   * @returns {Promise<object>} the updated WorkspaceRepo row
+   */
+  removeBuildImportEnvVar (workspaceId, repoId, key) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!repoId) throw new Error('repoId is required')
+    if (!key) throw new Error('key is required')
+    return this._call(
+      'removeBuildImportEnvVar',
+      `/builds/workspaces/${encodeURIComponent(workspaceId)}/imports/${encodeURIComponent(repoId)}/env-vars/${encodeURIComponent(key)}`,
+      { method: 'DELETE' }
+    )
+  }
+
+  /**
    * Trigger a build for an imported repo (queued → building → success/failed).
    * @param {string} workspaceId
    * @param {string} repoId — WorkspaceRepo id

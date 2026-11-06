@@ -1499,6 +1499,30 @@ export class AiService extends BaseService {
     return this._unwrap(res)
   }
 
+  // Cancel a running agent task of a workspace (CRUD sweep item 6): POST
+  // /core/agents/workspaces/:workspaceId/runs/:runId/cancel { note? }. The
+  // workspace owner/admin stops a run of the workspace (the ticket
+  // orchestration's runs); a stuck one used to keep its agent from deletion.
+  // 409 `agent_run_finished` when it already ended; 404 when the workspace
+  // holds no such run. Answers the run after the cancel. The workspace: the
+  // explicit one, else the active one.
+  async cancelWorkspaceRun(runId, { workspaceId, note } = {}) {
+    if (!runId)
+      throw new Error('[sdk.ai] runId required for cancelWorkspaceRun')
+    const wsId = this._activeWorkspaceId(workspaceId)
+    if (!wsId)
+      throw new Error('[sdk.ai] no active workspace for cancelWorkspaceRun')
+    const res = await this._requestExternal(
+      `${this._apiUrl}/core/agents/workspaces/${encodeURIComponent(wsId)}/runs/${encodeURIComponent(runId)}/cancel`,
+      {
+        method: 'POST',
+        body: note ? { note } : {},
+        methodName: 'ai.cancelWorkspaceRun'
+      }
+    )
+    return this._unwrap(res)
+  }
+
   _unwrap(res) {
     return res && typeof res === 'object' && 'data' in res ? res.data : res
   }
