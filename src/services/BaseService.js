@@ -713,7 +713,13 @@ export class BaseService {
       // POB — the public website read before sign-up; an anonymous visitor.
       'getOnboardingConfig',
       'startResearch',
-      'getResearch'
+      'getResearch',
+      // Public onboarding (PublicOnboardingService) — the role picker and
+      // the request to join are the anonymous visitor's surface. NOT
+      // `joinOnboarding`: self-join is the signed-in caller's own act and
+      // needs the session's bearer token.
+      'getOnboardingOptions',
+      'requestOnboarding'
     ])
     return !noInitMethods.has(methodName)
   }
