@@ -330,6 +330,7 @@ export const SERVICE_METHODS = {
   getPageScreenshot: 'screenshot',
   getComponentScreenshot: 'screenshot',
   getScreenshotByKey: 'screenshot',
+  takeRemoteScreenshot: 'screenshot',
   getQueueStatistics: 'screenshot',
   refreshThumbnail: 'screenshot',
 
