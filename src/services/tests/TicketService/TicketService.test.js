@@ -406,6 +406,36 @@ test('tickets.columns.update PUTs to /tickets/columns/:key with payload', async 
   t.end()
 })
 
+test('tickets.columns.* carry the active workspace as ?workspaceId= (item 6)', async t => {
+  const svc = makeService()
+  svc._context = { activeWorkspaceId: 'ws_active' }
+  const stub = sandbox.stub(svc, '_call').resolves({})
+  await svc.columns.list()
+  await svc.columns.create({ label: 'Review' })
+  await svc.columns.update('todo', { label: 'Later' })
+  t.equal(stub.getCall(0).args[1], '/tickets/columns?workspaceId=ws_active', 'list')
+  t.equal(stub.getCall(1).args[1], '/tickets/columns?workspaceId=ws_active', 'create')
+  t.deepEqual(stub.getCall(1).args[2].body, { payload: { label: 'Review' } }, 'create body unchanged')
+  t.equal(stub.getCall(2).args[1], '/tickets/columns/todo?workspaceId=ws_active', 'update')
+  t.deepEqual(stub.getCall(2).args[2].body, { label: 'Later' }, 'update body unchanged')
+  sandbox.restore()
+  t.end()
+})
+
+test('tickets.columns.* take an explicit workspaceId over the active one', async t => {
+  const svc = makeService()
+  svc._context = { activeWorkspaceId: 'ws_active' }
+  const stub = sandbox.stub(svc, '_call').resolves({})
+  await svc.columns.list({ workspaceId: 'ws 1' })
+  await svc.columns.create({ label: 'X' }, { workspaceId: 'ws1' })
+  await svc.columns.update('todo', { label: 'Y' }, { workspaceId: 'ws1' })
+  t.equal(stub.getCall(0).args[1], '/tickets/columns?workspaceId=ws%201', 'list encodes')
+  t.equal(stub.getCall(1).args[1], '/tickets/columns?workspaceId=ws1', 'create')
+  t.equal(stub.getCall(2).args[1], '/tickets/columns/todo?workspaceId=ws1', 'update')
+  sandbox.restore()
+  t.end()
+})
+
 // ─── subscribe (SSE smoke test) ───────────────────────────────────────────────
 
 test('tickets.subscribe calls _sseSubscribe with /tickets/stream', t => {

@@ -639,15 +639,30 @@ export class TicketService extends BaseService {
   }
 
   // ==================== COLUMNS SUB-NAMESPACE ====================
+  //
+  // Board columns belong to the org, but the right to CHANGE them follows the
+  // caller's role in the workspace the board is open in (server
+  // TicketColumnController.canEditColumns, item 6 2026-11-08: a viewer in W1
+  // who is an editor in W2 must not edit columns from W1). So every columns
+  // call carries `?workspaceId=` — explicit, else this tab's active workspace,
+  // the default every other tickets call carries. Without it the server falls
+  // back to the user's single activeWorkspace pointer, which a second tab on
+  // another workspace moves.
+  _columnsQs (workspaceId) {
+    const wid = this._resolveWorkspaceId(workspaceId, { fallbackToStorage: true })
+    return wid ? `?workspaceId=${encodeURIComponent(wid)}` : ''
+  }
 
   columns = {
     /**
-     * List all ticket columns (kanban board configuration).
+     * List all ticket columns (kanban board configuration). Each column
+     * carries `canEditColumns` — the caller's verdict for the workspace sent.
      *
+     * @param {object} [opts] - { workspaceId } (default: the active workspace)
      * @returns {Promise<Array>} Array of column documents
      */
-    list: () =>
-      this._call('tickets.columns.list', '/tickets/columns'),
+    list: ({ workspaceId } = {}) =>
+      this._call('tickets.columns.list', `/tickets/columns${this._columnsQs(workspaceId)}`),
 
     /**
      * Create a board column. Key defaults to a slug of the label;
@@ -656,8 +671,8 @@ export class TicketService extends BaseService {
      * @param {object} payload - { label, key?, position?, color? }
      * @returns {Promise<object>} Created column document
      */
-    create: (payload) =>
-      this._call('tickets.columns.create', '/tickets/columns', {
+    create: (payload, { workspaceId } = {}) =>
+      this._call('tickets.columns.create', `/tickets/columns${this._columnsQs(workspaceId)}`, {
         method: 'POST',
         body: { payload }
       }),
@@ -669,8 +684,8 @@ export class TicketService extends BaseService {
      * @param {object} payload - Properties to update
      * @returns {Promise<object>} Updated column document
      */
-    update: (key, payload) =>
-      this._call('tickets.columns.update', `/tickets/columns/${encodeURIComponent(key)}`, {
+    update: (key, payload, { workspaceId } = {}) =>
+      this._call('tickets.columns.update', `/tickets/columns/${encodeURIComponent(key)}${this._columnsQs(workspaceId)}`, {
         method: 'PUT',
         body: payload
       })
