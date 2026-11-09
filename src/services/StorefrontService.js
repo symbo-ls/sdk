@@ -49,6 +49,8 @@ const qs = (params) => {
   return s ? `?${s}` : ''
 }
 
+const STOREFRONT_PROVIDERS = ['google', 'apple', 'facebook']
+
 export class StorefrontService extends BaseService {
   // GET /core/storefront/:workspaceId/products?category=&limit=&page=
   // PUBLIC — published products only, computed sellable (warehouse,
@@ -172,7 +174,13 @@ export class StorefrontService extends BaseService {
   }
 
   // POST /core/storefront/:workspaceId/auth/request-otp
-  // PUBLIC — `purpose` is 'verify' (default) or 'reset'. v1 is EMAIL-ONLY
+  // PUBLIC — `purpose` is 'verify' (default), 'reset', or 'login' (a
+  // passwordless sign-in code, then `signInStorefrontCustomerWithOtp`). A
+  // 'login' code goes to ANY address — the first verified code creates the
+  // customer — and the answer is the same whether or not an account exists.
+  // A repeat inside 60 s re-sends nothing (the code already sent stays
+  // valid); too many codes to one address in an hour → `otp_rate_limited`
+  // (429). v1 is EMAIL-ONLY
   // (no SMS provider wired server-side yet) — a phone-only request resolves
   // `{ success:false }` with `error:'sms_not_available'`, never a silent
   // no-op.
@@ -192,6 +200,24 @@ export class StorefrontService extends BaseService {
       'verifyStorefrontCustomerOtp',
       `/storefront/${encodeURIComponent(workspaceId)}/auth/verify-otp`,
       { method: 'POST', body: { phone, email, code, purpose } }
+    )
+  }
+
+  // POST /core/storefront/:workspaceId/auth/otp-login
+  // PUBLIC — exchange the code from `requestStorefrontCustomerOtp(ws,
+  // { email, purpose: 'login' })` for a customer session. `fullName` seeds a
+  // NEW account only (passwordless sign-up: no phone, no password, a verified
+  // email). Resolves `{ token, customer, created }` — the
+  // `loginStorefrontCustomer` shape plus `created`. Errors:
+  // `invalid_or_expired_code` (wrong / expired / used / 5 wrong tries),
+  // `account_exists_unverified` (an account holds this email unverified —
+  // reset its password first), `sms_not_available` (phone).
+  signInStorefrontCustomerWithOtp (workspaceId, { email, phone, code, fullName } = {}) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    return this._call(
+      'signInStorefrontCustomerWithOtp',
+      `/storefront/${encodeURIComponent(workspaceId)}/auth/otp-login`,
+      { method: 'POST', body: { email, phone, code, fullName } }
     )
   }
 
@@ -236,13 +262,66 @@ export class StorefrontService extends BaseService {
   // `loginStorefrontCustomer`.
   signInStorefrontCustomerWithOAuth (workspaceId, provider, { idToken, accessToken, nonce, name } = {}) {
     if (!workspaceId) throw new Error('workspaceId is required')
-    if (!['google', 'apple', 'facebook'].includes(provider)) {
+    if (!STOREFRONT_PROVIDERS.includes(provider)) {
       throw new Error('provider must be one of: google, apple, facebook')
     }
     return this._call(
       'signInStorefrontCustomerWithOAuth',
       `/storefront/${encodeURIComponent(workspaceId)}/auth/oauth/${encodeURIComponent(provider)}`,
       { method: 'POST', body: { idToken, accessToken, nonce, name } }
+    )
+  }
+
+  // POST /core/storefront/:workspaceId/auth/link/:provider
+  // SIGNED-IN customer (explicit `customerToken`) — link a Google / Apple /
+  // Facebook identity to the account. Same provider payload as
+  // `signInStorefrontCustomerWithOAuth`. Resolves `{ customer }` (its
+  // `providers` lists the linked names). `identity_conflict` (409): that
+  // identity belongs to another customer, or the account already has a
+  // different identity at this provider. Re-linking the own identity is a
+  // no-op success.
+  linkStorefrontCustomerProvider (workspaceId, provider, { idToken, accessToken, nonce } = {}, customerToken) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!STOREFRONT_PROVIDERS.includes(provider)) {
+      throw new Error('provider must be one of: google, apple, facebook')
+    }
+    if (!customerToken) throw new Error('customerToken is required')
+    return this._call(
+      'linkStorefrontCustomerProvider',
+      `/storefront/${encodeURIComponent(workspaceId)}/auth/link/${encodeURIComponent(provider)}`,
+      { method: 'POST', body: { idToken, accessToken, nonce }, headers: _customerHeaders(customerToken) }
+    )
+  }
+
+  // DELETE /core/storefront/:workspaceId/auth/link/:provider
+  // SIGNED-IN customer. Resolves `{ customer }`. `last_sign_in_method` (409)
+  // when this provider is the account's only way to sign in (no password, no
+  // verified email, no other provider); `provider_not_linked` (404).
+  unlinkStorefrontCustomerProvider (workspaceId, provider, customerToken) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!STOREFRONT_PROVIDERS.includes(provider)) {
+      throw new Error('provider must be one of: google, apple, facebook')
+    }
+    if (!customerToken) throw new Error('customerToken is required')
+    return this._call(
+      'unlinkStorefrontCustomerProvider',
+      `/storefront/${encodeURIComponent(workspaceId)}/auth/link/${encodeURIComponent(provider)}`,
+      { method: 'DELETE', headers: _customerHeaders(customerToken) }
+    )
+  }
+
+  // POST /core/storefront/:workspaceId/auth/refresh
+  // SIGNED-IN customer — a still-valid customer token in, a fresh one (new
+  // 30-day expiry) out: `{ token }`. Call it on page load to keep a returning
+  // customer signed in. An EXPIRED token is refused (401
+  // `invalid_customer_token`): sign in again.
+  refreshStorefrontCustomerToken (workspaceId, customerToken) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!customerToken) throw new Error('customerToken is required')
+    return this._call(
+      'refreshStorefrontCustomerToken',
+      `/storefront/${encodeURIComponent(workspaceId)}/auth/refresh`,
+      { method: 'POST', headers: _customerHeaders(customerToken) }
     )
   }
 

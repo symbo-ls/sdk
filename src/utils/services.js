@@ -836,6 +836,12 @@ export const SERVICE_METHODS = {
   getStorefrontAuthProviders: 'storefront',
   signInStorefrontCustomerWithOAuth: 'storefront',
   setStorefrontAuthProviders: 'storefront',
+  // Passwordless code sign-in (public), provider link/unlink + token refresh
+  // (explicit storefront-customer token, never the platform session).
+  signInStorefrontCustomerWithOtp: 'storefront',
+  linkStorefrontCustomerProvider: 'storefront',
+  unlinkStorefrontCustomerProvider: 'storefront',
+  refreshStorefrontCustomerToken: 'storefront',
   // Storefront schema selection (owner|admin, platform-user session).
   getStorefrontSchema: 'storefront',
   setStorefrontSchema: 'storefront',
