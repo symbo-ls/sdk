@@ -313,8 +313,10 @@ export class StorefrontService extends BaseService {
   // POST /core/storefront/:workspaceId/auth/refresh
   // SIGNED-IN customer — a still-valid customer token in, a fresh one (new
   // 30-day expiry) out: `{ token }`. Call it on page load to keep a returning
-  // customer signed in. An EXPIRED token is refused (401
-  // `invalid_customer_token`): sign in again.
+  // customer signed in. An EXPIRED or revoked token is refused (401
+  // `invalid_customer_token`); 90 days after the real sign-in the session
+  // ends (401 `session_expired`) however often it was refreshed: sign in
+  // again.
   refreshStorefrontCustomerToken (workspaceId, customerToken) {
     if (!workspaceId) throw new Error('workspaceId is required')
     if (!customerToken) throw new Error('customerToken is required')
@@ -322,6 +324,46 @@ export class StorefrontService extends BaseService {
       'refreshStorefrontCustomerToken',
       `/storefront/${encodeURIComponent(workspaceId)}/auth/refresh`,
       { method: 'POST', headers: _customerHeaders(customerToken) }
+    )
+  }
+
+  // POST /core/storefront/:workspaceId/auth/oauth/apple/start
+  // PUBLIC — Sign in with Apple in REDIRECT mode (form_post: Apple sends the
+  // name/email only this way). `returnUrl` = the shop page that receives the
+  // result (https, a published host of this workspace; default path
+  // /signin/apple). Resolves the AppleID.auth.init options:
+  // `{ clientId, redirectUri, scope, responseMode, state, nonce, binding }`.
+  // Pass the first six to AppleID.auth.init as they are (`usePopup: false`).
+  // Keep `binding` in sessionStorage (never in the URL, never in
+  // localStorage): the ticket exchange needs it, so a ticket link sent to
+  // another browser cannot sign that browser in (login-CSRF guard). Apple
+  // then posts to the API, and the API sends the browser to
+  // `<returnUrl>#ticket=<one-time>` (or `#error=<code>`).
+  startStorefrontAppleSignIn (workspaceId, { returnUrl } = {}) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!returnUrl) throw new Error('returnUrl is required')
+    return this._call(
+      'startStorefrontAppleSignIn',
+      `/storefront/${encodeURIComponent(workspaceId)}/auth/oauth/apple/start`,
+      { method: 'POST', body: { returnUrl } }
+    )
+  }
+
+  // POST /core/storefront/:workspaceId/auth/oauth/apple/ticket
+  // PUBLIC — trade the one-time `ticket` from the return page's URL fragment
+  // for the customer session: `{ token, customer, created }` (the
+  // `loginStorefrontCustomer` shape plus `created`). `binding` = the value
+  // `startStorefrontAppleSignIn` returned, read back from sessionStorage.
+  // Single-use, valid 60 s; a used / expired ticket or a wrong binding → 401
+  // `invalid_ticket`. Clear the fragment and the stored binding after use.
+  exchangeStorefrontAppleTicket (workspaceId, ticket, binding) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!ticket) throw new Error('ticket is required')
+    if (!binding) throw new Error('binding is required')
+    return this._call(
+      'exchangeStorefrontAppleTicket',
+      `/storefront/${encodeURIComponent(workspaceId)}/auth/oauth/apple/ticket`,
+      { method: 'POST', body: { ticket, binding } }
     )
   }
 

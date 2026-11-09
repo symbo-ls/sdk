@@ -835,6 +835,9 @@ export const SERVICE_METHODS = {
   // on the SDK's own platform-user session.
   getStorefrontAuthProviders: 'storefront',
   signInStorefrontCustomerWithOAuth: 'storefront',
+  // Sign in with Apple, redirect (form_post) flow — public.
+  startStorefrontAppleSignIn: 'storefront',
+  exchangeStorefrontAppleTicket: 'storefront',
   setStorefrontAuthProviders: 'storefront',
   // Passwordless code sign-in (public), provider link/unlink + token refresh
   // (explicit storefront-customer token, never the platform session).
