@@ -881,6 +881,21 @@ export const SERVICE_METHODS = {
   setStorefrontCheckoutSettings: 'storefront',
   getStorefrontPaymentSettings: 'storefront',
   setStorefrontPaymentSettings: 'storefront',
+  // Customer records + private files (explicit storefront-customer token),
+  // plus the owner|admin settings and the staff file URL (platform session).
+  listStorefrontCustomerRecords: 'storefront',
+  createStorefrontCustomerRecord: 'storefront',
+  getStorefrontCustomerRecord: 'storefront',
+  updateStorefrontCustomerRecord: 'storefront',
+  deleteStorefrontCustomerRecord: 'storefront',
+  importStorefrontCustomerRecords: 'storefront',
+  uploadStorefrontCustomerFile: 'storefront',
+  listStorefrontCustomerFiles: 'storefront',
+  getStorefrontCustomerFileUrl: 'storefront',
+  deleteStorefrontCustomerFile: 'storefront',
+  getStorefrontCustomerRecordSettings: 'storefront',
+  setStorefrontCustomerRecordSettings: 'storefront',
+  getStorefrontCustomerFileStaffUrl: 'storefront',
 
   // External company-registry proxy (bellforge D2-1) — authenticated,
   // NOT workspace-scoped; rides the server's provider chain + 1h cache.
