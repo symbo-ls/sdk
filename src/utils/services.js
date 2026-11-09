@@ -607,6 +607,7 @@ export const SERVICE_METHODS = {
   // Workspace public config + write-only private-secret management.
   // Trusted runtime secret resolution is intentionally not browser-exposed.
   getWorkspacePublicConfig: 'workspace',
+  getWorkspaceSiteConfig: 'workspace',
   upsertWorkspacePublicConfig: 'workspace',
   deleteWorkspacePublicConfig: 'workspace',
   listWorkspaceSecrets: 'workspace',

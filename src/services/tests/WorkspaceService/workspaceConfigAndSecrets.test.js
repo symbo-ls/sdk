@@ -183,3 +183,29 @@ test('teardown', t => {
   sandbox.restore()
   t.end()
 })
+
+test('getWorkspaceSiteConfig: PUBLIC GET /workspaces/:id/config/site?environment=, no session token', async t => {
+  const service = makeService()
+  const data = { environment: 'production', config: { BUSINESS_URL: 'https://business.example.test' } }
+  const request = sandbox.stub(service, '_request').resolves({ success: true, data })
+
+  const result = await service.getWorkspaceSiteConfig('ws 1', { env: 'production' })
+
+  t.equal(request.firstCall.args[0], '/workspaces/ws%201/config/site?environment=production')
+  t.equal(request.firstCall.args[1].method, 'GET')
+  t.deepEqual(result, data)
+  t.equal(service._requiresInit('getWorkspaceSiteConfig'), false, 'anonymous: never the platform bearer')
+  t.equal(SERVICE_METHODS.getWorkspaceSiteConfig, 'workspace', 'flat-exposed')
+  await service.getWorkspaceSiteConfig('w', { environmentKey: 'staging' })
+  t.equal(request.secondCall.args[0], '/workspaces/w/config/site?environment=staging')
+  for (const [args, re] of [[['w'], /environment is required/], [[], /workspaceId is required/]]) {
+    try {
+      await service.getWorkspaceSiteConfig(...args)
+      t.fail('should throw')
+    } catch (err) {
+      t.match(err.message, re)
+    }
+  }
+  sandbox.restore()
+  t.end()
+})
