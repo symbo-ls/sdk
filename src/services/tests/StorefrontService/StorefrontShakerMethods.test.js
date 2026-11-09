@@ -202,6 +202,18 @@ test('public checkout read + staff cash confirm (CORE-A routes)', async (t) => {
   done(t)
 })
 
+test('public checkout read: the shop contact from the company profile passes through unchanged', async (t) => {
+  const svc = new StorefrontService()
+  sandbox.stub(svc, '_requireReady').returns(undefined)
+  const contact = { email: 'hello@shop.example', phone: '+995 555 12 34 56' }
+  const request = sandbox.stub(svc, '_request').resolves({ success: true, data: { enabled: false, contact } })
+  const out = await svc.getStorefrontCheckout(WS)
+  t.deepEqual(out, { enabled: false, contact })
+  t.equal(request.firstCall.args[0], `/storefront/${WS}/checkout`)
+  t.equal(request.firstCall.args[1].method, 'GET')
+  done(t)
+})
+
 test('identity rule: every shopper method skips the platform session; owner settings do not', (t) => {
   const svc = new BaseService({})
   const shopper = [
