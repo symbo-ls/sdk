@@ -1088,15 +1088,19 @@ export class WorkspaceService extends BaseService {
   /**
    * Send a workspace invitation by email.
    * @param {string} workspaceId
-   * @param {{email: string, role?: string, recipientName?: string, teams?: string[]}} args
+   * @param {{email: string, role?: string, recipientName?: string, teams?: string[], message?: string, subject?: string}} args
    *   role defaults to 'editor'; `teams` (GA-W2.1) is an optional list of
    *   platform Team slugs or ids — resolved server-side against the
    *   workspace's OWN org and attached on accept; unknown entries reject
-   *   the invite with `invalid_teams`.
+   *   the invite with `invalid_teams`. `message` (optional, plain text,
+   *   multi-paragraph, any script, ≤ 4000 chars) shows above the email's
+   *   button — a blank line starts a paragraph; `subject` (optional, one
+   *   line, ≤ 200 chars) replaces the default subject. The server escapes
+   *   both; a non-string or an over-cap value is a 400 `invalid_input`.
    */
   async createWorkspaceInvitation (
     workspaceId,
-    { email, role = 'editor', recipientName, teams } = {}
+    { email, role = 'editor', recipientName, teams, message, subject } = {}
   ) {
     if (!workspaceId) throw new Error('workspaceId is required')
     if (!email) throw new Error('email is required')
@@ -1109,7 +1113,9 @@ export class WorkspaceService extends BaseService {
           email,
           role,
           ...(recipientName ? { recipientName } : {}),
-          ...(Array.isArray(teams) && teams.length ? { teams } : {})
+          ...(Array.isArray(teams) && teams.length ? { teams } : {}),
+          ...(message ? { message } : {}),
+          ...(subject ? { subject } : {})
         },
       }
     )
