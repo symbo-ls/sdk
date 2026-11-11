@@ -75,6 +75,35 @@ export class AuthService extends BaseService {
         body: JSON.stringify(payload),
         methodName: 'register'
       })
+      // The server answers a sign-up like login: { user, tokens }.
+      // `options.signIn === true` completes the session the way login does —
+      // tokens, cached user, SIGNED_IN — so a standalone site's auth-state
+      // subscriber hears of the new account without a second login
+      // round-trip (every SDK sign-in path that mints a session must emit
+      // SIGNED_IN). Opt-in, for backward compatibility: the workspace shell's
+      // sign-up keeps `data.tokens` aside and adopts them only when the person
+      // presses Continue (shared/pages/auth/signup.js openSignupSession), so a
+      // default sign-in would open the account under its "check your email"
+      // card. Without the option nothing is stored and no event fires, as
+      // before. The return value is the same either way.
+      if (
+        options.signIn === true &&
+        response.success &&
+        response.data &&
+        response.data.tokens?.accessToken
+      ) {
+        const { tokens } = response.data
+        if (this._tokenManager) {
+          this._tokenManager.setTokens({
+            access_token: tokens.accessToken,
+            refresh_token: tokens.refreshToken,
+            expires_in: tokens.accessTokenExp?.expiresIn,
+            token_type: 'Bearer'
+          })
+        }
+        this._currentUser = response.data?.user || null
+        this._emitAuth?.('SIGNED_IN')
+      }
       if (response.success) {
         if (session) {
           this._clearPluginSession(session)

@@ -385,6 +385,11 @@ export const SERVICE_METHODS = {
   deleteOnboardingResearchLine: 'onboardingResearch',
   listOnboardingPeople: 'onboardingResearch',
   removeOnboardingPerson: 'onboardingResearch',
+  // Public onboarding (PublicOnboardingService, /core/onboarding/options|
+  // request|join) — the role picker, the request to join, and self-join.
+  getOnboardingOptions: 'onboarding',
+  requestOnboarding: 'onboarding',
+  joinOnboarding: 'onboarding',
   // POB — the import core (ImportsService, /core/workspaces/:id/imports)
   listImportSources: 'imports',
   listImportTargets: 'imports',

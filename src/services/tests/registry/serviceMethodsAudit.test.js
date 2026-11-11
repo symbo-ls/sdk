@@ -41,6 +41,7 @@ import {
   ShareLinkService,
   AiBoardsService,
   OnboardingResearchService,
+  PublicOnboardingService,
   ImportsService
 } from '../../index.js'
 
@@ -88,6 +89,7 @@ const SERVICES = {
   shareLinks: ShareLinkService,
   aiBoards: AiBoardsService,
   onboardingResearch: OnboardingResearchService,
+  onboarding: PublicOnboardingService,
   imports: ImportsService
 }
 
@@ -134,6 +136,12 @@ const INTENTIONALLY_NOT_FLAT_EXPOSED = new Set([
   // getService('auth') to replay the boot payload's `me` section into the
   // auth session. Never a user-facing flat method.
   'AuthService:adoptSessionUser',
+  // PublicOnboardingService short names for sdk.getService('onboarding') —
+  // flat-exposed as getOnboardingOptions / requestOnboarding / joinOnboarding;
+  // `options` / `request` / `join` would collide at the flat surface.
+  'PublicOnboardingService:options',
+  'PublicOnboardingService:request',
+  'PublicOnboardingService:join',
   // Per-service scope-switch hooks — sdk.switchWorkspace/sdk.switchOrg (SDK
   // class methods) WALK these on every registered service; flat-exposing
   // them would shadow those SDK-level walkers with a single service's hook.

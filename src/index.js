@@ -14,6 +14,7 @@ import {
   createTrackingService,
   createWaitlistService,
   createOnboardingResearchService,
+  createPublicOnboardingService,
   createImportsService,
   createMetricsService,
   createIntegrationService,
@@ -279,6 +280,13 @@ export class SDK {
       this._initService(
         'onboardingResearch',
         createOnboardingResearchService({
+          context: this._context,
+          options: this._options
+        })
+      ),
+      this._initService(
+        'onboarding',
+        createPublicOnboardingService({
           context: this._context,
           options: this._options
         })
