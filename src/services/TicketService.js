@@ -649,34 +649,41 @@ export class TicketService extends BaseService {
   }
 
   // ==================== COLUMNS SUB-NAMESPACE ====================
-
-  // `?workspaceId=` (+ any extra params, first) for the /tickets/columns
-  // routes. The column board is the org's; the server finds the org from the
-  // tab's workspace FIRST (resolveRequestOrgId → readExplicitWorkspaceId), so
-  // without it a user with several tabs read and wrote the DEFAULT org's
-  // columns (CRUD sweep item 6). An explicit id wins; otherwise the active
-  // workspace — the default every other tickets call carries. Nothing
-  // resolves → no param (the server's claim fallback, as before).
+  //
+  // Board columns belong to the org, but the right to CHANGE them follows the
+  // caller's role in the workspace the board is open in (server
+  // TicketColumnController.canEditColumns, item 6 2026-11-08: a viewer in W1
+  // who is an editor in W2 must not edit columns from W1). So every columns
+  // call carries `?workspaceId=` — explicit, else this tab's active workspace,
+  // the default every other tickets call carries. Without it the server falls
+  // back to the user's single activeWorkspace pointer, which a second tab on
+  // another workspace moves.
+  //
+  // `extra` params (for example `moveTo` on remove) come first, then
+  // `?workspaceId=`. An explicit id wins; otherwise the active workspace.
+  // Nothing resolves → no param (the server's claim fallback, as before).
   _columnsQs (workspaceId, extra) {
-    const params = new URLSearchParams()
+    const parts = []
     for (const [k, v] of Object.entries(extra || {})) {
-      if (v !== undefined && v !== null && v !== '') params.set(k, String(v))
+      if (v !== undefined && v !== null && v !== '') {
+        parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+      }
     }
     const wid = this._resolveWorkspaceId(workspaceId, { fallbackToStorage: true })
-    if (wid) params.set('workspaceId', String(wid))
-    const s = params.toString()
-    return s ? `?${s}` : ''
+    if (wid) parts.push(`workspaceId=${encodeURIComponent(wid)}`)
+    return parts.length ? `?${parts.join('&')}` : ''
   }
 
   columns = {
     /**
-     * List all ticket columns (kanban board configuration).
+     * List all ticket columns (kanban board configuration). Each column
+     * carries `canEditColumns` — the caller's verdict for the workspace sent.
      *
-     * @param {{ workspaceId?: string }} [options]
+     * @param {object} [opts] - { workspaceId } (default: the active workspace)
      * @returns {Promise<Array>} Array of column documents
      */
-    list: (options) =>
-      this._call('tickets.columns.list', `/tickets/columns${this._columnsQs(options?.workspaceId)}`),
+    list: ({ workspaceId } = {}) =>
+      this._call('tickets.columns.list', `/tickets/columns${this._columnsQs(workspaceId)}`),
 
     /**
      * Create a board column. Key defaults to a slug of the label;
@@ -686,8 +693,8 @@ export class TicketService extends BaseService {
      * @param {{ workspaceId?: string }} [options]
      * @returns {Promise<object>} Created column document
      */
-    create: (payload, options) =>
-      this._call('tickets.columns.create', `/tickets/columns${this._columnsQs(options?.workspaceId)}`, {
+    create: (payload, { workspaceId } = {}) =>
+      this._call('tickets.columns.create', `/tickets/columns${this._columnsQs(workspaceId)}`, {
         method: 'POST',
         body: { payload }
       }),
@@ -700,8 +707,8 @@ export class TicketService extends BaseService {
      * @param {{ workspaceId?: string }} [options]
      * @returns {Promise<object>} Updated column document
      */
-    update: (key, payload, options) =>
-      this._call('tickets.columns.update', `/tickets/columns/${encodeURIComponent(key)}${this._columnsQs(options?.workspaceId)}`, {
+    update: (key, payload, { workspaceId } = {}) =>
+      this._call('tickets.columns.update', `/tickets/columns/${encodeURIComponent(key)}${this._columnsQs(workspaceId)}`, {
         method: 'PUT',
         body: payload
       }),
