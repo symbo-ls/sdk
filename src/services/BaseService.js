@@ -686,6 +686,17 @@ export class BaseService {
       // Sign in with Apple redirect flow: start + one-time ticket exchange.
       'startStorefrontAppleSignIn',
       'exchangeStorefrontAppleTicket',
+      // Customer records + files: an explicit storefront-customer token.
+      'listStorefrontCustomerRecords',
+      'createStorefrontCustomerRecord',
+      'getStorefrontCustomerRecord',
+      'updateStorefrontCustomerRecord',
+      'deleteStorefrontCustomerRecord',
+      'importStorefrontCustomerRecords',
+      'uploadStorefrontCustomerFile',
+      'listStorefrontCustomerFiles',
+      'getStorefrontCustomerFileUrl',
+      'deleteStorefrontCustomerFile',
       // Storefront shopper surface added for the Shaker program (CONTRACT
       // §7): host → identity, kits, CMS, guest/customer orders + status +
       // Keepz test pay, cart, addresses, profile, the natali account reads.

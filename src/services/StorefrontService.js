@@ -850,6 +850,213 @@ export class StorefrontService extends BaseService {
       { method: 'PUT', body: settings }
     )
   }
+
+  // ── Customer records (owner-defined collections, the customer's OWN rows) ──
+  //
+  // A signed-in customer's own data in a collection the shop owner declared
+  // (`settings/customer-records`): a pet shop's `pets`, a meal shop's `plans`.
+  // Every method takes the storefront-customer token explicitly. A record is
+  // `{ id, clientId, version, data, createdAt, updatedAt }`. Errors throw with
+  // `err.status` and the server body on `err.cause` (`err.cause.error` =
+  // `collection_not_found` 404, `invalid_record` 400 + `details: [{ path,
+  // message }]`, `record_too_large` 413, `record_limit_reached` 409,
+  // `stale_version` 409 + the current `record`, `record_not_found` 404).
+
+  // GET /core/storefront/:workspaceId/account/records/:collection
+  // `{ records, total, limit, skip }`, newest first. `updatedSince` = ISO
+  // time (only rows changed after it — for a sync).
+  listStorefrontCustomerRecords (workspaceId, collection, { limit, skip, updatedSince } = {}, customerToken) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!collection) throw new Error('collection is required')
+    if (!customerToken) throw new Error('customerToken is required')
+    return this._call(
+      'listStorefrontCustomerRecords',
+      `/storefront/${encodeURIComponent(workspaceId)}/account/records/${encodeURIComponent(collection)}${qs({ limit, skip, updatedSince })}`,
+      { headers: _customerHeaders(customerToken) }
+    )
+  }
+
+  // POST /core/storefront/:workspaceId/account/records/:collection
+  // `{ data, clientId? }` → `{ record }` (`existing: true` when `clientId`
+  // was already stored for this customer — a safe retry).
+  createStorefrontCustomerRecord (workspaceId, collection, { data, clientId } = {}, customerToken) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!collection) throw new Error('collection is required')
+    if (!data || typeof data !== 'object') throw new Error('data is required')
+    if (!customerToken) throw new Error('customerToken is required')
+    return this._call(
+      'createStorefrontCustomerRecord',
+      `/storefront/${encodeURIComponent(workspaceId)}/account/records/${encodeURIComponent(collection)}`,
+      { method: 'POST', body: { data, clientId }, headers: _customerHeaders(customerToken) }
+    )
+  }
+
+  // GET /core/storefront/:workspaceId/account/records/:collection/:id → `{ record }`
+  getStorefrontCustomerRecord (workspaceId, collection, id, customerToken) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!collection) throw new Error('collection is required')
+    if (!id) throw new Error('id is required')
+    if (!customerToken) throw new Error('customerToken is required')
+    return this._call(
+      'getStorefrontCustomerRecord',
+      `/storefront/${encodeURIComponent(workspaceId)}/account/records/${encodeURIComponent(collection)}/${encodeURIComponent(id)}`,
+      { headers: _customerHeaders(customerToken) }
+    )
+  }
+
+  // PATCH /core/storefront/:workspaceId/account/records/:collection/:id
+  // `{ data, version }` — a FULL replace of `data`, only at `version` (the
+  // one you read). Another tab wrote first → 409 `stale_version` with the
+  // current record on `err.cause.record`. → `{ record }` (version + 1).
+  updateStorefrontCustomerRecord (workspaceId, collection, id, { data, version } = {}, customerToken) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!collection) throw new Error('collection is required')
+    if (!id) throw new Error('id is required')
+    if (!data || typeof data !== 'object') throw new Error('data is required')
+    if (!Number.isInteger(version)) throw new Error('version is required')
+    if (!customerToken) throw new Error('customerToken is required')
+    return this._call(
+      'updateStorefrontCustomerRecord',
+      `/storefront/${encodeURIComponent(workspaceId)}/account/records/${encodeURIComponent(collection)}/${encodeURIComponent(id)}`,
+      { method: 'PATCH', body: { data, version }, headers: _customerHeaders(customerToken) }
+    )
+  }
+
+  // DELETE /core/storefront/:workspaceId/account/records/:collection/:id — a
+  // hard delete → `{ deleted: true }`.
+  deleteStorefrontCustomerRecord (workspaceId, collection, id, customerToken) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!collection) throw new Error('collection is required')
+    if (!id) throw new Error('id is required')
+    if (!customerToken) throw new Error('customerToken is required')
+    return this._call(
+      'deleteStorefrontCustomerRecord',
+      `/storefront/${encodeURIComponent(workspaceId)}/account/records/${encodeURIComponent(collection)}/${encodeURIComponent(id)}`,
+      { method: 'DELETE', headers: _customerHeaders(customerToken) }
+    )
+  }
+
+  // POST /core/storefront/:workspaceId/account/records/:collection/import
+  // Guest → account move after sign-in: the items the device kept, ≤ 50,
+  // each `{ clientId, data }`. Idempotent on clientId (another tab, a retry:
+  // never a duplicate). → `{ created: [record], existing: [record], refused:
+  // [{ clientId, error, details? }] }`. Delete the device copy after it.
+  importStorefrontCustomerRecords (workspaceId, collection, items, customerToken) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!collection) throw new Error('collection is required')
+    if (!Array.isArray(items) || !items.length) throw new Error('items is required')
+    if (!customerToken) throw new Error('customerToken is required')
+    return this._call(
+      'importStorefrontCustomerRecords',
+      `/storefront/${encodeURIComponent(workspaceId)}/account/records/${encodeURIComponent(collection)}/import`,
+      { method: 'POST', body: { items }, headers: _customerHeaders(customerToken) }
+    )
+  }
+
+  // ── Customer files (private images for customer records) ────────────────
+  //
+  // POST /core/storefront/:workspaceId/account/files — one image (a File or
+  // Blob: jpeg, png or webp, ≤ 5 MB). The server reads the type from the
+  // bytes and removes the photo's metadata (GPS, device) before it stores
+  // it. → `{ id, mimeType, size, width, height, createdAt }`. Put `id` into a
+  // record field the owner schema marks `x-customerFile`. Errors on
+  // `err.cause.error`: `unsupported_type` 415, `file_too_large` 413,
+  // `invalid_image` 400, `image_too_large` 413, `file_quota_reached` 409.
+  uploadStorefrontCustomerFile (workspaceId, file, customerToken) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!file) throw new Error('file is required')
+    if (!customerToken) throw new Error('customerToken is required')
+    const form = new FormData()
+    form.append('file', file)
+    return this._call(
+      'uploadStorefrontCustomerFile',
+      `/storefront/${encodeURIComponent(workspaceId)}/account/files`,
+      { method: 'POST', body: form, headers: _customerHeaders(customerToken) }
+    )
+  }
+
+  // GET /core/storefront/:workspaceId/account/files → `{ files, total, limit, skip }`
+  listStorefrontCustomerFiles (workspaceId, { limit, skip } = {}, customerToken) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!customerToken) throw new Error('customerToken is required')
+    return this._call(
+      'listStorefrontCustomerFiles',
+      `/storefront/${encodeURIComponent(workspaceId)}/account/files${qs({ limit, skip })}`,
+      { headers: _customerHeaders(customerToken) }
+    )
+  }
+
+  // GET /core/storefront/:workspaceId/account/files/:id/url → `{ url,
+  // expiresAt }`: a signed URL valid 10 minutes. Ask again for a new one;
+  // never store it.
+  getStorefrontCustomerFileUrl (workspaceId, id, customerToken) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!id) throw new Error('id is required')
+    if (!customerToken) throw new Error('customerToken is required')
+    return this._call(
+      'getStorefrontCustomerFileUrl',
+      `/storefront/${encodeURIComponent(workspaceId)}/account/files/${encodeURIComponent(id)}/url`,
+      { headers: _customerHeaders(customerToken) }
+    )
+  }
+
+  // DELETE /core/storefront/:workspaceId/account/files/:id → `{ deleted: true }`
+  deleteStorefrontCustomerFile (workspaceId, id, customerToken) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!id) throw new Error('id is required')
+    if (!customerToken) throw new Error('customerToken is required')
+    return this._call(
+      'deleteStorefrontCustomerFile',
+      `/storefront/${encodeURIComponent(workspaceId)}/account/files/${encodeURIComponent(id)}`,
+      { method: 'DELETE', headers: _customerHeaders(customerToken) }
+    )
+  }
+
+  // ── Owner side (platform-user session) ──────────────────────────────────
+  //
+  // GET|PUT /core/storefront/:workspaceId/settings/customer-records —
+  // owner|admin. `{ collections: { <name>: { schema, maxItems?, maxBytes? } },
+  // files?: { maxFiles?, maxBytes? }, aiAccess? }`. `<name>` = `[a-z][a-z0-9_]
+  // {1,31}`; `schema` = a JSON Schema subset (root `type: 'object'`; type,
+  // properties, required, additionalProperties (default false), items,
+  // min/maxItems, min/maxLength, format date|date-time|email|uri, minimum,
+  // maximum, enum, const, `x-customerFile: true`). PUT replaces the whole
+  // setting; a bad schema → 400 `invalid_config` + `details`. `aiAccess`
+  // (default false) lets the workspace AI read these collections.
+  getStorefrontCustomerRecordSettings (workspaceId) {
+    this._requireReady('getStorefrontCustomerRecordSettings')
+    if (!workspaceId) throw new Error('workspaceId is required')
+    return this._call(
+      'getStorefrontCustomerRecordSettings',
+      `/storefront/${encodeURIComponent(workspaceId)}/settings/customer-records`,
+      { method: 'GET' }
+    )
+  }
+
+  setStorefrontCustomerRecordSettings (workspaceId, settings) {
+    this._requireReady('setStorefrontCustomerRecordSettings')
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!settings || typeof settings !== 'object') throw new Error('settings is required')
+    return this._call(
+      'setStorefrontCustomerRecordSettings',
+      `/storefront/${encodeURIComponent(workspaceId)}/settings/customer-records`,
+      { method: 'PUT', body: settings }
+    )
+  }
+
+  // GET /core/storefront/:workspaceId/customer-files/:id/url — STAFF: a
+  // signed 10-minute URL of a customer's file, for owner|admin or a member
+  // whose app grant opens a customer-records collection.
+  getStorefrontCustomerFileStaffUrl (workspaceId, id) {
+    this._requireReady('getStorefrontCustomerFileStaffUrl')
+    if (!workspaceId) throw new Error('workspaceId is required')
+    if (!id) throw new Error('id is required')
+    return this._call(
+      'getStorefrontCustomerFileStaffUrl',
+      `/storefront/${encodeURIComponent(workspaceId)}/customer-files/${encodeURIComponent(id)}/url`,
+      { method: 'GET' }
+    )
+  }
 }
 
 // A one-off storefront-CUSTOMER Authorization header, or none — never the
