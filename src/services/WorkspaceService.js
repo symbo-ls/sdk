@@ -559,6 +559,28 @@ export class WorkspaceService extends BaseService {
   }
 
   /**
+   * PUBLIC (no sign-in): the workspace's PUBLISHED site config for one
+   * environment — only the rows written with `isPublic: true`, key → value
+   * (for example a site's other addresses, `BUSINESS_URL`). The read a
+   * logged-out published site uses; it never attaches the SDK's session token
+   * (a signed-in member on the site is an anonymous reader here too). The
+   * server answers with `Cache-Control: public, max-age=60`.
+   *
+   * @param {string} workspaceId
+   * @param {{ environment?: string, environmentKey?: string, envKey?: string, env?: string }} options
+   * @returns {Promise<{ environment: string, config: Record<string, string> }>}
+   */
+  async getWorkspaceSiteConfig (workspaceId, options = {}) {
+    if (!workspaceId) throw new Error('workspaceId is required')
+    const environment = workspaceEnvironment(options)
+    if (!environment) throw new Error('environment is required')
+    return this._call(
+      'getWorkspaceSiteConfig',
+      `/workspaces/${encodeURIComponent(workspaceId)}/config/site${environmentQuery(environment)}`
+    )
+  }
+
+  /**
    * Create or replace a public config value. The server restricts this to
    * workspace admins and owners and rejects secret-shaped public keys.
    *

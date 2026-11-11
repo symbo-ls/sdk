@@ -710,6 +710,9 @@ export class BaseService {
       // CRM lead-source web form (LeadSourceService.submitForm) — a visitor
       // on a published site submits a lead; the form key is the credential.
       'leadSources.submitForm',
+      // The workspace's PUBLISHED site config (GET /workspaces/:id/config/site,
+      // isPublic rows only) — a logged-out published site reads it.
+      'getWorkspaceSiteConfig',
       // POB — the public website read before sign-up; an anonymous visitor.
       'getOnboardingConfig',
       'startResearch',
