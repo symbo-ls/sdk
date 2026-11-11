@@ -729,8 +729,11 @@ export class StorefrontService extends BaseService {
   // checkout offers right now: `{ enabled, guest, paymentMethods, currency,
   // fulfilment: { modes, daysAhead, timezone, leadMinutes, slots,
   // pickupAddress, days: [{ day, open, slots: [{ key, from, to, open }] }] },
-  // payments: { keepz: { mode } }, captcha: { provider, siteKey } | null }`
-  // (`{ enabled: false }` when the shop has no checkout settings). The
+  // payments: { keepz: { mode } }, captcha: { provider, siteKey } | null,
+  // contact?: { email?, phone? } }` (`{ enabled: false, contact? }` when the
+  // shop has no checkout settings). `contact` is the shop's public contact
+  // from the workspace company profile — the single source, so a site never
+  // keeps its own copy; only the fields with a value, absent when none. The
   // day/slot calendar is computed by the server in the shop's timezone —
   // render it, never the visitor's clock.
   getStorefrontCheckout (workspaceId) {
