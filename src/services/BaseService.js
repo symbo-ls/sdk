@@ -677,6 +677,12 @@ export class BaseService {
       // is a platform-user write and needs the session's bearer token.)
       'getStorefrontAuthProviders',
       'signInStorefrontCustomerWithOAuth',
+      // Code sign-in is anonymous; link/unlink/refresh carry an explicit
+      // storefront-customer token (one-off header), never the session's.
+      'signInStorefrontCustomerWithOtp',
+      'linkStorefrontCustomerProvider',
+      'unlinkStorefrontCustomerProvider',
+      'refreshStorefrontCustomerToken',
       // Storefront shopper surface added for the Shaker program (CONTRACT
       // §7): host → identity, kits, CMS, guest/customer orders + status +
       // Keepz test pay, cart, addresses, profile, the natali account reads.
