@@ -97,6 +97,27 @@ test('createWorkspaceInvitation defaults role to editor; omits recipientName', a
   t.end()
 })
 
+test('createWorkspaceInvitation forwards an optional message + subject (decision 76 B)', async t => {
+  t.plan(2)
+  const svc = makeService()
+  const requestStub = sandbox.stub(svc, '_request').resolves({ success: true, data: {} })
+  const message = 'გამარჯობა გიორგი,\n\nHello Giorgi'
+  await svc.createWorkspaceInvitation('w1', { email: 'x@y.co', role: 'admin', message, subject: 'BESSI' })
+  t.equal(
+    requestStub.firstCall.args[1].body,
+    JSON.stringify({ email: 'x@y.co', role: 'admin', message, subject: 'BESSI' }),
+    'message + subject ride the body'
+  )
+  await svc.createWorkspaceInvitation('w1', { email: 'x@y.co', message: '', subject: '' })
+  t.equal(
+    requestStub.secondCall.args[1].body,
+    JSON.stringify({ email: 'x@y.co', role: 'editor' }),
+    'empty values are omitted'
+  )
+  sandbox.restore()
+  t.end()
+})
+
 test('createWorkspaceInvitation throws without email', async t => {
   t.plan(1)
   const svc = makeService()
