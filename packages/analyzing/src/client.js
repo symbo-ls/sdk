@@ -457,6 +457,104 @@ export const createVisitorStore = ({
   }
 }
 
+// The HTTP status of an error the server ANSWERED (the SDK's `_request` sets
+// `.status`; some wrappers keep it on `.cause`), or null when the request was
+// never answered (thrown before sending, network failure). Pure — exported.
+export const answeredStatus = (err) => {
+  const s = err?.status ?? err?.cause?.status
+  return Number.isInteger(s) && s >= 100 && s <= 599 ? s : null
+}
+
+// ── Sessions that shipped (unload-beacon gate) ─────────────────────────────
+// The unload beacon is UNAUTHENTICATED on purpose (see createUnloadTransport),
+// and the server's anonymous ingest may only EXTEND a session that already
+// exists under the named workspace — it never opens one (server
+// anonymousIngestScope.js, the session-bound rule, FUNNEL.md §4 G1): a beacon
+// for a session that never shipped an authenticated envelope is always
+// answered 403 `anonymous_session_unknown`, and nothing is written. This
+// store remembers the last session id that DID ship, per tab
+// (sessionStorage — the session id itself lives there too, `smbls_sid`, and
+// survives a reload), with an in-memory copy when storage is unavailable.
+export const SHIPPED_SESSION_KEY = 'smbls_sid_shipped'
+
+export const createShippedSessionStore = ({ sessionStorage: injected } = {}) => {
+  let memory = null
+  const storage = () => {
+    if (injected !== undefined) return injected
+    try {
+      return typeof globalThis !== 'undefined' ? globalThis.sessionStorage || null : null
+    } catch (_) {
+      return null
+    }
+  }
+  return {
+    mark (id) {
+      if (!id) return
+      memory = String(id)
+      try { storage()?.setItem?.(SHIPPED_SESSION_KEY, memory) } catch (_) { /* memory copy stays */ }
+    },
+    has (id) {
+      if (!id) return false
+      const want = String(id)
+      if (memory === want) return true
+      try { return storage()?.getItem?.(SHIPPED_SESSION_KEY) === want } catch (_) { return false }
+    }
+  }
+}
+
+// ── Unload-safe sync sender (SDK mode) ─────────────────────────────────────
+// The terminal request MUST be CORS-"simple" (no preflight). A fetch
+// with an Authorization header (or a JSON content-type) is preflighted,
+// and Chrome drops the follow-up POST when the initiating page unloads
+// between OPTIONS and POST — measured live: the preflight got its 200,
+// the terminal POST never hit the wire, endedAt never landed. So:
+// sendBeacon with a text/plain Blob (safelisted → zero preflight,
+// unload-proof by contract), NO auth header — the server's ingest is
+// optionalAuth and scopes the anonymous path by envelope.workspace_id,
+// and isVisitor is insert-only there so an anonymous terminal envelope
+// can only stamp endedAt on the session it belongs to, never reclassify
+// it. fetch-keepalive (still simple: text/plain, no auth) is the
+// fallback where sendBeacon is unavailable.
+//
+// Gate: only for a session that already shipped (`hasShipped`, see
+// createShippedSessionStore). Any other envelope is handed back (false), and
+// the sink ships it through the authenticated async transport instead — the
+// right path for a `visibilitychange` flush (the page is alive), and the only
+// one that can open the session at all. Returns true when it took the
+// envelope. `nav` / `fetchImpl` are injectable for tests; both default to the
+// globals at call time.
+export const createUnloadTransport = ({ getUrl, hasShipped, nav, fetchImpl } = {}) => (envelope) => {
+  const url = typeof getUrl === 'function' ? getUrl() : null
+  if (!url) return false
+  if (typeof hasShipped === 'function' && !hasShipped(envelope?.session?.id)) return false
+  const body = (() => {
+    try { return JSON.stringify(envelope) } catch (_) { return null }
+  })()
+  if (!body) return false
+  const navigatorRef = nav !== undefined ? nav : (typeof navigator !== 'undefined' ? navigator : null)
+  try {
+    if (navigatorRef && typeof navigatorRef.sendBeacon === 'function') {
+      const blob = typeof Blob !== 'undefined' ? new Blob([body], { type: 'text/plain' }) : body
+      if (navigatorRef.sendBeacon(url, blob)) return true
+    }
+  } catch (_) { /* fall through to keepalive */ }
+  const fetchRef = fetchImpl !== undefined ? fetchImpl : (typeof fetch === 'function' ? fetch : null)
+  if (typeof fetchRef !== 'function') return false
+  try {
+    Promise.resolve(fetchRef(url, {
+      method: 'POST',
+      keepalive: true,
+      credentials: 'omit',
+      mode: 'cors',
+      headers: { 'Content-Type': 'text/plain' },
+      body
+    })).catch(() => {})
+    return true
+  } catch (_) {
+    return false
+  }
+}
+
 export const createAnalyzing = (opts = {}) => {
   const {
     endpoint,
@@ -659,22 +757,46 @@ export const createAnalyzing = (opts = {}) => {
       // FIFO drop-oldest — bound memory under sustained suspension.
       if (_buffer.length > BUFFER_CAP) _buffer.shift()
     }
+    // Sessions that already shipped an authenticated envelope — the unload
+    // beacon below may only extend one of those (see createUnloadTransport).
+    const _shipped = createShippedSessionStore(
+      storageOpt && typeof storageOpt === 'object' && 'sessionStorage' in storageOpt
+        ? { sessionStorage: storageOpt.sessionStorage }
+        : {}
+    )
+
+    // ONE delivery attempt = ONE request. The typed dispatcher goes first; the
+    // direct POST is only for a dispatcher that could not SEND (no execute(),
+    // "Unknown entity", services not hydrated yet). An error that carries an
+    // HTTP status means the server ANSWERED — that answer is the result. A
+    // second POST of the same envelope only repeats it: measured on the dev
+    // home 2026-11-12, every refused envelope went out twice per attempt, and
+    // the sink retries each attempt up to 3 times.
+    const _deliverOnce = async (live, envelope) => {
+      if (typeof live.execute === 'function') {
+        try {
+          const res = await live.execute('analyzed', 'ingest', envelope)
+          if (!res?.error) return { ok: true }
+          // A resolved `{ error }` (no HTTP status) falls through to the
+          // direct POST, as before.
+        } catch (err) {
+          const status = answeredStatus(err)
+          if (status !== null) return { ok: false, status }
+          /* not sent — fall through to the direct POST */
+        }
+      }
+      return _directIngest(live, envelope)
+    }
+
     const _tryDeliver = async (envelope) => {
       const live = _resolveSdk()
       if (!live) return { ok: false, reason: 'no-sdk' }
       const _token = await _resolveIngestToken(live)
       if (!_token) return { ok: false, reason: 'no-auth' }
       _syncCacheRefresh(live, _token)
-      if (typeof live.execute === 'function') {
-        try {
-          const res = await live.execute('analyzed', 'ingest', envelope)
-          if (!res?.error) return { ok: true }
-          // Detect 401 via either the result.status or the error message
-          // shape the dispatcher surfaces — fall through to _directIngest
-          // for both so the same 401-check path applies.
-        } catch (_) { /* fall through */ }
-      }
-      return _directIngest(live, envelope)
+      const result = await _deliverOnce(live, envelope)
+      if (result?.ok) _shipped.mark(envelope?.session?.id)
+      return result
     }
     const _drainBuffer = async () => {
       if (!_buffer.length) return
@@ -721,15 +843,13 @@ export const createAnalyzing = (opts = {}) => {
       if (!_token) return { ok: false, reason: 'no-auth' }
       _syncCacheRefresh(live, _token)
       // Prefer the typed dispatcher when services are wired — that path
-      // benefits from the SDK's retry/backoff + token refresh hooks.
-      if (typeof live.execute === 'function') {
-        try {
-          const res = await live.execute('analyzed', 'ingest', envelope)
-          if (!res?.error) return { ok: true }
-          // "Unknown entity" surfaces here too — fall through to direct fetch.
-        } catch (_) { /* fall through */ }
+      // benefits from the SDK's retry/backoff + token refresh hooks. One
+      // attempt is one request (see _deliverOnce).
+      const result = await _deliverOnce(live, envelope)
+      if (result?.ok) {
+        _shipped.mark(envelope?.session?.id)
+        return result
       }
-      const result = await _directIngest(live, envelope)
       if (result?.status === 401) {
         _ingestSuspended = true
         if (!_suspendWarned && typeof console !== 'undefined') {
@@ -754,45 +874,11 @@ export const createAnalyzing = (opts = {}) => {
       return result
     }
 
-    // The terminal request MUST be CORS-"simple" (no preflight). A fetch
-    // with an Authorization header (or a JSON content-type) is preflighted,
-    // and Chrome drops the follow-up POST when the initiating page unloads
-    // between OPTIONS and POST — measured live: the preflight got its 200,
-    // the terminal POST never hit the wire, endedAt never landed. So:
-    // sendBeacon with a text/plain Blob (safelisted → zero preflight,
-    // unload-proof by contract), NO auth header — the server's ingest is
-    // optionalAuth and scopes the anonymous path by envelope.workspace_id,
-    // and isVisitor is insert-only there so an anonymous terminal envelope
-    // can only stamp endedAt on the session it belongs to, never reclassify
-    // it. fetch-keepalive (still simple: text/plain, no auth) is the
-    // fallback where sendBeacon is unavailable.
-    resolvedSyncTransport = (envelope) => {
-      if (!_syncCache.url) return false
-      const body = (() => {
-        try { return JSON.stringify(envelope) } catch (_) { return null }
-      })()
-      if (!body) return false
-      try {
-        if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
-          const blob = typeof Blob !== 'undefined' ? new Blob([body], { type: 'text/plain' }) : body
-          if (navigator.sendBeacon(_syncCache.url, blob)) return true
-        }
-      } catch (_) { /* fall through to keepalive */ }
-      if (typeof fetch !== 'function') return false
-      try {
-        fetch(_syncCache.url, {
-          method: 'POST',
-          keepalive: true,
-          credentials: 'omit',
-          mode: 'cors',
-          headers: { 'Content-Type': 'text/plain' },
-          body
-        }).catch(() => {})
-        return true
-      } catch (_) {
-        return false
-      }
-    }
+    // Unload-safe sync sender — see createUnloadTransport (module level).
+    resolvedSyncTransport = createUnloadTransport({
+      getUrl: () => _syncCache.url,
+      hasShipped: (id) => _shipped.has(id)
+    })
   }
   if (!endpoint && !resolvedTransport) {
     throw new Error('[@symbo.ls/analyzing] one of { sdk, endpoint, transport, mode: "public" } is required')
