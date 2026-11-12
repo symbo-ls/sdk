@@ -13,6 +13,40 @@ import { BaseService } from './BaseService.js'
 
 const WORKSPACE_PROJECT_PREFIX = '/workspace-project'
 
+// GET /core/workspaces/:id/records/batch — the server's item cap
+// (WorkspaceRecordsController MAX_BATCH_ITEMS), and the statuses that mean
+// "this server has no batch route" (an older server answers `/records/batch`
+// as `GET /records/:id` with id 'batch' → 404), on which the coalescer falls
+// back to one GET per query.
+export const RECORDS_BATCH_MAX = 25
+// The server's hard bound on the `items` JSON text, in characters before URL
+// encoding (WorkspaceRecordsController MAX_BATCH_ITEMS_CHARS). Batches are
+// packed under it; a query that cannot share a batch under it goes as its own
+// plain GET.
+export const RECORDS_BATCH_MAX_CHARS = 4096
+const RECORDS_BATCH_ABSENT_STATUSES = new Set([404, 405, 501])
+
+// Greedy packing in arrival order: at most RECORDS_BATCH_MAX queries and at
+// most RECORDS_BATCH_MAX_CHARS of `JSON.stringify(queries)` per chunk.
+const _packRecordsChunks = (entries) => {
+  const chunks = []
+  let cur = []
+  let chars = 2 // the array brackets
+  for (const e of entries) {
+    const len = JSON.stringify(e.query).length
+    const added = len + (cur.length ? 1 : 0) // the comma
+    if (cur.length && (cur.length >= RECORDS_BATCH_MAX || chars + added > RECORDS_BATCH_MAX_CHARS)) {
+      chunks.push(cur)
+      cur = []
+      chars = 2
+    }
+    chars += len + (cur.length ? 1 : 0)
+    cur.push(e)
+  }
+  if (cur.length) chunks.push(cur)
+  return chunks
+}
+
 // Decode a JWT payload without verifying the signature, mirroring
 // TokenManager._decodeJwtExpMs's base64url→JSON pattern (sdk/src/utils/
 // TokenManager.js) but pulling the workspace claim instead of `exp`. Used by
@@ -1176,6 +1210,179 @@ export class WorkspaceProjectService extends BaseService {
     return encodeURIComponent(String(ws))
   }
 
+  // The query of ONE records list read — the exact string params the server's
+  // GET /records accepts (WorkspaceRecordsController.ACCEPTED_LIST_QUERY_PARAMS),
+  // in a fixed insertion order so the single GET's query string is unchanged.
+  // Shared by list() (the query string) and listBatch() (one batch item).
+  _recordsListQuery(filter, options) {
+    const query = {}
+    const collection =
+      filter && typeof filter === 'object' && filter.collection
+        ? filter.collection
+        : null
+    if (collection) query.collection = String(collection)
+    if (options?.limit != null) query.limit = String(options.limit)
+    // `page` (1-indexed, the canonical /core convention) wins server-side
+    // when both are given — see WorkspaceRecordsController.list.
+    if (options?.page != null) query.page = String(options.page)
+    if (options?.offset != null) query.offset = String(options.offset)
+    if (options?.order) query.order = String(options.order)
+    return query
+  }
+
+  // One GET /records — the pre-batch path, byte-identical to before.
+  async _recordsSingleList(ws, query) {
+    const qs = new URLSearchParams(query).toString()
+    const r = await this._request(
+      `/workspaces/${ws}/records${qs ? `?${qs}` : ''}`,
+      {
+        method: 'GET',
+        methodName: 'records.list'
+      }
+    )
+    const rows = r?.data ?? []
+    if (r?.pagination) rows.pagination = r.pagination
+    return rows
+  }
+
+  async _recordsBatchRequest(ws, items) {
+    const r = await this._request(
+      `/workspaces/${ws}/records/batch?items=${encodeURIComponent(JSON.stringify(items))}`,
+      {
+        method: 'GET',
+        methodName: 'records.listBatch'
+      }
+    )
+    return Array.isArray(r?.data) ? r.data : []
+  }
+
+  // One batch slot → exactly what list() would have given for that query:
+  // the row array (with `pagination` attached) on a 2xx, else the same Error
+  // `_request` throws for that status (message, `cause` = the body, `status`).
+  _recordsRowsFromSlot(slot) {
+    const status = slot?.status
+    const body = slot?.body
+    if (typeof status === 'number' && status >= 200 && status < 300) {
+      const rows = Array.isArray(body?.data) ? body.data : []
+      if (body?.pagination) rows.pagination = body.pagination
+      return rows
+    }
+    const err = new Error(body?.message || body?.error || 'Request failed', { cause: body })
+    err.status = status
+    throw err
+  }
+
+  // ── Records read coalescing (opt-in) ─────────────────────────────────────
+  // Perf report 2026-11-12: one signed-in home load sent 24 GET /records, one
+  // per widget, each with its own preflight and connection slot. With the SDK
+  // option `coalesceRecordReads: true` (window 0 ms: one macrotask) or
+  // `{ windowMs: n }` (0..50), list() calls for ONE workspace that arrive in
+  // the same window share ONE GET /records/batch; each caller still gets
+  // exactly what its own list() call would have returned (rows + pagination,
+  // or the same thrown Error). Identical queries in a window share one item;
+  // every sharer after the first gets its own copy. A window with ONE query
+  // sends the plain GET /records. A server without the batch route (404 /
+  // 405 / 501, or a slot count that does not match) falls back to one GET per
+  // query, so a client can never be broken by deploy order. Off by default;
+  // `list(filter, { coalesce: false })` opts one call out.
+  _recordsCoalesceWindowMs() {
+    const opt = this._options?.coalesceRecordReads
+    if (!opt) return null
+    if (opt === true) return 0
+    const n = Number(opt.windowMs)
+    return Number.isFinite(n) ? Math.min(Math.max(0, n), 50) : 0
+  }
+
+  _coalescedRecordsList(ws, query) {
+    if (!this._recordsPending) this._recordsPending = new Map()
+    let pending = this._recordsPending.get(ws)
+    if (!pending) {
+      pending = { entries: new Map() }
+      this._recordsPending.set(ws, pending)
+      setTimeout(() => {
+        this._flushRecordsReads(ws, pending)
+      }, this._recordsCoalesceWindowMs() ?? 0)
+    }
+    const key = JSON.stringify(query)
+    let entry = pending.entries.get(key)
+    if (!entry) {
+      entry = { query, waiters: [] }
+      pending.entries.set(key, entry)
+    }
+    return new Promise((resolve, reject) => {
+      entry.waiters.push({ resolve, reject })
+    })
+  }
+
+  // Deliver one outcome to every waiter of an entry. The first waiter gets the
+  // value itself, the others a copy (rows AND their `pagination`), so no two
+  // callers share one object graph — the same rule as the in-flight GET dedupe.
+  _settleRecordsEntry(entry, outcome) {
+    entry.waiters.forEach((w, i) => {
+      if (!outcome.ok) {
+        w.reject(outcome.error)
+        return
+      }
+      if (i === 0) {
+        w.resolve(outcome.value)
+        return
+      }
+      const rows = outcome.value
+      let copy
+      try {
+        copy = JSON.parse(JSON.stringify([...rows]))
+      } catch (_) {
+        copy = [...rows]
+      }
+      if (rows.pagination) copy.pagination = { ...rows.pagination }
+      w.resolve(copy)
+    })
+  }
+
+  async _settleRecordsSingle(ws, entry) {
+    try {
+      const value = await this._recordsSingleList(ws, entry.query)
+      this._settleRecordsEntry(entry, { ok: true, value })
+    } catch (error) {
+      this._settleRecordsEntry(entry, { ok: false, error })
+    }
+  }
+
+  async _flushRecordsReads(ws, pending) {
+    if (this._recordsPending?.get(ws) === pending) this._recordsPending.delete(ws)
+    const chunks = _packRecordsChunks([...pending.entries.values()])
+    await Promise.all(
+      chunks.map(async (chunk) => {
+        // One query, or one too long to share a batch: the plain GET.
+        if (chunk.length === 1) return this._settleRecordsSingle(ws, chunk[0])
+        let slots
+        try {
+          slots = await this._recordsBatchRequest(
+            ws,
+            chunk.map((e) => e.query)
+          )
+        } catch (error) {
+          if (RECORDS_BATCH_ABSENT_STATUSES.has(error?.status)) {
+            return Promise.all(chunk.map((e) => this._settleRecordsSingle(ws, e)))
+          }
+          chunk.forEach((e) => this._settleRecordsEntry(e, { ok: false, error }))
+          return undefined
+        }
+        if (slots.length !== chunk.length) {
+          return Promise.all(chunk.map((e) => this._settleRecordsSingle(ws, e)))
+        }
+        chunk.forEach((e, i) => {
+          try {
+            this._settleRecordsEntry(e, { ok: true, value: this._recordsRowsFromSlot(slots[i]) })
+          } catch (error) {
+            this._settleRecordsEntry(e, { ok: false, error })
+          }
+        })
+        return undefined
+      })
+    )
+  }
+
   records = {
     // Pagination (tickets/server.md "records plane silently CAPS list at
     // 100 rows, no marker, no total, no warning" — this is the SDK half of
@@ -1200,29 +1407,45 @@ export class WorkspaceProjectService extends BaseService {
     // `rows.pagination.totalCount` to detect a partial page.
     list: async (filter, options) => {
       const ws = this._recordsWorkspaceId(filter, options)
-      const params = new URLSearchParams()
-      const collection =
-        filter && typeof filter === 'object' && filter.collection
-          ? filter.collection
-          : null
-      if (collection) params.set('collection', String(collection))
-      if (options?.limit != null) params.set('limit', String(options.limit))
-      // `page` (1-indexed, the canonical /core convention) wins server-side
-      // when both are given — see WorkspaceRecordsController.list.
-      if (options?.page != null) params.set('page', String(options.page))
-      if (options?.offset != null) params.set('offset', String(options.offset))
-      if (options?.order) params.set('order', String(options.order))
-      const qs = params.toString()
-      const r = await this._request(
-        `/workspaces/${ws}/records${qs ? `?${qs}` : ''}`,
-        {
-          method: 'GET',
-          methodName: 'records.list'
-        }
+      const query = this._recordsListQuery(filter, options)
+      // Opt-in read coalescing (SDK option `coalesceRecordReads`, see
+      // _coalescedRecordsList below): the same query, the same answer, but
+      // reads that arrive in one window share one GET /records/batch.
+      if (this._recordsCoalesceWindowMs() !== null && options?.coalesce !== false) {
+        return this._coalescedRecordsList(ws, query)
+      }
+      return this._recordsSingleList(ws, query)
+    },
+    // N list queries in ONE request: GET /workspaces/:id/records/batch
+    // (server WorkspaceRecordsController.batchList). `queries` is an array of
+    // `{ filter, options }` pairs — the arguments list() takes. Answers the
+    // server's slots verbatim and in order: `[{ status, body }]`, where `body`
+    // is exactly what GET /records answers for that query (the success
+    // envelope, or that item's own error body). A failed ITEM never throws;
+    // only a failed batch call does (a refused batch, auth, network). All
+    // queries share one workspace (`options.workspaceId` or the active one);
+    // at most RECORDS_BATCH_MAX queries and RECORDS_BATCH_MAX_CHARS of items
+    // JSON (the server bounds).
+    listBatch: async (queries, options) => {
+      const ws = this._recordsWorkspaceId(null, options)
+      const items = (Array.isArray(queries) ? queries : []).map((q) =>
+        this._recordsListQuery(q?.filter, q?.options)
       )
-      const rows = r?.data ?? []
-      if (r?.pagination) rows.pagination = r.pagination
-      return rows
+      if (!items.length) {
+        throw new Error('[sdk records] records.listBatch needs at least one query')
+      }
+      if (items.length > RECORDS_BATCH_MAX) {
+        throw new Error(
+          `[sdk records] records.listBatch takes at most ${RECORDS_BATCH_MAX} queries (got ${items.length})`
+        )
+      }
+      const chars = JSON.stringify(items).length
+      if (chars > RECORDS_BATCH_MAX_CHARS) {
+        throw new Error(
+          `[sdk records] records.listBatch items are ${chars} characters; the server bound is ${RECORDS_BATCH_MAX_CHARS} — split the batch`
+        )
+      }
+      return this._recordsBatchRequest(ws, items)
     },
     get: async (id, options) => {
       const ws = this._recordsWorkspaceId(null, options)
