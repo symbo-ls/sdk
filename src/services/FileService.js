@@ -288,7 +288,8 @@ export class FileService extends BaseService {
     }
 
     // Patch the project files map on the server
-    const projectService = this._context?.services?.project
+    // `_sibling`: with `lazyServices` the project service may load here.
+    const projectService = await this._sibling('project')
     const projectId = options.projectId || this._context.project?.id
     if (projectService && projectId) {
       const branch = options.branch || 'main'

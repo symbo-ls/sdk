@@ -111,17 +111,6 @@ export class AssistantsService extends BaseService {
   }
 }
 
-// sdk.execute('assistants', op, args): every op takes one args object.
-export const ASSISTANTS_ENTITY_ROUTE = Object.freeze({
-  service: 'assistants',
-  methods: Object.freeze({
-    list: 'list',
-    get: 'get',
-    update: 'update',
-    revisions: 'revisions',
-    rollback: 'rollback',
-    usage: 'usage',
-    resetCounter: 'resetCounter',
-    testChat: 'testChat'
-  })
-})
+// sdk.execute('assistants', op, args) — the route object lives in
+// entityRoutes.js (see the note there); re-exported for existing importers.
+export { ASSISTANTS_ENTITY_ROUTE } from './entityRoutes.js'

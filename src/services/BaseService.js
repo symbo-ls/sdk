@@ -289,6 +289,24 @@ export class BaseService {
     return tracking
   }
 
+  // Another service of the same SDK, for an async path. With
+  // `lazyServices` the sibling may not be loaded yet: the SDK sets
+  // `_loadSibling` (sdk.js _initService) and this loads it. Answers
+  // undefined for a name the SDK does not know, or for a service built
+  // outside an SDK (tests, `createXService(...)`) whose sibling is not in
+  // its context. A failed load rejects.
+  async _sibling (name) {
+    const loaded = this._context?.services?.[name]
+    if (loaded) return loaded
+    if (typeof this._loadSibling !== 'function') return undefined
+    try {
+      return await this._loadSibling(name)
+    } catch (err) {
+      if (err?.code === 'SDK_SERVICE_UNKNOWN') return undefined
+      throw err
+    }
+  }
+
   _shouldTrackErrors () {
     const name = this?.constructor?.name
     return name !== 'TrackingService'

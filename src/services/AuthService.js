@@ -1,5 +1,5 @@
 import { BaseService } from './BaseService.js'
-import { io as socketIoClient } from 'socket.io-client'
+import { openUserSocket } from '../utils/userSocket.js'
 import {
   ROLE_PERMISSIONS,
   TIER_FEATURES,
@@ -2176,48 +2176,19 @@ export class AuthService extends BaseService {
     const baseUrl = this._apiUrl
     if (!baseUrl) return () => {}
 
-    let socket
-    try {
-      socket = socketIoClient(baseUrl, {
-        path: '/user-socket',
-        transports: ['websocket', 'polling'],
-        auth: { token },
-        autoConnect: true,
-        reconnection: true,
-        reconnectionDelay: 1000,
-        reconnectionDelayMax: 10_000
-      })
-    } catch (err) {
-      logger.warn(
-        '[sdk.subscribeUserEvents] socket init failed:',
-        err?.message || err
-      )
-      return () => {}
-    }
-
-    let _loggedAuthFail = false
-    socket.on('connect_error', (err) => {
-      // Server disconnects unauthed clients on handshake — surface once
-      // at warn so logged-out tabs don't spam the console as the client
-      // retries.
-      if (err?.message && !_loggedAuthFail) {
-        _loggedAuthFail = true
-        logger.warn('[sdk.subscribeUserEvents] connect_error:', err.message)
+    // socket.io-client loads on this first subscription (utils/userSocket.js);
+    // the stop function exists at once. `_ioFactory` is a test seam.
+    return openUserSocket({
+      label: 'subscribeUserEvents',
+      baseUrl,
+      token,
+      io: this._ioFactory,
+      setup: (socket) => {
+        for (const [event, fn] of Object.entries(handlers)) {
+          if (typeof fn === 'function') socket.on(event, fn)
+        }
       }
     })
-
-    for (const [event, fn] of Object.entries(handlers)) {
-      if (typeof fn === 'function') socket.on(event, fn)
-    }
-
-    return () => {
-      try {
-        socket.removeAllListeners()
-      } catch (_) {}
-      try {
-        socket.disconnect()
-      } catch (_) {}
-    }
   }
 
   /**
@@ -2244,75 +2215,58 @@ export class AuthService extends BaseService {
     const baseUrl = this._apiUrl
     if (!baseUrl) return () => {}
 
-    let socket
-    try {
-      socket = socketIoClient(baseUrl, {
-        path: '/user-socket',
-        transports: ['websocket', 'polling'],
-        auth: { token },
-        autoConnect: true,
-        reconnection: true,
-        reconnectionDelay: 1000,
-        reconnectionDelayMax: 10_000
-      })
-    } catch (err) {
-      logger.warn(
-        '[sdk.subscribePresence] socket init failed:',
-        err?.message || err
-      )
-      return () => {}
-    }
-
-    // (Re)announce presence on every connect so a reconnect re-joins the scope.
-    const join = () => {
-      try {
-        socket.emit('presence:join', { scope, userKey, meta: meta || {} })
-      } catch (_) {}
-    }
-    socket.on('connect', join)
-    socket.on('presence:sync', (payload) => {
-      if (!payload || payload.scope !== scope) return
-      try {
-        onSync(payload.state || {})
-      } catch (_) {
-        /* listener errors don't propagate */
-      }
-    })
-    // Live-cursor relay riding the same presence socket: the server
-    // rebroadcasts `presence:cursor` to every OTHER member of the scope room,
-    // stamping peerId (socket id — two tabs of one user are two cursors) +
-    // an authoritative userId. Opt-in: no onCursor → no listener.
-    if (typeof onCursor === 'function') {
-      socket.on('presence:cursor', (payload) => {
-        if (!payload || payload.scope !== scope) return
-        try {
-          onCursor(payload)
-        } catch (_) {
-          /* listener errors don't propagate */
+    // Set once the socket exists — socket.io-client loads on the first
+    // subscription (utils/userSocket.js), after this method has returned.
+    let socket = null
+    const stop = openUserSocket({
+      label: 'subscribePresence',
+      baseUrl,
+      token,
+      io: this._ioFactory,
+      setup: (opened) => {
+        socket = opened
+        // (Re)announce presence on every connect so a reconnect re-joins the scope.
+        const join = () => {
+          try {
+            socket.emit('presence:join', { scope, userKey, meta: meta || {} })
+          } catch (_) {}
         }
-      })
-    }
-    let _loggedAuthFail = false
-    socket.on('connect_error', (err) => {
-      if (err?.message && !_loggedAuthFail) {
-        _loggedAuthFail = true
-        logger.warn('[sdk.subscribePresence] connect_error:', err.message)
+        socket.on('connect', join)
+        socket.on('presence:sync', (payload) => {
+          if (!payload || payload.scope !== scope) return
+          try {
+            onSync(payload.state || {})
+          } catch (_) {
+            /* listener errors don't propagate */
+          }
+        })
+        // Live-cursor relay riding the same presence socket: the server
+        // rebroadcasts `presence:cursor` to every OTHER member of the scope room,
+        // stamping peerId (socket id — two tabs of one user are two cursors) +
+        // an authoritative userId. Opt-in: no onCursor → no listener.
+        if (typeof onCursor === 'function') {
+          socket.on('presence:cursor', (payload) => {
+            if (!payload || payload.scope !== scope) return
+            try {
+              onCursor(payload)
+            } catch (_) {
+              /* listener errors don't propagate */
+            }
+          })
+        }
       }
     })
 
     const unsubscribe = () => {
-      try {
-        socket.removeAllListeners()
-      } catch (_) {}
-      try {
-        socket.disconnect()
-      } catch (_) {}
+      socket = null
+      stop()
     }
     // Throttle-friendly cursor emitter for the scope this subscription joined.
-    // Fire-and-forget; the server relays volatile (dropped frames are fine).
+    // Fire-and-forget; the server relays volatile (dropped frames are fine —
+    // a move before the socket exists is one of them).
     unsubscribe.sendCursor = (data = {}) => {
       try {
-        socket.emit('presence:cursor', { ...data, scope, userKey })
+        socket?.emit('presence:cursor', { ...data, scope, userKey })
       } catch (_) {
         /* socket mid-reconnect — next move resends */
       }

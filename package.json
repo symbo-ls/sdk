@@ -31,6 +31,11 @@
       "import": "./dist/esm/src/index.js",
       "default": "./dist/esm/src/index.js"
     },
+    "./lazy": {
+      "development": "./src/lazy.js",
+      "import": "./dist/esm/src/lazy.js",
+      "default": "./dist/esm/src/lazy.js"
+    },
     "./package.json": "./package.json",
     "./iife": "./dist/sdk.iife.js",
     "./iife-string": "./dist/sdk.iife-string.js",

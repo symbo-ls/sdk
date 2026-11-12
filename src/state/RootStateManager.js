@@ -1,7 +1,8 @@
-import * as utils from '@symbo.ls/utils'
+// A named import, like every other SDK file: `import * as` made a bundler
+// keep all of @symbo.ls/utils (it has no default export, so the old
+// `utils.default || utils` guard always read the namespace).
+import { isFunction } from '@symbo.ls/utils'
 import { rootBus } from './rootEventBus.js'
-
-const { isFunction } = utils.default || utils
 
 export class RootStateManager {
   constructor(rootState) {

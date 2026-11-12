@@ -1,5 +1,5 @@
 import { BaseService } from './BaseService.js'
-import { io as socketIoClient } from 'socket.io-client'
+import { openUserSocket } from '../utils/userSocket.js'
 import { logger } from '../utils/logger.js'
 
 // CanvasLayoutService wraps /workspaces/:wsId/canvas-layout on the main server
@@ -77,50 +77,31 @@ export class CanvasLayoutService extends BaseService {
     const baseUrl = this._apiUrl
     if (!baseUrl) return () => {}
 
-    let socket
-    try {
-      socket = socketIoClient(baseUrl, {
-        path: '/user-socket',
-        transports: ['websocket', 'polling'],
-        auth: { token },
-        autoConnect: true,
-        reconnection: true,
-        reconnectionDelay: 1000,
-        reconnectionDelayMax: 10_000
-      })
-    } catch (err) {
-      logger.warn('[sdk.subscribeWorkspaceCanvasLayout] socket init failed:', err?.message || err)
-      return () => {}
-    }
-
-    let _loggedAuthFail = false
-    socket.on('connect_error', (err) => {
-      if (err?.message && !_loggedAuthFail) {
-        _loggedAuthFail = true
-        logger.warn('[sdk.subscribeWorkspaceCanvasLayout] connect_error:', err.message)
-      }
-    })
-
-    // The server broadcasts 'canvas-layout-changed' with
-    // { workspaceId, positions, groups, version }.
-    // We only forward events that match the requested workspaceId.
-    socket.on('canvas-layout-changed', (payload) => {
-      if (payload?.workspaceId && payload.workspaceId !== workspaceId) return
-      try {
-        handler({
-          positions: payload?.positions ?? {},
-          groups: payload?.groups ?? {},
-          version: payload?.version
+    // socket.io-client loads on the first subscription (utils/userSocket.js);
+    // the stop function exists at once. `_ioFactory` is a test seam.
+    return openUserSocket({
+      label: 'subscribeWorkspaceCanvasLayout',
+      baseUrl,
+      token,
+      io: this._ioFactory,
+      setup: (socket) => {
+        // The server broadcasts 'canvas-layout-changed' with
+        // { workspaceId, positions, groups, version }.
+        // We only forward events that match the requested workspaceId.
+        socket.on('canvas-layout-changed', (payload) => {
+          if (payload?.workspaceId && payload.workspaceId !== workspaceId) return
+          try {
+            handler({
+              positions: payload?.positions ?? {},
+              groups: payload?.groups ?? {},
+              version: payload?.version
+            })
+          } catch (err) {
+            logger.warn('[sdk.subscribeWorkspaceCanvasLayout] handler threw:', err?.message || err)
+          }
         })
-      } catch (err) {
-        logger.warn('[sdk.subscribeWorkspaceCanvasLayout] handler threw:', err?.message || err)
       }
     })
-
-    return () => {
-      try { socket.removeAllListeners() } catch (_) {}
-      try { socket.disconnect() } catch (_) {}
-    }
   }
 
   /**
@@ -146,47 +127,26 @@ export class CanvasLayoutService extends BaseService {
     const baseUrl = this._apiUrl
     if (!baseUrl) return () => {}
 
-    let socket
-    try {
-      socket = socketIoClient(baseUrl, {
-        path: '/user-socket',
-        transports: ['websocket', 'polling'],
-        auth: { token },
-        autoConnect: true,
-        reconnection: true,
-        reconnectionDelay: 1000,
-        reconnectionDelayMax: 10_000
-      })
-    } catch (err) {
-      logger.warn('[sdk.subscribeWorkspaceFileCanvas] socket init failed:', err?.message || err)
-      return () => {}
-    }
-
-    let _loggedAuthFail = false
-    socket.on('connect_error', (err) => {
-      if (err?.message && !_loggedAuthFail) {
-        _loggedAuthFail = true
-        logger.warn('[sdk.subscribeWorkspaceFileCanvas] connect_error:', err.message)
-      }
-    })
-
-    socket.on('file-canvas-changed', (payload) => {
-      if (payload?.workspaceId && payload.workspaceId !== workspaceId) return
-      try {
-        handler({
-          type: payload?.type || 'UPDATE',
-          rows: Array.isArray(payload?.rows) ? payload.rows : [],
-          ids: Array.isArray(payload?.ids) ? payload.ids : [],
-          patch: payload?.patch || null
+    return openUserSocket({
+      label: 'subscribeWorkspaceFileCanvas',
+      baseUrl,
+      token,
+      io: this._ioFactory,
+      setup: (socket) => {
+        socket.on('file-canvas-changed', (payload) => {
+          if (payload?.workspaceId && payload.workspaceId !== workspaceId) return
+          try {
+            handler({
+              type: payload?.type || 'UPDATE',
+              rows: Array.isArray(payload?.rows) ? payload.rows : [],
+              ids: Array.isArray(payload?.ids) ? payload.ids : [],
+              patch: payload?.patch || null
+            })
+          } catch (err) {
+            logger.warn('[sdk.subscribeWorkspaceFileCanvas] handler threw:', err?.message || err)
+          }
         })
-      } catch (err) {
-        logger.warn('[sdk.subscribeWorkspaceFileCanvas] handler threw:', err?.message || err)
       }
     })
-
-    return () => {
-      try { socket.removeAllListeners() } catch (_) {}
-      try { socket.disconnect() } catch (_) {}
-    }
   }
 }

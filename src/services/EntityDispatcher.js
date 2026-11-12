@@ -38,10 +38,13 @@
 // Routes are intentionally explicit: the dispatcher does NOT auto-resolve method
 // names by convention. Every entity+op combination must be registered here.
 
-// `ai.boards` — the route object lives with its service (AiBoardsService.js).
-import { AI_BOARDS_ENTITY_ROUTE } from './AiBoardsService.js'
-// `assistants` — the route object lives with its service (AssistantsService.js).
-import { ASSISTANTS_ENTITY_ROUTE } from './AssistantsService.js'
+// `ai.boards` and `assistants` — route objects in entityRoutes.js, not in
+// their service files, so this table does not pull those services into the
+// SDK's entry (they load on first use with `lazyServices`).
+import {
+  AI_BOARDS_ENTITY_ROUTE,
+  ASSISTANTS_ENTITY_ROUTE
+} from './entityRoutes.js'
 
 // Common arg adapters reused across routes. Pulling args out of well-known
 // shapes keeps individual routes terse — most CRUD entities follow the same
@@ -3289,25 +3292,39 @@ export const createEntityDispatcher = (sdk) => {
       )
     }
 
-    const fn = resolveDottedMethod(service, methodPath)
-    if (typeof fn !== 'function') {
-      throw new Error(
-        `[sdk.execute] Method '${methodPath}' not found on service '${route.service}' (entity '${from}', op '${op}')`
-      )
+    const invoke = (target) => {
+      const fn = resolveDottedMethod(target, methodPath)
+      if (typeof fn !== 'function') {
+        throw new Error(
+          `[sdk.execute] Method '${methodPath}' not found on service '${route.service}' (entity '${from}', op '${op}')`
+        )
+      }
+
+      // Resolve positional args via the route's argMap if present. Otherwise
+      // fall back to passing `args` as a single argument (backwards-compat for
+      // services that already accept a single options object).
+      const argMapper = route.argMap?.[op]
+      const callArgs = typeof argMapper === 'function' ? argMapper(args) : [args]
+
+      // For subscriptions, append the callback as the trailing positional arg
+      // so services like `tickets.subscribe(filter, cb)` get (filter, cb).
+      if (op === 'subscribe' && typeof cb === 'function') {
+        return fn.call(target, ...callArgs, cb)
+      }
+      return fn.call(target, ...callArgs)
     }
 
-    // Resolve positional args via the route's argMap if present. Otherwise
-    // fall back to passing `args` as a single argument (backwards-compat for
-    // services that already accept a single options object).
-    const argMapper = route.argMap?.[op]
-    const callArgs = typeof argMapper === 'function' ? argMapper(args) : [args]
-
-    // For subscriptions, append the callback as the trailing positional arg
-    // so services like `tickets.subscribe(filter, cb)` get (filter, cb).
-    if (op === 'subscribe' && typeof cb === 'function') {
-      return fn.call(service, ...callArgs, cb)
+    // `lazyServices` mode: a service that has not loaded yet comes back as a
+    // Promise of the instance (sdk.getService). The call then answers a
+    // Promise too — a load failure or a missing method is its rejection.
+    // Every loaded service still runs synchronously, exactly as before.
+    // `instanceof Promise`, not a `then` duck-type: loadService() answers a
+    // native Promise, and a service object (or a catch-all Proxy) may itself
+    // expose a `then` key that must not be mistaken for a pending load.
+    if (service instanceof Promise) {
+      return service.then(invoke)
     }
-    return fn.call(service, ...callArgs)
+    return invoke(service)
   }
 
   // Expose introspection helpers on the dispatcher for debugging/tooling.

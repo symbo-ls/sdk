@@ -21,7 +21,7 @@ import { BaseService } from './BaseService.js'
 // envelope through `_call`. POST + fetch reader, not EventSource (GET-only).
 //
 // Reached as `sdk.getService('aiBoards')` or `sdk.execute('ai.boards', op, args)`
-// (route: AI_BOARDS_ENTITY_ROUTE below).
+// (route: AI_BOARDS_ENTITY_ROUTE, in entityRoutes.js).
 
 /**
  * @typedef {'s'|'m'|'l'|'xl'} BoardSize
@@ -471,52 +471,9 @@ export class AiBoardsService extends BaseService {
   }
 }
 
-// The declarative fetch adapter hands `{ params, filter, … }`; imperative
-// callers hand the flat bag. Both become one flat args object.
-const flatArgs = (a) => {
-  if (!a || typeof a !== 'object' || Array.isArray(a)) return {}
-  const { params, filter, ...rest } = a
-  return {
-    ...(filter && typeof filter === 'object' ? filter : {}),
-    ...(params && typeof params === 'object' ? params : {}),
-    ...rest
-  }
-}
-
-/**
- * `sdk.execute('ai.boards', op, args)` — registered in EntityDispatcher's
- * ENTITY_ROUTES (see docs/patches in the server repo for the one-line hand-off).
- */
-export const AI_BOARDS_ENTITY_ROUTE = Object.freeze({
-  service: 'aiBoards',
-  methods: Object.freeze({
-    vocabulary: 'vocabulary',
-    records: 'records',
-    summary: 'summary',
-    generate: 'generate',
-    refine: 'refine',
-    list: 'list',
-    get: 'get',
-    save: 'save',
-    create: 'save',
-    update: 'update',
-    remove: 'remove',
-    delete: 'remove'
-  }),
-  argMap: Object.freeze({
-    vocabulary: (a) => [flatArgs(a)],
-    records: (a) => [flatArgs(a)],
-    summary: (a) => [flatArgs(a)],
-    generate: (a) => [flatArgs(a)],
-    refine: (a) => [flatArgs(a)],
-    list: (a) => [flatArgs(a)],
-    get: (a) => [flatArgs(a)],
-    save: (a) => [flatArgs(a)],
-    create: (a) => [flatArgs(a)],
-    update: (a) => [flatArgs(a)],
-    remove: (a) => [flatArgs(a)],
-    delete: (a) => [flatArgs(a)]
-  })
-})
+// `sdk.execute('ai.boards', op, args)` — the route object lives in
+// entityRoutes.js so EntityDispatcher does not pull this whole service into
+// the entry; re-exported here for existing importers.
+export { AI_BOARDS_ENTITY_ROUTE } from './entityRoutes.js'
 
 export default AiBoardsService

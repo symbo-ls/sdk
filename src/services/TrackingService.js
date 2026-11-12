@@ -822,7 +822,8 @@ export class TrackingService extends BaseService {
         : envelope
     return async (envelope) => {
       try {
-        const analyzed = this._context?.services?.analyzed
+        // `_sibling`: with `lazyServices` the analyzed service may load here.
+        const analyzed = await this._sibling('analyzed')
         if (typeof analyzed?.ingest !== 'function') return { ok: false }
         const res = await analyzed.ingest(stampWorkspace(envelope))
         return { ok: !res?.error }

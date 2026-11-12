@@ -173,17 +173,19 @@ test('switchOrg/switchWorkspace drop the one cache that can outlive a switch', a
 
 test('the dead guard is gone from both switch paths', async (t) => {
   const { readFileSync } = await import('node:fs')
-  const src = readFileSync(new URL('../../../index.js', import.meta.url), 'utf8')
+  // The SDK class (both switch paths) lives in sdk.js; index.js re-exports it.
+  const src = readFileSync(new URL('../../../sdk.js', import.meta.url), 'utf8')
+  t.ok(/switchOrg\s*\(/.test(src) && /switchWorkspace\s*\(/.test(src), 'sdk.js holds both switch paths (the scan is not vacuous)')
 
   t.equal(
     /this\._tokenManager\??\.?invalidateClaims\s*\(/.test(src),
     false,
-    'no call to _tokenManager.invalidateClaims() survives in index.js'
+    'no call to _tokenManager.invalidateClaims() survives in sdk.js'
   )
   t.equal(
     /if\s*\(\s*this\._tokenManager\?\.invalidateClaims\s*\)/.test(src),
     false,
-    'no always-false invalidateClaims guard survives in index.js'
+    'no always-false invalidateClaims guard survives in sdk.js'
   )
   t.ok(
     src.includes('NO CLAIM CACHE'),

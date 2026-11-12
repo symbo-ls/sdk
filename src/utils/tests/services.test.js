@@ -1,5 +1,5 @@
 // Drift audit for SERVICE_METHODS — the map in src/utils/services.js
-// drives _createServiceProxies (src/index.js L513), which flat-attaches
+// drives _createServiceProxies (src/sdk.js), which flat-attaches
 // every `methodName: serviceName` pair as `sdk.methodName(...)` at boot.
 // If a service class grows a public async method that nobody adds to
 // the map, sdk.<method> stays undefined and consumers fall through to
@@ -19,37 +19,20 @@
 //      in the map turns into a runtime "Method X not found on service Y".
 
 import test from 'tape'
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import { SERVICE_METHODS } from '../services.js'
 import * as services from '../../services/index.js'
+import { SERVICE_REGISTRY } from '../../services/registry.js'
 
 const STRICT = process.env.STRICT_SERVICE_METHODS === '1'
 
 // The flat proxy resolves sdk.<method> through the REGISTERED service key —
-// sdk.getService(key), the name src/index.js passes to _initService — not
-// through a naming convention. Many keys do not follow
-// Capitalize(key) + 'Service' (shareLinks → ShareLinkService, publicRecords
-// → PublicCollectionService, docs → DocService, ...), so the stale check
-// reads the registration (key → factory) and the factory → class link from
-// the source, the same chain boot walks.
-const _source = (rel) =>
-  readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8')
-const SDK_SOURCE = _source('../../index.js')
-const SERVICES_SOURCE = _source('../../services/index.js')
-// this._initService('shareLinks', createShareLinkService({ ... }))
+// sdk.getService(key), a key of services/registry.js — not through a naming
+// convention. Many keys do not follow Capitalize(key) + 'Service'
+// (shareLinks → ShareLinkService, publicRecords → PublicCollectionService,
+// docs → DocService, ...), so the stale check reads the registry's
+// key → className link, the same table initialize() and loadService() walk.
 const REGISTERED = new Map(
-  [...SDK_SOURCE.matchAll(/_initService\(\s*'(\w+)'\s*,\s*(create\w+)\(/g)].map(
-    ([, key, factory]) => [key, factory]
-  )
-)
-// export const createShareLinkService = (config) => createService(ShareLinkService, config)
-const FACTORY_CLASS = new Map(
-  [
-    ...SERVICES_SOURCE.matchAll(
-      /export const (create\w+)\s*=\s*\(\w*\)\s*=>\s*createService\(\s*(\w+)\s*,/g
-    )
-  ].map(([, factory, className]) => [factory, className])
+  Object.entries(SERVICE_REGISTRY).map(([key, entry]) => [key, entry.className])
 )
 
 // Global exemptions — lifecycle hooks that every BaseService-derived class
@@ -153,31 +136,28 @@ const _publicMethods = (Class) => {
 }
 
 test('SERVICE_METHODS — the registration parse covers every service', (t) => {
-  // Guards the stale check below against a vacuous pass: a registration or
-  // factory written in a new shape must fail here, not drop out silently.
-  const calls = (SDK_SOURCE.match(/this\._initService\(/g) || []).length
-  t.ok(REGISTERED.size > 0, `src/index.js registers ${REGISTERED.size} services`)
-  t.equal(REGISTERED.size, calls, 'every this._initService(…) call is parsed')
+  // Guards the stale check below against a vacuous pass: a registry entry
+  // written in a new shape must fail here, not drop out silently.
+  t.ok(REGISTERED.size > 0, `services/registry.js registers ${REGISTERED.size} services`)
   const unresolved = [...REGISTERED]
-    .filter(([, factory]) => typeof services[FACTORY_CLASS.get(factory)] !== 'function')
-    .map(([key, factory]) => `${key} → ${factory}`)
-  t.deepEqual(unresolved, [], 'every registered factory resolves to an exported class')
+    .filter(([, className]) => typeof services[className] !== 'function')
+    .map(([key, className]) => `${key} → ${className}`)
+  t.deepEqual(unresolved, [], 'every registered className resolves to an exported class')
   t.end()
 })
 
 test('SERVICE_METHODS — stale entries point at a real method on the named service', async (t) => {
   const stale = []
   for (const [method, serviceKey] of Object.entries(SERVICE_METHODS)) {
-    const factory = REGISTERED.get(serviceKey)
-    if (!factory) {
+    const className = REGISTERED.get(serviceKey)
+    if (!className) {
       stale.push({
         method,
         expectedClass: `'${serviceKey}'`,
-        reason: 'service key not registered in src/index.js'
+        reason: 'service key not registered in services/registry.js'
       })
       continue
     }
-    const className = FACTORY_CLASS.get(factory) || factory
     const ServiceClass = services[className]
     if (!ServiceClass) {
       stale.push({ method, expectedClass: className, reason: 'class not exported' })

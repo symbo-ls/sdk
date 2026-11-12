@@ -635,12 +635,12 @@ export class AiService extends BaseService {
         continue
       }
       try {
-        // BaseService keeps a reference to the parent SDK instance via
-        // this._context.services or this._sdk. Resolve the target service
-        // dynamically so the AI service stays decoupled from specific
-        // service shapes.
-        const sdk = this._context?.services || this._sdk
-        const target = sdk?.[call.service]
+        // Resolve the target service dynamically so the AI service stays
+        // decoupled from specific service shapes. `_sibling` also loads a
+        // service that `lazyServices` has not loaded yet; `this._sdk` stays
+        // the fallback for a host that injects one.
+        const target =
+          (await this._sibling(call.service)) || this._sdk?.[call.service]
         if (!target || typeof target[call.method] !== 'function') {
           throw new Error(
             `[sdk.ai] unknown action ${call.service}.${call.method}`

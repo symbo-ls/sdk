@@ -1,5 +1,5 @@
 import { BaseService } from './BaseService.js'
-import { io as socketIoClient } from 'socket.io-client'
+import { openUserSocket } from '../utils/userSocket.js'
 import { logger } from '../utils/logger.js'
 
 // BuildsService wraps the workspace-scoped Builds & Deploy pipeline on the
@@ -352,65 +352,44 @@ export class BuildsService extends BaseService {
     const baseUrl = this._apiUrl
     if (!baseUrl) return () => {}
 
-    let socket
-    try {
-      // `_ioFactory` is a test seam — always undefined in production, so the
-      // real socket.io-client transport is used with the exact options of
-      // subscribeWorkspaceCanvasLayout / subscribeUserEvents.
-      const io = this._ioFactory || socketIoClient
-      socket = io(baseUrl, {
-        path: '/user-socket',
-        transports: ['websocket', 'polling'],
-        auth: { token },
-        autoConnect: true,
-        reconnection: true,
-        reconnectionDelay: 1000,
-        reconnectionDelayMax: 10_000
-      })
-    } catch (err) {
-      logger.warn('[sdk.subscribeWorkspaceBuilds] socket init failed:', err?.message || err)
-      return () => {}
-    }
-
-    let _loggedAuthFail = false
-    socket.on('connect_error', (err) => {
-      if (err?.message && !_loggedAuthFail) {
-        _loggedAuthFail = true
-        logger.warn('[sdk.subscribeWorkspaceBuilds] connect_error:', err.message)
-      }
-    })
-
     // Optional client-side workspace scoping — same semantics as the
     // canvas-layout filter: only drop when BOTH sides carry a workspaceId
     // and they differ.
     const isForeign = (payload) =>
       Boolean(workspaceId && payload?.workspaceId && payload.workspaceId !== workspaceId)
 
-    if (hasBuildHandler) {
-      socket.on('build-status-changed', (payload) => {
-        if (isForeign(payload)) return
-        try {
-          onBuildStatus(payload)
-        } catch (err) {
-          logger.warn('[sdk.subscribeWorkspaceBuilds] onBuildStatus threw:', err?.message || err)
+    // `_ioFactory` is a test seam — always undefined in production, so
+    // socket.io-client loads on the first subscription (utils/userSocket.js)
+    // with the exact options of subscribeWorkspaceCanvasLayout /
+    // subscribeUserEvents. With the seam the socket opens synchronously.
+    return openUserSocket({
+      label: 'subscribeWorkspaceBuilds',
+      baseUrl,
+      token,
+      io: this._ioFactory,
+      setup: (socket) => {
+        if (hasBuildHandler) {
+          socket.on('build-status-changed', (payload) => {
+            if (isForeign(payload)) return
+            try {
+              onBuildStatus(payload)
+            } catch (err) {
+              logger.warn('[sdk.subscribeWorkspaceBuilds] onBuildStatus threw:', err?.message || err)
+            }
+          })
         }
-      })
-    }
 
-    if (hasDeploymentHandler) {
-      socket.on('deployment-status-changed', (payload) => {
-        if (isForeign(payload)) return
-        try {
-          onDeploymentStatus(payload)
-        } catch (err) {
-          logger.warn('[sdk.subscribeWorkspaceBuilds] onDeploymentStatus threw:', err?.message || err)
+        if (hasDeploymentHandler) {
+          socket.on('deployment-status-changed', (payload) => {
+            if (isForeign(payload)) return
+            try {
+              onDeploymentStatus(payload)
+            } catch (err) {
+              logger.warn('[sdk.subscribeWorkspaceBuilds] onDeploymentStatus threw:', err?.message || err)
+            }
+          })
         }
-      })
-    }
-
-    return () => {
-      try { socket.removeAllListeners() } catch (_) {}
-      try { socket.disconnect() } catch (_) {}
-    }
+      }
+    })
   }
 }
