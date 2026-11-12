@@ -23,13 +23,21 @@ export class OrganizationService extends BaseService {
     throw new Error(response.message)
   }
 
-  async listOrganizations () {
+  // `{ summary: true }` asks for the small form (GET /organizations?view=summary,
+  // server OrganizationController._listOrganizationsSummary): per org only
+  // `_id id key slug name type status createdAt updatedAt owner{id,name,username}
+  // memberCount` — no org document bags, no `members[]`. For pickers, switchers
+  // and dashboards. No argument → the full answer, unchanged.
+  async listOrganizations (options = {}) {
     this._requireReady('listOrganizations')
 
-    const response = await this._request('/organizations', {
-      method: 'GET',
-      methodName: 'listOrganizations'
-    })
+    const response = await this._request(
+      `/organizations${options?.summary ? '?view=summary' : ''}`,
+      {
+        method: 'GET',
+        methodName: 'listOrganizations'
+      }
+    )
     if (response.success) return response.data
     throw new Error(response.message)
   }
