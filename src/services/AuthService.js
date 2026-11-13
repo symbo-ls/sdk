@@ -524,6 +524,13 @@ export class AuthService extends BaseService {
   // first reads what to show: when and from where the session was started,
   // which client, and whether the device's code is required. No session
   // needed (the facts are keyed by the unguessable session id).
+  //
+  // MCP connector OAuth: the same page also answers an app's consent
+  // session. `kind` is 'device' (CLI / plugin sign-in) or 'oauth' (an MCP
+  // app asks to connect). For 'oauth', `redirectHost` is where the app's
+  // code goes (a fact the server read from the registered redirect URI) and
+  // `clientName` is the app's OWN claim (unverified, display only). An older
+  // server sends no `kind`: the three new fields are then null.
   async getSignInSessionInfo(sessionId) {
     try {
       const info = await this._request(
@@ -531,10 +538,13 @@ export class AuthService extends BaseService {
         { method: 'GET', methodName: 'getSignInSessionInfo' }
       )
       return {
+        kind: info?.kind ?? null,
         status: info?.status ?? null,
         createdAt: info?.created_at ?? null,
         requesterIp: info?.requester_ip ?? null,
         client: info?.client ?? null,
+        clientName: info?.client_name ?? null,
+        redirectHost: info?.redirect_host ?? null,
         codeRequired: !!info?.code_required
       }
     } catch (error) {
@@ -1421,6 +1431,29 @@ export class AuthService extends BaseService {
     return this._call('revokeMyOtherSessions', '/auth/sessions/revoke-others', {
       method: 'POST'
     })
+  }
+
+  // MCP connector OAuth: the apps the signed-in person connected (Claude,
+  // an IDE, …). A signed-in browser session only, like /auth/sessions.
+  // GET /core/auth/connections → one row per live connection, the most
+  // recently used first: { id, client_name (the app's own claim),
+  // redirect_host (where its codes went), resource, scopes, connected_at,
+  // last_used_at, expires_at }. Named "Mcp…": the rows are MCP connector
+  // grants, not org integrations or calendar connections.
+  async listMcpConnections() {
+    return this._call('listMcpConnections', '/auth/connections')
+  }
+
+  // DELETE /core/auth/connections/:id → { revoked: true }. Ends one: its
+  // refresh token and every access token it minted stop at once. Another
+  // person's id, an unknown one and an ended one all answer 404.
+  async revokeMcpConnection(id) {
+    if (!id) throw new Error('id is required')
+    return this._call(
+      'revokeMcpConnection',
+      `/auth/connections/${encodeURIComponent(id)}`,
+      { method: 'DELETE' }
+    )
   }
 
   async getUserByEmail(email) {

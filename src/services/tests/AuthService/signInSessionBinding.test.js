@@ -21,11 +21,42 @@ test('getSignInSessionInfo GETs /auth/session/info with the session id encoded',
   t.equal(opts.method, 'GET')
   t.equal(opts.methodName, 'getSignInSessionInfo')
   t.deepEqual(out, {
+    kind: null,
     status: 'pending',
     createdAt: '2026-10-15T10:00:00.000Z',
     requesterIp: '203.0.113.9',
     client: 'cli',
+    clientName: null,
+    redirectHost: null,
     codeRequired: true
+  })
+  sandbox.restore()
+  t.end()
+})
+
+test('getSignInSessionInfo maps an MCP app consent session (kind oauth)', async (t) => {
+  const svc = new AuthService()
+  const info = {
+    kind: 'oauth',
+    status: 'pending',
+    created_at: '2026-11-13T10:00:00.000Z',
+    requester_ip: '203.0.113.9',
+    client: 'Claude',
+    client_name: 'Claude',
+    redirect_host: 'claude.ai',
+    code_required: false
+  }
+  sandbox.stub(svc, '_request').resolves(info)
+  const out = await svc.getSignInSessionInfo('mcp_abc')
+  t.deepEqual(out, {
+    kind: 'oauth',
+    status: 'pending',
+    createdAt: '2026-11-13T10:00:00.000Z',
+    requesterIp: '203.0.113.9',
+    client: 'Claude',
+    clientName: 'Claude',
+    redirectHost: 'claude.ai',
+    codeRequired: false
   })
   sandbox.restore()
   t.end()

@@ -101,6 +101,9 @@ export const SERVICE_METHODS = {
   listMySessions: 'auth',
   revokeMySession: 'auth',
   revokeMyOtherSessions: 'auth',
+  // MCP connector OAuth: the apps the signed-in person connected.
+  listMcpConnections: 'auth',
+  revokeMcpConnection: 'auth',
 
   // Project methods (moved to project service)
   createProject: 'project',
