@@ -49,6 +49,15 @@ export const SERVICE_METHODS = {
   setInitialPassword: 'auth',
   getSignInSessionInfo: 'auth',
   activateSignInSession: 'auth',
+  // "Sign in with Symbols" for a project's own site (server CORE-APP-OAUTH-1):
+  // the shell's consent page (describe / approve) and the app page (start /
+  // complete / exchange / the stored scope).
+  describeAppAuthorization: 'auth',
+  approveAppAuthorization: 'auth',
+  startAppAuthorization: 'auth',
+  completeAppAuthorization: 'auth',
+  exchangeAppAuthorizationCode: 'auth',
+  getAppAuthorization: 'auth',
   requestPasswordChange: 'auth',
   confirmPasswordChange: 'auth',
   getMe: 'auth',

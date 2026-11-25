@@ -7,8 +7,53 @@ import {
 } from '../utils/permission.js'
 import { logger } from '../utils/logger.js'
 import { ambiguousKeyError } from '../utils/ambiguousKey.js'
+import environment from '../config/environment.js'
 
 const PLUGIN_SESSION_STORAGE_KEY = 'plugin_auth_session'
+
+// "Sign in with Symbols" for a project's own site (server CORE-APP-OAUTH-1).
+// The pending request (PKCE verifier, app, workspace, return path) lives in
+// the page's sessionStorage under the prefix + its `state`, at most
+// APP_AUTH_MAX_AGE_MS. The scope of a finished sign-in sits beside the
+// session in localStorage.
+const APP_AUTH_STORAGE_PREFIX = 'symbols_app_auth:'
+const APP_SCOPE_STORAGE_KEY = 'symbols_app_scope'
+const APP_AUTH_MAX_AGE_MS = 10 * 60 * 1000
+const APP_ID_RE = /^[a-z0-9][a-z0-9._-]{0,99}\/[a-z0-9][a-z0-9._-]{0,99}$/i
+const HEX24_RE = /^[a-f0-9]{24}$/i
+
+const _b64url = (bytes) => {
+  let s = ''
+  for (const b of bytes) s += String.fromCharCode(b)
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+const _randomB64url = (n) => {
+  const a = new Uint8Array(n)
+  globalThis.crypto.getRandomValues(a)
+  return _b64url(a)
+}
+
+const _s256 = async (verifier) => {
+  const digest = await globalThis.crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(verifier)
+  )
+  return _b64url(new Uint8Array(digest))
+}
+
+// A same-origin path only: '/x?y#z', never '//host' or a scheme.
+const _safeReturnPath = (p) =>
+  typeof p === 'string' && p.startsWith('/') && !p.startsWith('//') && !p.startsWith('/\\')
+    ? p
+    : '/'
+
+const _appAuthError = (code, message, cause) => {
+  const err = new Error(message || code, cause ? { cause } : undefined)
+  err.code = code
+  if (cause?.status !== undefined) err.status = cause.status
+  return err
+}
 
 export class AuthService extends BaseService {
   constructor(config) {
@@ -293,6 +338,11 @@ export class AuthService extends BaseService {
     if (this._tokenManager) {
       this._tokenManager.clearTokens()
     }
+    try {
+      globalThis.localStorage?.removeItem(APP_SCOPE_STORAGE_KEY)
+    } catch (_) {
+      /* locked storage: nothing to forget */
+    }
     this._currentUser = null
     this._emitAuth?.('SIGNED_OUT')
   }
@@ -556,6 +606,222 @@ export class AuthService extends BaseService {
       })
     } catch (error) {
       throw new Error(`Sign-in session activation failed: ${error.message}`, { cause: error })
+    }
+  }
+
+  // ==================== SIGN IN WITH SYMBOLS (app scope) ====================
+  // Server CORE-APP-OAUTH-1. A project's own site (its platform host or an
+  // active custom domain) signs a person in through the shell's consent page
+  // and gets a token that works only for that app and ONE workspace: the
+  // authorization code flow with PKCE S256. No refresh token; when the token
+  // ends the page signs in again.
+
+  /**
+   * Shell side: the consent page's facts for an authorization request (the
+   * query of `/authorize-app`). Needs the shell's signed-in session.
+   * @param {Record<string,string>} params response_type, client_id, workspace,
+   *   redirect_uri, state, code_challenge, code_challenge_method, scope?
+   * @returns {Promise<{ app: { id: string, name: string }, workspace: { id: string, name: string },
+   *   redirectUri: string, redirectHost: string, scopes: string[], expiresIn: number, denyTo: string }>}
+   */
+  async describeAppAuthorization(params = {}) {
+    const qs = new URLSearchParams(params).toString()
+    return this._call('describeAppAuthorization', `/oauth/app/authorize?${qs}`)
+  }
+
+  /**
+   * Shell side: the consent Continue. Answers `{ redirect_to }`, the checked
+   * redirect URI with the one-time `code` and the request's `state`.
+   */
+  async approveAppAuthorization(params = {}) {
+    return this._call('approveAppAuthorization', '/oauth/app/authorize', {
+      method: 'POST',
+      body: params
+    })
+  }
+
+  /**
+   * App side, step 1: send the browser to the shell's consent page. Keeps the
+   * PKCE verifier and the return path in this page's sessionStorage.
+   * @param {{ appId: string, workspaceId: string, returnTo?: string,
+   *   scope?: string, navigate?: boolean }} opts appId = 'owner/key' of the
+   *   app project; workspaceId = the workspace the app is installed in.
+   * @returns {Promise<{ url: string, state: string }>}
+   */
+  async startAppAuthorization({ appId, workspaceId, returnTo, scope, navigate = true } = {}) {
+    if (typeof appId !== 'string' || !APP_ID_RE.test(appId)) {
+      throw _appAuthError('invalid_app', '[sdk.startAppAuthorization] appId must be "owner/key"')
+    }
+    if (typeof workspaceId !== 'string' || !HEX24_RE.test(workspaceId)) {
+      throw _appAuthError('invalid_workspace', '[sdk.startAppAuthorization] workspaceId must be a workspace id')
+    }
+    const win = globalThis.window
+    const loc = win?.location
+    const store = globalThis.sessionStorage
+    if (!loc || !store || !globalThis.crypto?.subtle) {
+      throw _appAuthError('unsupported', '[sdk.startAppAuthorization] needs a browser page (https)')
+    }
+    const shell = this._context?.shellUrl || environment.shellUrl
+    if (!shell) throw _appAuthError('unsupported', '[sdk.startAppAuthorization] no shell URL')
+
+    const state = _randomB64url(24)
+    const verifier = _randomB64url(32)
+    const challenge = await _s256(verifier)
+    const redirectUri = `${loc.origin}/`
+    const back = _safeReturnPath(
+      returnTo !== undefined ? returnTo : `${loc.pathname || '/'}${loc.search || ''}${loc.hash || ''}`
+    )
+    this._pruneAppAuthRequests(store)
+    store.setItem(
+      APP_AUTH_STORAGE_PREFIX + state,
+      JSON.stringify({ v: verifier, appId, workspaceId, redirectUri, returnTo: back, at: Date.now() })
+    )
+    const url = new URL('/authorize-app', shell)
+    const q = {
+      response_type: 'code',
+      client_id: appId,
+      workspace: workspaceId,
+      redirect_uri: redirectUri,
+      state,
+      code_challenge: challenge,
+      code_challenge_method: 'S256'
+    }
+    if (scope) q.scope = scope
+    url.search = new URLSearchParams(q).toString()
+    if (navigate) loc.assign(url.toString())
+    return { url: url.toString(), state }
+  }
+
+  // Drop pending requests older than APP_AUTH_MAX_AGE_MS (and broken ones).
+  _pruneAppAuthRequests(store) {
+    try {
+      const now = Date.now()
+      for (let i = store.length - 1; i >= 0; i--) {
+        const k = store.key(i)
+        if (!k || !k.startsWith(APP_AUTH_STORAGE_PREFIX)) continue
+        let at = 0
+        try {
+          at = Number(JSON.parse(store.getItem(k))?.at) || 0
+        } catch (_) {
+          at = 0
+        }
+        if (!at || now - at > APP_AUTH_MAX_AGE_MS) store.removeItem(k)
+      }
+    } catch (_) {
+      /* locked storage */
+    }
+  }
+
+  /**
+   * The bare code + PKCE exchange (POST /core/oauth/app/token). No bearer
+   * token rides it. Resolves the server's token object.
+   */
+  async exchangeAppAuthorizationCode({ clientId, code, redirectUri, codeVerifier } = {}) {
+    try {
+      return await this._request('/oauth/app/token', {
+        method: 'POST',
+        body: JSON.stringify({
+          grant_type: 'authorization_code',
+          client_id: clientId,
+          code,
+          redirect_uri: redirectUri,
+          code_verifier: codeVerifier
+        }),
+        methodName: 'exchangeAppAuthorizationCode',
+        maxRetries: 0
+      })
+    } catch (error) {
+      const code = error?.cause?.error || 'exchange_failed'
+      throw _appAuthError(code, `App sign-in exchange failed: ${code}`, error)
+    }
+  }
+
+  /**
+   * App side, step 2: on the return from the consent page, finish the
+   * sign-in. Resolves null when this page load is no such return. Otherwise
+   * it removes `code` / `state` from the address (history.replaceState to the
+   * saved return path), exchanges the code with the saved verifier, keeps the
+   * app token as this page's session (access-only) and resolves
+   * `{ appId, workspaceId, scope, expiresIn, returnTo }`. A refusal on the
+   * consent page or a bad return throws with `code` (`access_denied`,
+   * `state_mismatch`, `state_expired`, `invalid_grant`, …).
+   */
+  async completeAppAuthorization() {
+    const win = globalThis.window
+    const loc = win?.location
+    if (!loc) return null
+    const params = new URLSearchParams(loc.search || '')
+    const state = params.get('state')
+    const code = params.get('code')
+    const error = params.get('error')
+    if (!state || (!code && !error)) return null
+
+    const store = globalThis.sessionStorage
+    const key = APP_AUTH_STORAGE_PREFIX + state
+    let saved = null
+    try {
+      saved = JSON.parse(store?.getItem(key) || 'null')
+      store?.removeItem(key)
+    } catch (_) {
+      saved = null
+    }
+    if (!saved) {
+      // Not a request of this page: leave the address alone.
+      throw _appAuthError('state_mismatch', 'App sign-in: no pending request for this state')
+    }
+    const back = _safeReturnPath(saved.returnTo)
+    try {
+      win.history?.replaceState?.(win.history.state, '', back)
+    } catch (_) {
+      /* the address keeps the spent code: harmless, it is single-use */
+    }
+    if (error) throw _appAuthError(String(error), `App sign-in refused: ${error}`)
+    if (!saved.at || Date.now() - saved.at > APP_AUTH_MAX_AGE_MS) {
+      throw _appAuthError('state_expired', 'App sign-in: the request expired')
+    }
+    if (saved.redirectUri !== `${loc.origin}/`) {
+      throw _appAuthError('state_mismatch', 'App sign-in: the request was made on another origin')
+    }
+
+    const out = await this.exchangeAppAuthorizationCode({
+      clientId: saved.appId,
+      code,
+      redirectUri: saved.redirectUri,
+      codeVerifier: saved.v
+    })
+    if (!out?.access_token) throw _appAuthError('exchange_failed', 'App sign-in: no token')
+    if (String(out.workspace_id || '').toLowerCase() !== String(saved.workspaceId).toLowerCase()) {
+      throw _appAuthError('state_mismatch', 'App sign-in: the token names another workspace')
+    }
+    if (this._tokenManager?.adoptAccessToken) {
+      this._tokenManager.adoptAccessToken({ access_token: out.access_token, expires_in: out.expires_in })
+    }
+    const scope = {
+      appId: out.app_id || saved.appId,
+      workspaceId: String(out.workspace_id),
+      scope: out.scope || ''
+    }
+    try {
+      globalThis.localStorage?.setItem(APP_SCOPE_STORAGE_KEY, JSON.stringify(scope))
+    } catch (_) {
+      /* locked storage: the session still works this page load */
+    }
+    this._currentUser = null
+    this._emitAuth?.('SIGNED_IN')
+    return { ...scope, expiresIn: out.expires_in, returnTo: back }
+  }
+
+  /**
+   * The app scope of this page's session — `{ appId, workspaceId, scope }` —
+   * or null when the session is not an app sign-in (or there is none).
+   */
+  getAppAuthorization() {
+    if (!this._tokenManager?.getAccessToken?.()) return null
+    try {
+      const v = JSON.parse(globalThis.localStorage?.getItem(APP_SCOPE_STORAGE_KEY) || 'null')
+      return v && v.appId && v.workspaceId ? v : null
+    } catch (_) {
+      return null
     }
   }
 

@@ -1,5 +1,9 @@
 import { isDevelopment } from '@symbo.ls/utils'
-import { apiUrl as channelApiUrl, socketUrl as channelSocketUrl } from '@symbo.ls/channels'
+import {
+  apiUrl as channelApiUrl,
+  socketUrl as channelSocketUrl,
+  shellUrl as channelShellUrl
+} from '@symbo.ls/channels'
 import { logger } from '../utils/logger.js'
 
 // URL fields (apiUrl/socketUrl) come from `@symbo.ls/channels` — single source
@@ -182,6 +186,14 @@ export const getConfig = () => {
           ? channelSocketUrl()
           : channelSocketUrl(channelName)),
       apiUrl,
+      // The workspace shell of the same channel (my.symbols.app on
+      // production): "Sign in with Symbols" (AuthService
+      // startAppAuthorization) sends the browser to its consent page.
+      shellUrl:
+        process.env.SYMBOLS_APP_SHELL_URL ||
+        (typeof globalThis !== 'undefined' && globalThis.__SYMBOLS_CHANNEL__
+          ? channelShellUrl()
+          : channelShellUrl(channelName)),
       githubClientId:
         process.env.SYMBOLS_APP_GITHUB_CLIENT_ID || envConfig.githubClientId,
       // Telemetry: TrackingService routes through @symbo.ls/analyzing →

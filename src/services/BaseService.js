@@ -621,6 +621,9 @@ export class BaseService {
       // Native-shell OAuth redemption — runs pre-auth on /login (the deep
       // link delivers the xt BEFORE any session exists), so no bearer token.
       'exchangeNativeAuthToken',
+      // "Sign in with Symbols" on a project's own site: the code + PKCE
+      // exchange runs before any session exists (AuthService).
+      'exchangeAppAuthorizationCode',
       'requestPasswordReset',
       'confirmPasswordReset',
       'confirmRegistration',
