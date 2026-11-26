@@ -329,7 +329,15 @@ test('the return path: a deep path comes back; a foreign one falls back to /', a
     ['https://evil.example', '/'],
     ['/\\evil', '/'],
     ['javascript:alert(1)', '/'],
-    ['', '/']
+    ['', '/'],
+    // fresh review N8: the URL parser strips tab / CR / LF, so these read as
+    // "//evil.example"; a backslash or a space anywhere is refused too
+    ['/\t/evil.example', '/'],
+    ['/\n/evil.example', '/'],
+    ['/\r/evil.example', '/'],
+    ['/a\\b', '/'],
+    ['/a b', '/'],
+    ['/a%20b?x=%2F%2F', '/a%20b?x=%2F%2F']
   ]
   for (const [given, want] of cases) {
     const { svc } = setup()

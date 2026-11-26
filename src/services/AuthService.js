@@ -43,11 +43,22 @@ const _s256 = async (verifier) => {
   return _b64url(new Uint8Array(digest))
 }
 
-// A same-origin path only: '/x?y#z', never '//host' or a scheme.
-const _safeReturnPath = (p) =>
-  typeof p === 'string' && p.startsWith('/') && !p.startsWith('//') && !p.startsWith('/\\')
-    ? p
-    : '/'
+// A path of THIS site only: one leading "/", no "//" or "/\\", no control
+// character, space or backslash anywhere (the URL parser strips tab / CR / LF,
+// so "/<TAB>/host" would read as "//host"; fresh review N8), and it must stay
+// on the same origin when resolved. Anything else is "/".
+const _RETURN_PATH_BASE = 'https://return-path.invalid'
+const _safeReturnPath = (p) => {
+  if (typeof p !== 'string' || !p.startsWith('/') || p.startsWith('//')) return '/'
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u0020\u007f\\]/.test(p)) return '/'
+  try {
+    if (new URL(p, _RETURN_PATH_BASE).origin !== _RETURN_PATH_BASE) return '/'
+  } catch (_) {
+    return '/'
+  }
+  return p
+}
 
 // Take `code`, `state` and `error` out of the address (the rest stays).
 const _stripAppAuthParams = (win, loc) => {
