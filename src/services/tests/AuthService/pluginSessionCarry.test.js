@@ -12,6 +12,9 @@
 // These tests pin the carrier: the id is written to localStorage on the way
 // out and read back from localStorage on the way in, across a FRESH service
 // instance (a real page load throws the in-memory copy away).
+//
+// N2 (2026-11-26): the id reaches the SDK only EXPLICITLY (the sign-in page
+// passes `{ session }`); the page address is never read.
 
 import test from 'tape'
 import sinon from 'sinon'
@@ -62,14 +65,43 @@ const makeService = () => {
   return svc
 }
 
-test('plugin session — the ?session= id is written to storage on the login page', t => {
+test('plugin session — N2: a ?session= in the page address is never adopted', t => {
   t.plan(2)
+  // A link someone else made (`<any page>?session=<their id>`) must not arm
+  // anything through this browser: the SDK does not read the address.
   const win = fakeWindow('https://my.symbols.app/login?session=S-1')
 
   const resolved = withWindow(win, () => makeService()._resolvePluginSession())
 
-  t.equal(resolved, 'S-1', 'the login page resolves the id from the query')
-  t.equal(win.__store[STORAGE_KEY], 'S-1', 'and persists it before leaving for Google')
+  t.equal(resolved, null, 'the address is not a carrier')
+  t.equal(win.__store[STORAGE_KEY], undefined, 'and nothing is stored from it')
+
+  sinon.restore()
+  t.end()
+})
+
+test('plugin session — N2: getMe on a page with a foreign ?session= sends a plain /auth/me', async t => {
+  t.plan(1)
+  const win = fakeWindow('https://product.archy.ge/catalog?session=FOREIGN')
+  const svc = withWindow(win, () => makeService())
+  const request = sinon.stub(svc, '_request').resolves({ success: true, data: {} })
+
+  await withWindow(win, () => svc.getMe())
+
+  t.equal(request.firstCall.args[0], '/auth/me', 'no session id rides the call')
+
+  sinon.restore()
+  t.end()
+})
+
+test('plugin session — an explicit session (the sign-in page passes it) is stored for the round-trip', t => {
+  t.plan(2)
+  const win = fakeWindow('https://my.symbols.app/login?session=S-1')
+
+  const resolved = withWindow(win, () => makeService()._resolvePluginSession('S-1'))
+
+  t.equal(resolved, 'S-1')
+  t.equal(win.__store[STORAGE_KEY], 'S-1', 'persisted before leaving for Google')
 
   sinon.restore()
   t.end()

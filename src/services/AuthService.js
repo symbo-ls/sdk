@@ -2303,18 +2303,16 @@ export class AuthService extends BaseService {
       return this._cachePluginSession(contextSession)
     }
 
+    // CORE-AUTH-TAKEOVER-PATHS D9 / app-oauth re-review N2 (Nika 2026-11-26
+    // 04:28, "Require a user code"): the SDK no longer reads `?session=` from
+    // the page address. Any page of any site that runs the SDK used to adopt
+    // a sign-in session id from a link someone else made and send it on the
+    // next getMe — the side-effect arm. A sign-in page that carries a session
+    // passes it explicitly (`login(…, { session })`, `googleAuth(…, { session })`)
+    // and the signed-in case goes to the explicit Continue
+    // (`activateSignInSession`). Only an id this browser stored itself on
+    // that explicit path is read back.
     if (typeof window !== 'undefined') {
-      try {
-        const sessionFromUrl = new URL(window.location.href).searchParams.get(
-          'session'
-        )
-        if (sessionFromUrl) {
-          return this._cachePluginSession(sessionFromUrl)
-        }
-      } catch {
-        // Ignore URL parsing errors
-      }
-
       try {
         if (window.localStorage) {
           const stored = window.localStorage.getItem(PLUGIN_SESSION_STORAGE_KEY)
