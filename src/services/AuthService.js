@@ -786,28 +786,37 @@ export class AuthService extends BaseService {
       throw _appAuthError('state_mismatch', 'App sign-in: no pending request for this state')
     }
     const back = _safeReturnPath(saved.returnTo)
+    // Every refusal from here on names the page the person started from, so
+    // the site can show the message on that page (`err.returnTo`).
+    const refuse = (code, message, cause) =>
+      Object.assign(_appAuthError(code, message, cause), { returnTo: back })
     try {
       win.history?.replaceState?.(win.history.state, '', back)
     } catch (_) {
       /* the address keeps the spent code: harmless, it is single-use */
     }
-    if (error) throw _appAuthError(String(error), `App sign-in refused: ${error}`)
+    if (error) throw refuse(String(error), `App sign-in refused: ${error}`)
     if (!saved.at || Date.now() - saved.at > APP_AUTH_MAX_AGE_MS) {
-      throw _appAuthError('state_expired', 'App sign-in: the request expired')
+      throw refuse('state_expired', 'App sign-in: the request expired')
     }
     if (saved.redirectUri !== `${loc.origin}/`) {
-      throw _appAuthError('state_mismatch', 'App sign-in: the request was made on another origin')
+      throw refuse('state_mismatch', 'App sign-in: the request was made on another origin')
     }
 
-    const out = await this.exchangeAppAuthorizationCode({
-      clientId: saved.appId,
-      code,
-      redirectUri: saved.redirectUri,
-      codeVerifier: saved.v
-    })
-    if (!out?.access_token) throw _appAuthError('exchange_failed', 'App sign-in: no token')
+    let out
+    try {
+      out = await this.exchangeAppAuthorizationCode({
+        clientId: saved.appId,
+        code,
+        redirectUri: saved.redirectUri,
+        codeVerifier: saved.v
+      })
+    } catch (e) {
+      throw Object.assign(e, { returnTo: back })
+    }
+    if (!out?.access_token) throw refuse('exchange_failed', 'App sign-in: no token')
     if (String(out.workspace_id || '').toLowerCase() !== String(saved.workspaceId).toLowerCase()) {
-      throw _appAuthError('state_mismatch', 'App sign-in: the token names another workspace')
+      throw refuse('state_mismatch', 'App sign-in: the token names another workspace')
     }
     if (this._tokenManager?.adoptAccessToken) {
       this._tokenManager.adoptAccessToken(

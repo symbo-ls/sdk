@@ -343,3 +343,24 @@ test('the return path: a deep path comes back; a foreign one falls back to /', a
   }
   t.end()
 })
+
+test('a refusal names the page the person started from (err.returnTo)', async (t) => {
+  const { svc, location, history } = setup({ pathname: '/item/bench' })
+  try {
+    location.search = '?edit=1'
+    const { state } = await svc.startAppAuthorization({ appId: 'appco/shop', workspaceId: WS, navigate: false })
+    location.pathname = '/'
+    location.search = `?error=access_denied&state=${state}`
+    try {
+      await svc.completeAppAuthorization()
+      t.fail('accepted')
+    } catch (e) {
+      t.equal(e.code, 'access_denied')
+      t.equal(e.returnTo, '/item/bench?edit=1')
+    }
+    t.equal(history.replaceState.firstCall.args[2], '/item/bench?edit=1', 'the address is the start page again')
+  } finally {
+    teardown()
+  }
+  t.end()
+})
