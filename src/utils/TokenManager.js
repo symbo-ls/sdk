@@ -82,9 +82,24 @@ export class TokenManager {
     // overwritten, only shadowed.
     this._personaToken = null
 
+    // An app-scoped session (adoptAccessToken source 'app') lives in this
+    // tab's sessionStorage, never in localStorage: it ends with the tab and
+    // is never shared with another tab of the origin.
+    this._appSession = this._hasStoredAppSession()
+
     // Load tokens from storage on initialization
     this.loadTokens()
     this.loadPersonaToken()
+  }
+
+  _hasStoredAppSession () {
+    try {
+      const tab = this._tabStorage
+      const keys = this.storageKeys
+      return tab.getItem(keys.sessionSource) === 'app' && Boolean(tab.getItem(keys.accessToken))
+    } catch {
+      return false
+    }
   }
 
   /**
@@ -98,7 +113,9 @@ export class TokenManager {
       expiresIn: `${this.config.storagePrefix}expires_in`,
       // WHO owns this session (review D1, 2026-10-09): 'own' = a sign-in on
       // this origin stored the refresh token (setTokens); 'bridge' = adopted
-      // from the /_session-bridge peer (adoptAccessToken). A consumer reads
+      // from the /_session-bridge peer (adoptAccessToken); 'app' = an
+      // app-scoped "Sign in with Symbols" token (adoptAccessToken with
+      // source 'app', kept in sessionStorage only). A consumer reads
       // an UNMARKED refresh token on its borrowing origin as a copy an older
       // bridge build handed over.
       sessionSource: `${this.config.storagePrefix}session_source`
@@ -139,6 +156,7 @@ export class TokenManager {
    * Get storage instance based on configuration
    */
   get storage () {
+    if (this._appSession) return this._tabStorage
     if (typeof window === 'undefined') {
       // Node.js environment - use memory storage
       return this._memoryStorage
@@ -196,6 +214,10 @@ export class TokenManager {
     if (!accessToken) {
       throw new Error('Access token is required')
     }
+
+    // A full sign-in replaces an app-scoped session: forget it first (its
+    // sessionStorage keys), then store this one where sessions live.
+    if (this._appSession) this._dropAppSession()
 
     // Calculate expiry time
     const now = Date.now()
@@ -442,13 +464,30 @@ export class TokenManager {
    * by another origin must never be refreshed from here. Returns false (and
    * changes nothing) for a missing or already-expired token.
    */
-  adoptAccessToken (data) {
+  adoptAccessToken (data, { source = 'bridge' } = {}) {
     const accessToken = data?.access_token || data?.accessToken
     if (!accessToken || typeof accessToken !== 'string') return false
     const now = Date.now()
     let expiresAt = Number(data.expires_at ?? data.expiresAt) || null
     if (!expiresAt && Number(data.expires_in)) expiresAt = now + Number(data.expires_in) * 1000
     if (expiresAt && expiresAt <= now) return false
+
+    if (source === 'app') {
+      // An app-scoped token: wipe any session this origin kept in its
+      // shared storage (no full account session stays beside it), then keep
+      // this one in the tab's sessionStorage only.
+      if (!this._appSession) {
+        try {
+          const shared = this.storage
+          Object.values(this.storageKeys).forEach((key) => shared.removeItem(key))
+        } catch (_) {
+          /* locked storage */
+        }
+      }
+      this._appSession = true
+    } else if (this._appSession) {
+      this._dropAppSession()
+    }
 
     this.tokens = {
       accessToken,
@@ -469,7 +508,7 @@ export class TokenManager {
     } catch (_) {
       /* locked storage — memory already holds the access-only session */
     }
-    this._markSessionSource('bridge')
+    this._markSessionSource(source === 'app' ? 'app' : 'bridge')
     // Clears any pending refresh timer; schedules none (no refresh token).
     this.scheduleRefresh()
     this.retryCount = 0
@@ -477,6 +516,31 @@ export class TokenManager {
       this.config.onTokenRefresh(this.tokens)
     }
     return true
+  }
+
+  /** Forget an app-scoped session (its tab keys); storage is shared again. */
+  _dropAppSession () {
+    try {
+      const tab = this._tabStorage
+      Object.values(this.storageKeys).forEach((key) => tab.removeItem(key))
+    } catch (_) {
+      /* locked storage */
+    }
+    this._appSession = false
+  }
+
+  /** 'own' | 'bridge' | 'app' | null — who owns this session (storageKeys). */
+  getSessionSource () {
+    try {
+      return this.storage.getItem(this.storageKeys.sessionSource) || null
+    } catch {
+      return null
+    }
+  }
+
+  /** True while this tab holds an app-scoped "Sign in with Symbols" session. */
+  isAppSession () {
+    return Boolean(this._appSession && this.tokens.accessToken)
   }
 
   _markSessionSource (source) {
@@ -503,7 +567,8 @@ export class TokenManager {
    */
   isBorrowedSession () {
     try {
-      return this.storage.getItem(this.storageKeys.sessionSource) === 'bridge'
+      const source = this.storage.getItem(this.storageKeys.sessionSource)
+      return source === 'bridge' || source === 'app'
     } catch {
       return false
     }
@@ -993,6 +1058,8 @@ export class TokenManager {
     Object.values(keys).forEach(key => {
       storage.removeItem(key)
     })
+    // An app-scoped session ends here; the next session uses shared storage.
+    if (this._appSession) this._dropAppSession()
 
     // Clear scheduled refresh
     if (this.refreshTimeout) {

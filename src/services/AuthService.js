@@ -14,8 +14,9 @@ const PLUGIN_SESSION_STORAGE_KEY = 'plugin_auth_session'
 // "Sign in with Symbols" for a project's own site (server CORE-APP-OAUTH-1).
 // The pending request (PKCE verifier, app, workspace, return path) lives in
 // the page's sessionStorage under the prefix + its `state`, at most
-// APP_AUTH_MAX_AGE_MS. The scope of a finished sign-in sits beside the
-// session in localStorage.
+// APP_AUTH_MAX_AGE_MS. The token of a finished sign-in and its scope live in
+// the tab's sessionStorage too (TokenManager source 'app'): never in
+// localStorage, never a refresh token.
 const APP_AUTH_STORAGE_PREFIX = 'symbols_app_auth:'
 const APP_SCOPE_STORAGE_KEY = 'symbols_app_scope'
 const APP_AUTH_MAX_AGE_MS = 10 * 60 * 1000
@@ -47,6 +48,18 @@ const _safeReturnPath = (p) =>
   typeof p === 'string' && p.startsWith('/') && !p.startsWith('//') && !p.startsWith('/\\')
     ? p
     : '/'
+
+// Take `code`, `state` and `error` out of the address (the rest stays).
+const _stripAppAuthParams = (win, loc) => {
+  try {
+    const params = new URLSearchParams(loc.search || '')
+    for (const k of ['code', 'state', 'error', 'error_description']) params.delete(k)
+    const q = params.toString()
+    win.history?.replaceState?.(win.history.state, '', `${loc.pathname || '/'}${q ? `?${q}` : ''}${loc.hash || ''}`)
+  } catch (_) {
+    /* the address keeps the spent code: harmless, it is single-use */
+  }
+}
 
 const _appAuthError = (code, message, cause) => {
   const err = new Error(message || code, cause ? { cause } : undefined)
@@ -339,7 +352,7 @@ export class AuthService extends BaseService {
       this._tokenManager.clearTokens()
     }
     try {
-      globalThis.localStorage?.removeItem(APP_SCOPE_STORAGE_KEY)
+      globalThis.sessionStorage?.removeItem(APP_SCOPE_STORAGE_KEY)
     } catch (_) {
       /* locked storage: nothing to forget */
     }
@@ -766,7 +779,10 @@ export class AuthService extends BaseService {
       saved = null
     }
     if (!saved) {
-      // Not a request of this page: leave the address alone.
+      // Not a request of this tab (a stale or forged return): take the code
+      // and the state out of the address all the same, so a later copy of
+      // the address (a share, a bookmark, a Referer) never carries them.
+      _stripAppAuthParams(win, loc)
       throw _appAuthError('state_mismatch', 'App sign-in: no pending request for this state')
     }
     const back = _safeReturnPath(saved.returnTo)
@@ -794,7 +810,10 @@ export class AuthService extends BaseService {
       throw _appAuthError('state_mismatch', 'App sign-in: the token names another workspace')
     }
     if (this._tokenManager?.adoptAccessToken) {
-      this._tokenManager.adoptAccessToken({ access_token: out.access_token, expires_in: out.expires_in })
+      this._tokenManager.adoptAccessToken(
+        { access_token: out.access_token, expires_in: out.expires_in },
+        { source: 'app' }
+      )
     }
     const scope = {
       appId: out.app_id || saved.appId,
@@ -802,7 +821,7 @@ export class AuthService extends BaseService {
       scope: out.scope || ''
     }
     try {
-      globalThis.localStorage?.setItem(APP_SCOPE_STORAGE_KEY, JSON.stringify(scope))
+      globalThis.sessionStorage?.setItem(APP_SCOPE_STORAGE_KEY, JSON.stringify(scope))
     } catch (_) {
       /* locked storage: the session still works this page load */
     }
@@ -816,9 +835,9 @@ export class AuthService extends BaseService {
    * or null when the session is not an app sign-in (or there is none).
    */
   getAppAuthorization() {
-    if (!this._tokenManager?.getAccessToken?.()) return null
+    if (!this._tokenManager?.isAppSession?.()) return null
     try {
-      const v = JSON.parse(globalThis.localStorage?.getItem(APP_SCOPE_STORAGE_KEY) || 'null')
+      const v = JSON.parse(globalThis.sessionStorage?.getItem(APP_SCOPE_STORAGE_KEY) || 'null')
       return v && v.appId && v.workspaceId ? v : null
     } catch (_) {
       return null

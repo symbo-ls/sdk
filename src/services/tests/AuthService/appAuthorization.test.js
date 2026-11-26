@@ -48,6 +48,7 @@ const setup = ({ search = '', pathname = '/' } = {}) => {
   svc._tokenManager = {
     adoptAccessToken: sinon.spy(() => true),
     getAccessToken: () => 'app-token',
+    isAppSession: () => true,
     clearTokens: sinon.spy()
   }
   return { svc, location, history }
@@ -153,12 +154,22 @@ test('completeAppAuthorization — exchanges with the saved verifier, adopts the
       code_verifier: entry.v
     })
     t.notOk(svc._requiresInit('exchangeAppAuthorizationCode'), 'no bearer token on the exchange')
-    t.ok(svc._tokenManager.adoptAccessToken.calledOnceWith({ access_token: 'app.jwt', expires_in: 3600 }))
+    t.ok(
+      svc._tokenManager.adoptAccessToken.calledOnceWith(
+        { access_token: 'app.jwt', expires_in: 3600 },
+        { source: 'app' }
+      ),
+      'adopted as an app session (review I1)'
+    )
+    t.equal(globalThis.localStorage.getItem('symbols_app_scope'), null, 'no scope in localStorage (review L2)')
     t.ok(history.replaceState.calledOnce, 'the code leaves the address')
     t.equal(history.replaceState.firstCall.args[2], '/admin')
     t.equal(globalThis.sessionStorage.getItem(`symbols_app_auth:${state}`), null, 'the request is spent')
     t.deepEqual(out, { appId: 'appco/shop', workspaceId: WS, scope: 'records.read', expiresIn: 3600, returnTo: '/admin' })
     t.deepEqual(svc.getAppAuthorization(), { appId: 'appco/shop', workspaceId: WS, scope: 'records.read' })
+    svc._tokenManager.isAppSession = () => false
+    t.equal(svc.getAppAuthorization(), null, 'a full session is no app sign-in')
+    svc._tokenManager.isAppSession = () => true
     t.deepEqual(heard, ['SIGNED_IN'])
 
     // The same return again (a reload of the old address): no request left.
@@ -185,10 +196,10 @@ test('completeAppAuthorization — null on a normal page load', async (t) => {
   t.end()
 })
 
-test('completeAppAuthorization — unknown state: refused, no exchange', async (t) => {
-  const { svc, location } = setup()
+test('completeAppAuthorization — unknown state: refused, no exchange, the code leaves the address', async (t) => {
+  const { svc, location, history } = setup({ pathname: '/item' })
   try {
-    location.search = '?code=c&state=forged-state-123'
+    location.search = '?edit=bench&code=c&state=forged-state-123'
     const req = sinon.stub(svc, '_request')
     try {
       await svc.completeAppAuthorization()
@@ -197,6 +208,9 @@ test('completeAppAuthorization — unknown state: refused, no exchange', async (
       t.equal(e.code, 'state_mismatch')
     }
     t.equal(req.callCount, 0)
+    // Review L1: the code and the state are stripped; the page's own query stays.
+    t.ok(history.replaceState.calledOnce)
+    t.equal(history.replaceState.firstCall.args[2], '/item?edit=bench')
   } finally {
     teardown()
   }
@@ -298,12 +312,34 @@ test('describe / approve — the shell calls of the consent page', async (t) => 
 test('sign-out forgets the app scope', async (t) => {
   const { svc } = setup()
   try {
-    globalThis.localStorage.setItem('symbols_app_scope', JSON.stringify({ appId: 'a/b', workspaceId: WS }))
+    globalThis.sessionStorage.setItem('symbols_app_scope', JSON.stringify({ appId: 'a/b', workspaceId: WS }))
     svc._clearLocalSession()
-    t.equal(globalThis.localStorage.getItem('symbols_app_scope'), null)
+    t.equal(globalThis.sessionStorage.getItem('symbols_app_scope'), null)
     t.ok(svc._tokenManager.clearTokens.calledOnce)
   } finally {
     teardown()
+  }
+  t.end()
+})
+
+test('the return path: a deep path comes back; a foreign one falls back to /', async (t) => {
+  const cases = [
+    ['/item/garden-bench?edit=1#top', '/item/garden-bench?edit=1#top'],
+    ['//evil.example', '/'],
+    ['https://evil.example', '/'],
+    ['/\\evil', '/'],
+    ['javascript:alert(1)', '/'],
+    ['', '/']
+  ]
+  for (const [given, want] of cases) {
+    const { svc } = setup()
+    try {
+      const { state } = await svc.startAppAuthorization({ appId: 'appco/shop', workspaceId: WS, returnTo: given, navigate: false })
+      const entry = JSON.parse(globalThis.sessionStorage.getItem(`symbols_app_auth:${state}`))
+      t.equal(entry.returnTo, want, JSON.stringify(given))
+    } finally {
+      teardown()
+    }
   }
   t.end()
 })
