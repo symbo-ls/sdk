@@ -705,6 +705,25 @@ export class AuthService extends BaseService {
     return { url: url.toString(), state }
   }
 
+  // The own full session of this origin (never a borrowed or an app one):
+  // send its refresh token to /auth/logout with its own access token, before
+  // the app token replaces it. Best effort; never throws, never awaited.
+  _revokeReplacedSession() {
+    const tm = this._tokenManager
+    if (!tm || tm.isBorrowedSession?.() || tm.isAppSession?.()) return null
+    const refreshToken = tm.getRefreshToken?.() || null
+    if (!refreshToken) return null
+    const access = tm.tokens?.accessToken || null
+    const p = this._request('/auth/logout', {
+      method: 'POST',
+      body: JSON.stringify({ refreshToken }),
+      headers: access ? { Authorization: `${tm.tokens.tokenType || 'Bearer'} ${access}` } : {},
+      methodName: 'logout',
+      maxRetries: 0
+    })
+    return Promise.resolve(p).catch(() => null)
+  }
+
   // Drop pending requests older than APP_AUTH_MAX_AGE_MS (and broken ones).
   _pruneAppAuthRequests(store) {
     try {
@@ -818,6 +837,11 @@ export class AuthService extends BaseService {
     if (String(out.workspace_id || '').toLowerCase() !== String(saved.workspaceId).toLowerCase()) {
       throw refuse('state_mismatch', 'App sign-in: the token names another workspace')
     }
+    // Re-review N3: adopting the app token drops any full session this
+    // origin kept (TokenManager wipes it). Revoke that session on the server
+    // too, so a copy of its refresh token taken earlier stops working. Fire
+    // and forget: the sign-in never waits on it.
+    this._revokeReplacedSession()
     if (this._tokenManager?.adoptAccessToken) {
       this._tokenManager.adoptAccessToken(
         { access_token: out.access_token, expires_in: out.expires_in },

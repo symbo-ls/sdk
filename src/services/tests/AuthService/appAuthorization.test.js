@@ -364,3 +364,34 @@ test('a refusal names the page the person started from (err.returnTo)', async (t
   }
   t.end()
 })
+
+test('re-review N3: the full session the app token replaces is revoked on the server', async (t) => {
+  for (const [label, tm, revoked] of [
+    ['own full session', { getRefreshToken: () => 'old-refresh', tokens: { accessToken: 'old-access', tokenType: 'Bearer' } }, true],
+    ['borrowed session', { getRefreshToken: () => 'x', isBorrowedSession: () => true, tokens: { accessToken: 'a' } }, false],
+    ['no session', { getRefreshToken: () => null, tokens: {} }, false]
+  ]) {
+    const { svc, location } = setup()
+    try {
+      const { state } = await svc.startAppAuthorization({ appId: 'appco/shop', workspaceId: WS, navigate: false })
+      location.search = `?code=the-code&state=${state}`
+      Object.assign(svc._tokenManager, { isAppSession: () => false }, tm)
+      const req = sinon.stub(svc, '_request').callsFake(async (url) =>
+        url === '/oauth/app/token'
+          ? { access_token: 'app.jwt', expires_in: 3600, app_id: 'appco/shop', workspace_id: WS }
+          : { success: true }
+      )
+      await svc.completeAppAuthorization()
+      const logout = req.getCalls().find((c) => c.args[0] === '/auth/logout')
+      t.equal(Boolean(logout), revoked, label)
+      if (logout) {
+        t.deepEqual(JSON.parse(logout.args[1].body), { refreshToken: 'old-refresh' })
+        t.equal(logout.args[1].headers.Authorization, 'Bearer old-access', 'the old session signs its own revoke')
+        t.ok(logout.calledBefore(svc._tokenManager.adoptAccessToken.firstCall), 'sent before the wipe')
+      }
+    } finally {
+      teardown()
+    }
+  }
+  t.end()
+})
